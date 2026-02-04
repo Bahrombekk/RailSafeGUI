@@ -1,0 +1,48 @@
+{
+  "crossings": [
+    {
+      "id": 1,
+      "name": "Pereezd 1",
+      "location": "Toshkent, Test Hudud",
+      "description": "Test pereezd",
+      "status": "offline",
+      "created_at": "2026-02-02T10:00:00",
+      "cameras": [
+        {
+          "id": 1,
+          "name": "Shimoliy Yo'nalish",
+          "type": "main",
+          "source": "rtsp://admin:1q2w3e4r5t@192.168.170.160:554/Streaming/Channels/201",
+          "polygon_file": "/home/bahrombek/Desktop/RailSafeAI_v1.1/polygons/aa/labels_my-project-name_2026-01-12-06-32-27.json",
+          "enabled": true,
+          "status": "offline",
+          "created_at": "2026-02-02T10:05:00"
+        },
+        {
+          "id": 2,
+          "name": "Sharqiy Yo'nalish",
+          "type": "additional",
+          "source": "rtsp://admin:1q2w3e4r5t@192.168.170.160:554/Streaming/Channels/801",
+          "polygon_file": "/home/bahrombek/Desktop/RailSafeAI_v1.1/polygons/aa/labels_my-project-name_2026-01-23-09-20-43.json",
+          "enabled": true,
+          "status": "offline",
+          "created_at": "2026-02-02T10:10:00"
+        }
+      ],
+      "plc": {
+        "enabled": true,
+        "ip": "192.168.170.159",
+        "port": 102,
+        "type": "Siemens S7-1200"
+      }
+    }
+  ],
+  "settings": {
+    "theme": "dark",
+    "language": "uz",
+    "auto_save": true,
+    "warning_threshold": 10.0,
+    "violation_threshold": 15.0
+  },
+  "last_updated": "2026-02-02T12:00:00"
+}

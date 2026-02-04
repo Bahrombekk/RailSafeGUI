@@ -1,0 +1,71 @@
+# RailSafe AI Monitoring System Configuration
+
+# Model sozlamalari
+model:
+  path: "/home/bahrombek/Desktop/RailSafeAI_v1.1/models/yolo26m.pt"
+
+  # ✅ TO'G'IRLANDI - Yuk mashinalar ham qo'shildi
+  target_classes: [2, 5, 7]  # 2: car, 5: bus, 7: truck
+
+  class_names:
+    2: "Yengil avtomobil"
+    3: "Mototsikl"
+    5: "Avtobus"
+    6: "Poyezd"
+    7: "Yuk mashinasi"
+
+plc:
+  device_ip: '192.168.170.159'
+  device_port: 102
+
+# Vaqt chegaralari (soniyalarda)
+thresholds:
+  warning: 10.0      # Ogohlantirish (sariq)
+  violation: 15.0    # Qoida buzilishi (qizil)
+
+# Ishlash parametrlari
+processing:
+  # 🚀 ADAPTIVE MODE - Avtomatik tezlik optimizatsiyasi
+  adaptive_mode: true
+  frame_skip_idle: 3   # Bo'sh bo'lsa sekinroq
+  frame_skip_active: 1 # Detect bo'lsa tezroq
+
+  polygon_length: 8.0
+
+# Kameralar ro'yxati
+cameras:
+  - id: 1
+    name: "Shimoliy Yo'nalish"
+    source: "rtsp://admin:1q2w3e4r5t@192.168.170.160:554/Streaming/Channels/201"
+    polygon_file: "polygons/paligon_pereezd.json"
+    enabled: false
+
+  - id: 2
+    name: "Janubiy Yo'nalish"
+    source: "rtsp://admin:1q2w3e4r5t@192.168.170.160:554/Streaming/Channels/301"
+    polygon_file: "/home/bahrombek/Desktop/RailSafeAI_v1.1/polygons/aa/labels_my-project-name_2026-01-12-06-32-27.json"
+    enabled: true
+
+  - id: 3
+    name: "Sharqiy Yo'nalish"
+    source: "rtsp://admin:1q2w3e4r5t@192.168.170.160:554/Streaming/Channels/801"
+    polygon_file: "/home/bahrombek/Desktop/RailSafeAI_v1.1/polygons/aa/labels_my-project-name_2026-01-23-09-20-43.json"
+    enabled: true
+
+  - id: 4
+    name: "G'arbiy Yo'nalish"
+    source: "/home/bahrombek/Desktop/train number/2.mp4"
+    polygon_file: "polygons/paligon_pereezd.json"
+    enabled: false
+
+  - id: 5
+    name: "G'arbiy Yo'nalish2"
+    source: "rtsp://admin:1q2w3e4r5t@192.168.170.160:554/Streaming/Channels/601"
+    polygon_file: "/home/bahrombek/Desktop/RailSafeAI_v1.1/labels_my-project-name_2025-12-05-06-46-42.json"
+    enabled: false
+
+  - id: 6
+    name: "G'arbiy Yo'nalish1"
+    source: "rtsp://admin:1q2w3e4r5t@192.168.170.160:554/Streaming/Channels/401"
+    polygon_file: "/home/bahrombek/Desktop/RailSafeAI_v1.1/aaaaa.json"
+    enabled: false

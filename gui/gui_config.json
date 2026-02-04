@@ -1,0 +1,76 @@
+{
+  "crossings": [
+    {
+      "name": "ewfe",
+      "location": "efws",
+      "description": "efw",
+      "plc": {
+        "enabled": false,
+        "ip": "",
+        "port": 102,
+        "type": "Siemens S7-1200"
+      },
+      "cameras": [
+        {
+          "name": "wdwdd",
+          "type": "main",
+          "source": "rtsp://admin:1q2w3e4r5t@192.168.170.160:554/Streaming/Channels/301",
+          "polygon_file": "/home/bahrombek/Desktop/RailSafeAI_v1.1/polygons/aa/labels_my-project-name_2026-01-12-06-32-27.json",
+          "enabled": true,
+          "id": 1,
+          "updated_at": "2026-02-03T12:53:15.217493"
+        },
+        {
+          "name": "dadcc",
+          "type": "additional",
+          "source": "rtsp://admin:1q2w3e4r5t@192.168.170.160:554/Streaming/Channels/801",
+          "polygon_file": "/home/bahrombek/Desktop/RailSafeAI_v1.1/polygons/aa/labels_my-project-name_2026-01-23-09-20-43.json",
+          "enabled": true,
+          "id": 2,
+          "updated_at": "2026-02-03T12:36:44.884504"
+        },
+        {
+          "name": "sadwsda",
+          "type": "additional",
+          "source": "rtsp://admin:1q2w3e4r5t@192.168.170.160:554/Streaming/Channels/301",
+          "polygon_file": "/home/bahrombek/Desktop/pereezd_test/polygons/paligon1.json",
+          "enabled": true,
+          "id": 3,
+          "created_at": "2026-02-03T13:01:52.993524",
+          "status": "offline"
+        },
+        {
+          "name": "saa",
+          "type": "additional",
+          "source": "rtsp://admin:1q2w3e4r5t@192.168.170.160:554/Streaming/Channels/301",
+          "polygon_file": "/home/bahrombek/Desktop/pereezd_test/polygons/paligon301.json",
+          "enabled": true,
+          "id": 4,
+          "created_at": "2026-02-03T13:06:26.679100",
+          "status": "offline"
+        },
+        {
+          "name": "22eq",
+          "type": "additional",
+          "source": "rtsp://admin:1q2w3e4r5t@192.168.170.160:554/Streaming/Channels/801",
+          "polygon_file": "wqwd",
+          "enabled": true,
+          "id": 5,
+          "updated_at": "2026-02-03T17:52:15.629159"
+        }
+      ],
+      "id": 1,
+      "created_at": "2026-02-02T19:21:53.314502",
+      "status": "offline",
+      "updated_at": "2026-02-03T17:52:15.629192"
+    }
+  ],
+  "settings": {
+    "theme": "light",
+    "language": "en",
+    "auto_save": true,
+    "warning_threshold": 10.0,
+    "violation_threshold": 15.0
+  },
+  "last_updated": "2026-02-04T10:40:03.708469"
+}
