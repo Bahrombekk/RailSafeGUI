@@ -15,52 +15,83 @@ import numpy as np
 import os
 import time
 
+# RTSP low-latency + Intel VA-API hw decode (set once, not per-thread)
+os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = (
+    'rtsp_transport;tcp|stimeout;3000000|'
+    'fflags;nobuffer|flags;low_delay|'
+    'analyzeduration;500000|probesize;500000|'
+    'hwaccel;vaapi|hwaccel_device;/dev/dri/renderD128'
+)
+os.environ['OPENCV_LOG_LEVEL'] = 'ERROR'
+
 
 class CameraWorker(QThread):
-    """Worker thread for camera streaming - proper thread management"""
-    frame_ready = pyqtSignal(object)
+    """Worker thread - all heavy work here, GUI thread only does setPixmap"""
+    frame_ready = pyqtSignal(QImage)
     status_changed = pyqtSignal(str)
 
-    def __init__(self, source: str, camera_name: str = "Camera"):
+    def __init__(self, source: str, camera_name: str = "Camera", display_width: int = 640):
         super().__init__()
         self.source = source
         self.camera_name = camera_name
+        self.display_width = display_width
         self._running = True
         self._mutex = QMutex()
+        self._frame_pending = False
+        self._frame_mutex = QMutex()
         self.cap = None
 
-    def run(self):
-        os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = 'rtsp_transport;tcp|stimeout;3000000'
-        print(f"[{self.camera_name}] Connecting...")
+    def set_frame_delivered(self):
+        self._frame_mutex.lock()
+        self._frame_pending = False
+        self._frame_mutex.unlock()
 
+    def run(self):
         try:
             self.cap = cv2.VideoCapture(self.source, cv2.CAP_FFMPEG)
 
             if self.cap.isOpened():
                 self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-                self.cap.set(cv2.CAP_PROP_FPS, 25)
                 self.status_changed.emit("online")
-                print(f"[{self.camera_name}] Connected!")
+                consecutive_fails = 0
 
-                while self._running:
-                    self._mutex.lock()
-                    is_running = self._running
-                    self._mutex.unlock()
+                while self._is_running():
+                    # ALWAYS grab to flush RTSP buffer (real-time)
+                    ret = self.cap.grab()
+                    if not ret:
+                        consecutive_fails += 1
+                        if consecutive_fails > 30:
+                            self.status_changed.emit("error")
+                            break
+                        continue
+                    consecutive_fails = 0
 
-                    if not is_running:
-                        break
+                    # Only decode when GUI is ready
+                    self._frame_mutex.lock()
+                    pending = self._frame_pending
+                    self._frame_mutex.unlock()
+                    if pending:
+                        continue
 
-                    ret, frame = self.cap.read()
-                    if ret and self._running:
-                        self.frame_ready.emit(frame.copy())
-                    elif not ret:
-                        print(f"[{self.camera_name}] Frame read failed")
-                        self.status_changed.emit("error")
-                        break
+                    ret, frame = self.cap.retrieve()
+                    if ret and self._is_running():
+                        # ALL heavy work in worker thread (parallel across cameras)
+                        h, w = frame.shape[:2]
+                        if w > self.display_width:
+                            scale = self.display_width / w
+                            frame = cv2.resize(frame, (self.display_width, int(h * scale)),
+                                               interpolation=cv2.INTER_AREA)
+                            h, w = frame.shape[:2]
+                        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                        # QImage created in worker thread (thread-safe)
+                        qimg = QImage(rgb.data, w, h, w * 3,
+                                      QImage.Format.Format_RGB888).copy()
 
-                    self.msleep(33)
+                        self._frame_mutex.lock()
+                        self._frame_pending = True
+                        self._frame_mutex.unlock()
+                        self.frame_ready.emit(qimg)
             else:
-                print(f"[{self.camera_name}] Failed to connect")
                 self.status_changed.emit("error")
 
         except Exception as e:
@@ -70,7 +101,12 @@ class CameraWorker(QThread):
             if self.cap:
                 self.cap.release()
                 self.cap = None
-            print(f"[{self.camera_name}] Thread finished")
+
+    def _is_running(self):
+        self._mutex.lock()
+        r = self._running
+        self._mutex.unlock()
+        return r
 
     def stop(self):
         try:
@@ -731,25 +767,20 @@ class CrossingCard(QWidget):
         except (RuntimeError, Exception) as e:
             print(f"[Placeholder] Error: {e}")
 
-    def _display_frame(self, label: QLabel, frame):
-        if frame is None or self._is_destroyed or label is None:
+    def _display_frame(self, label: QLabel, qimg: QImage, worker=None):
+        """Display ready QImage - minimal GUI thread work"""
+        if qimg is None or self._is_destroyed or label is None:
             return
         try:
-            fh, fw = frame.shape[:2]
-            if fh <= 0 or fw <= 0:
-                return
-            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            qimg = QImage(rgb.data, fw, fh, fw * 3, QImage.Format.Format_RGB888)
             pixmap = QPixmap.fromImage(qimg)
-            lw, lh = label.width(), label.height()
-            if lw <= 0 or lh <= 0:
-                return
             scaled = pixmap.scaled(
                 label.size(),
                 Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation
+                Qt.TransformationMode.FastTransformation
             )
             label.setPixmap(scaled)
+            if worker is not None:
+                worker.set_frame_delivered()
         except (RuntimeError, Exception):
             pass
 
@@ -786,10 +817,10 @@ class CrossingCard(QWidget):
                 worker = CameraWorker(source, cam_name)
 
                 if i == 0 or cam_type == "main":
-                    worker.frame_ready.connect(self._on_main_frame)
+                    worker.frame_ready.connect(lambda f, w=worker: self._on_main_frame(f, w))
                     worker.status_changed.connect(self._on_main_status)
                 else:
-                    worker.frame_ready.connect(self._on_additional_frame)
+                    worker.frame_ready.connect(lambda f, w=worker: self._on_additional_frame(f, w))
                     worker.status_changed.connect(self._on_additional_status)
 
                 worker.start()
@@ -797,19 +828,19 @@ class CrossingCard(QWidget):
         except (RuntimeError, Exception) as e:
             print(f"[StartCameras] Error: {e}")
 
-    def _on_main_frame(self, frame):
+    def _on_main_frame(self, frame, worker=None):
         if self._is_destroyed or self.main_camera_label is None:
             return
         try:
-            self._display_frame(self.main_camera_label, frame)
+            self._display_frame(self.main_camera_label, frame, worker)
         except RuntimeError:
             self._is_destroyed = True
 
-    def _on_additional_frame(self, frame):
+    def _on_additional_frame(self, frame, worker=None):
         if self._is_destroyed or self.additional_camera_label is None:
             return
         try:
-            self._display_frame(self.additional_camera_label, frame)
+            self._display_frame(self.additional_camera_label, frame, worker)
         except RuntimeError:
             self._is_destroyed = True
 

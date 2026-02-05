@@ -28,17 +28,27 @@
           "enabled": true,
           "id": 2,
           "updated_at": "2026-02-03T12:36:44.884504"
+        },
+        {
+          "name": "wqr",
+          "type": "additional",
+          "source": "rtsp://admin:1q2w3e4r5t@192.168.170.160:554/Streaming/Channels/401",
+          "polygon_file": "wqwed",
+          "enabled": true,
+          "id": 3,
+          "created_at": "2026-02-05T13:52:42.512611",
+          "status": "offline"
         }
       ],
       "id": 1,
       "created_at": "2026-02-02T19:21:53.314502",
       "status": "offline",
-      "updated_at": "2026-02-04T16:07:06.464194"
+      "updated_at": "2026-02-05T13:52:42.512632"
     },
     {
-      "name": "dawdad",
-      "location": "wada",
-      "description": "awds",
+      "name": "ef",
+      "location": "fewz",
+      "description": "efaw",
       "plc": {
         "enabled": false,
         "ip": "",
@@ -47,34 +57,35 @@
       },
       "cameras": [
         {
-          "name": "dadw",
+          "name": "WADWDA",
           "type": "main",
-          "source": "rtsp://admin:1q2w3e4r5t@192.168.170.160:554/Streaming/Channels/601",
-          "polygon_file": "aaa",
+          "source": "rtsp://admin:1q2w3e4r5t@192.168.170.160:554/Streaming/Channels/201",
+          "polygon_file": "WD",
           "enabled": true,
           "id": 1,
-          "updated_at": "2026-02-05T11:20:34.233273"
+          "created_at": "2026-02-05T13:58:42.820016",
+          "status": "offline"
         },
         {
-          "name": "xwsxc",
+          "name": "WADWDWA",
           "type": "additional",
-          "source": "rtsp://admin:1q2w3e4r5t@192.168.170.160:554/Streaming/Channels/401",
-          "polygon_file": "wwww",
+          "source": "rtsp://admin:1q2w3e4r5t@192.168.170.160:554/Streaming/Channels/801",
+          "polygon_file": "WQDQD",
           "enabled": true,
           "id": 2,
-          "created_at": "2026-02-05T11:22:40.023647",
+          "created_at": "2026-02-05T13:59:04.728744",
           "status": "offline"
         }
       ],
       "id": 2,
-      "created_at": "2026-02-05T11:08:18.864623",
+      "created_at": "2026-02-05T13:50:21.216427",
       "status": "offline",
-      "updated_at": "2026-02-05T11:22:40.023676"
+      "updated_at": "2026-02-05T13:59:04.728762"
     },
     {
-      "name": "qwd",
-      "location": "wqd",
-      "description": "qwd",
+      "name": "qeqe",
+      "location": "qaed",
+      "description": "qae",
       "plc": {
         "enabled": false,
         "ip": "",
@@ -83,35 +94,35 @@
       },
       "cameras": [
         {
-          "name": "scaaaaaaaaaaaa",
+          "name": "DWAD",
           "type": "main",
-          "source": "rtsp://admin:1q2w3e4r5t@192.168.170.160:554/Streaming/Channels/401",
-          "polygon_file": "dawd",
+          "source": "rtsp://admin:1q2w3e4r5t@192.168.170.160:554/Streaming/Channels/501",
+          "polygon_file": "DWD",
           "enabled": true,
           "id": 1,
-          "created_at": "2026-02-05T11:40:36.664215",
+          "created_at": "2026-02-05T13:59:34.091876",
           "status": "offline"
         },
         {
-          "name": "wadad",
+          "name": "ASEFE",
           "type": "additional",
-          "source": "rtsp://admin:1q2w3e4r5t@192.168.170.160:554/Streaming/Channels/501",
-          "polygon_file": "wqedwd",
+          "source": "rtsp://admin:1q2w3e4r5t@192.168.170.160:554/Streaming/Channels/601",
+          "polygon_file": "WWW",
           "enabled": true,
           "id": 2,
-          "created_at": "2026-02-05T11:40:51.440106",
+          "created_at": "2026-02-05T13:59:44.080115",
           "status": "offline"
         }
       ],
       "id": 3,
-      "created_at": "2026-02-05T11:23:22.800673",
+      "created_at": "2026-02-05T13:51:46.341167",
       "status": "offline",
-      "updated_at": "2026-02-05T11:40:51.440123"
+      "updated_at": "2026-02-05T13:59:44.080133"
     },
     {
-      "name": "edw",
-      "location": "ewdA",
-      "description": "WEDA",
+      "name": "awdada",
+      "location": "awd",
+      "description": "awdd",
       "plc": {
         "enabled": false,
         "ip": "",
@@ -120,30 +131,30 @@
       },
       "cameras": [
         {
-          "name": "wadwd",
+          "name": "EFEF",
           "type": "main",
-          "source": "rtsp://admin:1q2w3e4r5t@192.168.170.160:554/Streaming/Channels/101",
-          "polygon_file": "fcsed",
+          "source": "rtsp://admin:1q2w3e4r5t@192.168.170.160:554/Streaming/Channels/601",
+          "polygon_file": "WQD",
           "enabled": true,
           "id": 1,
-          "created_at": "2026-02-05T11:41:18.037168",
+          "created_at": "2026-02-05T14:00:13.394440",
           "status": "offline"
         },
         {
-          "name": "fewfaf",
+          "name": "WADD",
           "type": "additional",
           "source": "rtsp://admin:1q2w3e4r5t@192.168.170.160:554/Streaming/Channels/701",
-          "polygon_file": "wq",
+          "polygon_file": "WWEWD",
           "enabled": true,
           "id": 2,
-          "created_at": "2026-02-05T11:41:39.402968",
+          "created_at": "2026-02-05T14:00:23.920767",
           "status": "offline"
         }
       ],
       "id": 4,
-      "created_at": "2026-02-05T11:23:42.314965",
+      "created_at": "2026-02-05T13:52:14.946870",
       "status": "offline",
-      "updated_at": "2026-02-05T11:41:39.403015"
+      "updated_at": "2026-02-05T14:00:23.920816"
     }
   ],
   "settings": {
@@ -153,5 +164,5 @@
     "warning_threshold": 10.0,
     "violation_threshold": 15.0
   },
-  "last_updated": "2026-02-05T11:41:39.403023"
+  "last_updated": "2026-02-05T14:00:23.920822"
 }
