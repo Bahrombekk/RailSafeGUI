@@ -14,9 +14,11 @@ import numpy as np
 import os
 import time
 
+from gui.utils.theme_colors import C
+
 # RTSP low-latency + Intel VA-API hw decode (set once, not per-thread)
 os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = (
-    'rtsp_transport;tcp|stimeout;5000000|'
+    'rtsp_transport;tcp|stimeout;2000000|'
     'fflags;nobuffer|flags;low_delay|'
     'analyzeduration;500000|probesize;500000|'
     'hwaccel;vaapi|hwaccel_device;/dev/dri/renderD128'
@@ -200,12 +202,12 @@ class CrossingDetail(QWidget):
         # ===== Header =====
         header = QFrame()
         header.setFixedHeight(50)
-        header.setStyleSheet("""
-            QFrame {
-                background: #181825;
-                border: 1px solid #313244;
+        header.setStyleSheet(f"""
+            QFrame {{
+                background: {C('bg_secondary')};
+                border: 1px solid {C('bg_input')};
                 border-radius: 10px;
-            }
+            }}
         """)
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(12, 0, 12, 0)
@@ -214,12 +216,12 @@ class CrossingDetail(QWidget):
         # Back
         back_btn = QPushButton("< Orqaga")
         back_btn.clicked.connect(self.back_clicked.emit)
-        back_btn.setStyleSheet("""
-            QPushButton {
-                background: #313244; color: #cdd6f4; border: none;
+        back_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: {C('bg_input')}; color: {C('text_primary')}; border: none;
                 border-radius: 6px; padding: 6px 14px; font-size: 12px;
-            }
-            QPushButton:hover { background: #45475a; }
+            }}
+            QPushButton:hover {{ background: {C('bg_hover')}; }}
         """)
         header_layout.addWidget(back_btn)
 
@@ -227,21 +229,21 @@ class CrossingDetail(QWidget):
         sep = QFrame()
         sep.setFixedWidth(1)
         sep.setFixedHeight(24)
-        sep.setStyleSheet("background: #313244;")
+        sep.setStyleSheet(f"background: {C('bg_input')};")
         header_layout.addWidget(sep)
 
         # Title
         title = QLabel(self.crossing_data.get("name", "Pereezd"))
-        title.setStyleSheet("color: #cdd6f4; font-size: 16px; font-weight: bold; background: transparent;")
+        title.setStyleSheet(f"color: {C('text_primary')}; font-size: 16px; font-weight: bold; background: transparent;")
         header_layout.addWidget(title)
 
         # Location badge
         loc = self.crossing_data.get('location', '')
         if loc:
             loc_lbl = QLabel(loc)
-            loc_lbl.setStyleSheet("""
-                color: #a6adc8; font-size: 11px; background: #1e1e2e;
-                border: 1px solid #313244; border-radius: 4px; padding: 2px 8px;
+            loc_lbl.setStyleSheet(f"""
+                color: {C('text_secondary')}; font-size: 11px; background: {C('bg_primary')};
+                border: 1px solid {C('bg_input')}; border-radius: 4px; padding: 2px 8px;
             """)
             header_layout.addWidget(loc_lbl)
 
@@ -257,17 +259,17 @@ class CrossingDetail(QWidget):
         """
 
         add_cam_btn = QPushButton("+ Kamera")
-        add_cam_btn.setStyleSheet(btn_css.format(bg="#313244", fg="#89b4fa", hover="#45475a"))
+        add_cam_btn.setStyleSheet(btn_css.format(bg=C('bg_input'), fg=C('accent_brand'), hover=C('bg_hover')))
         add_cam_btn.clicked.connect(lambda: self.add_camera_clicked.emit(self.crossing_id))
         header_layout.addWidget(add_cam_btn)
 
         settings_btn = QPushButton("Sozlamalar")
-        settings_btn.setStyleSheet(btn_css.format(bg="#313244", fg="#a6e3a1", hover="#45475a"))
+        settings_btn.setStyleSheet(btn_css.format(bg=C('bg_input'), fg=C('accent_green'), hover=C('bg_hover')))
         settings_btn.clicked.connect(lambda: self.edit_crossing_clicked.emit(self.crossing_id))
         header_layout.addWidget(settings_btn)
 
         delete_btn = QPushButton("O'chirish")
-        delete_btn.setStyleSheet(btn_css.format(bg="#313244", fg="#f38ba8", hover="#f38ba8"))
+        delete_btn.setStyleSheet(btn_css.format(bg=C('bg_input'), fg=C('accent_red'), hover=C('accent_red')))
         delete_btn.clicked.connect(lambda: self.delete_crossing_clicked.emit(self.crossing_id))
         header_layout.addWidget(delete_btn)
 
@@ -325,9 +327,9 @@ class CrossingDetail(QWidget):
         if not cameras:
             empty = QLabel("Kameralar yo'q. '+ Kamera' tugmasini bosing.")
             empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            empty.setStyleSheet("""
-                color: #6c7086; font-size: 14px; padding: 60px;
-                background: #1e1e2e; border: 2px dashed #313244; border-radius: 12px;
+            empty.setStyleSheet(f"""
+                color: {C('text_muted')}; font-size: 14px; padding: 60px;
+                background: {C('bg_primary')}; border: 2px dashed {C('bg_input')}; border-radius: 12px;
             """)
             layout.addWidget(empty)
             return container
@@ -351,12 +353,12 @@ class CrossingDetail(QWidget):
 
     def _create_camera_panel(self, cam_data: dict, index: int):
         panel = QFrame()
-        panel.setStyleSheet("""
-            QFrame#camPanel {
-                background: #1e1e2e;
-                border: 2px solid #313244;
+        panel.setStyleSheet(f"""
+            QFrame#camPanel {{
+                background: {C('bg_primary')};
+                border: 2px solid {C('bg_input')};
                 border-radius: 12px;
-            }
+            }}
         """)
         panel.setObjectName("camPanel")
         panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
@@ -371,13 +373,13 @@ class CrossingDetail(QWidget):
 
         # Camera name
         name = QLabel(cam_data.get("name", f"Kamera {index + 1}"))
-        name.setStyleSheet("color: #cdd6f4; font-size: 13px; font-weight: bold; background: transparent;")
+        name.setStyleSheet(f"color: {C('text_primary')}; font-size: 13px; font-weight: bold; background: transparent;")
         hdr.addWidget(name)
 
         # Type badge
         cam_type = cam_data.get("type", "additional")
         is_main = cam_type == "main"
-        badge_color = "#89b4fa" if is_main else "#a6e3a1"
+        badge_color = C('accent_brand') if is_main else C('accent_green')
         badge_text = "Asosiy" if is_main else "Qo'shimcha"
         badge = QLabel(badge_text)
         badge.setStyleSheet(f"""
@@ -390,7 +392,7 @@ class CrossingDetail(QWidget):
         # Status indicator
         cam_id = cam_data.get("id", index)
         status_dot = QLabel("*")
-        status_dot.setStyleSheet("color: #fab387; font-size: 12px; background: transparent;")
+        status_dot.setStyleSheet(f"color: {C('accent_orange')}; font-size: 12px; background: transparent;")
         self.camera_status_labels[cam_id] = status_dot
         hdr.addWidget(status_dot)
 
@@ -399,12 +401,12 @@ class CrossingDetail(QWidget):
         # Settings gear
         gear = QPushButton("Settings")
         gear.setFixedHeight(22)
-        gear.setStyleSheet("""
-            QPushButton {
-                background: #313244; color: #6c7086; border: none;
+        gear.setStyleSheet(f"""
+            QPushButton {{
+                background: {C('bg_input')}; color: {C('text_muted')}; border: none;
                 border-radius: 4px; padding: 2px 8px; font-size: 10px;
-            }
-            QPushButton:hover { background: #45475a; color: #cdd6f4; }
+            }}
+            QPushButton:hover {{ background: {C('bg_hover')}; color: {C('text_primary')}; }}
         """)
         gear.clicked.connect(lambda _, cid=cam_id: self._open_camera_settings(cid))
         hdr.addWidget(gear)
@@ -417,9 +419,9 @@ class CrossingDetail(QWidget):
         video.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         video.setAlignment(Qt.AlignmentFlag.AlignCenter)
         video.setScaledContents(False)
-        video.setStyleSheet("""
-            background: #11111b;
-            border: 1px solid #313244;
+        video.setStyleSheet(f"""
+            background: {C('bg_camera')};
+            border: 1px solid {C('bg_input')};
             border-radius: 8px;
         """)
         # Set aspect ratio hint
@@ -434,13 +436,13 @@ class CrossingDetail(QWidget):
 
         time_lbl = QLabel(time.strftime("%H:%M:%S"))
         time_lbl.setObjectName(f"time_label_{cam_id}")
-        time_lbl.setStyleSheet("color: #a6adc8; font-size: 10px; background: transparent;")
+        time_lbl.setStyleSheet(f"color: {C('text_secondary')}; font-size: 10px; background: transparent;")
         bottom.addWidget(time_lbl)
 
         bottom.addStretch()
 
         plate_lbl = QLabel("Avtomobil: -- --- --")
-        plate_lbl.setStyleSheet("color: #fab387; font-size: 10px; font-weight: bold; background: transparent;")
+        plate_lbl.setStyleSheet(f"color: {C('accent_orange')}; font-size: 10px; font-weight: bold; background: transparent;")
         bottom.addWidget(plate_lbl)
 
         p_layout.addLayout(bottom)
@@ -519,13 +521,13 @@ class CrossingDetail(QWidget):
             label = self.camera_labels.get(cam_id)
             if dot:
                 if status == "online":
-                    dot.setStyleSheet("color: #a6e3a1; font-size: 12px; background: transparent;")
+                    dot.setStyleSheet(f"color: {C('accent_green')}; font-size: 12px; background: transparent;")
                 elif status == "reconnecting":
-                    dot.setStyleSheet("color: #f9e2af; font-size: 12px; background: transparent;")
+                    dot.setStyleSheet(f"color: {C('accent_yellow')}; font-size: 12px; background: transparent;")
                     if label:
                         self._set_placeholder(label, "Qayta ulanmoqda...", 480, 270)
                 elif status == "error":
-                    dot.setStyleSheet("color: #f38ba8; font-size: 12px; background: transparent;")
+                    dot.setStyleSheet(f"color: {C('accent_red')}; font-size: 12px; background: transparent;")
                     if label:
                         self._set_placeholder(label, "Ulanmadi", 480, 270)
         except RuntimeError:
@@ -553,12 +555,12 @@ class CrossingDetail(QWidget):
 
     def _create_statistics_panel(self):
         panel = QFrame()
-        panel.setStyleSheet("""
-            QFrame#statsPanel {
-                background: #1e1e2e;
-                border: 2px solid #313244;
+        panel.setStyleSheet(f"""
+            QFrame#statsPanel {{
+                background: {C('bg_primary')};
+                border: 2px solid {C('bg_input')};
                 border-radius: 12px;
-            }
+            }}
         """)
         panel.setObjectName("statsPanel")
         layout = QVBoxLayout(panel)
@@ -566,29 +568,29 @@ class CrossingDetail(QWidget):
         layout.setSpacing(10)
 
         title = QLabel("Statistika")
-        title.setStyleSheet("color: #cdd6f4; font-size: 14px; font-weight: bold; background: transparent;")
+        title.setStyleSheet(f"color: {C('text_primary')}; font-size: 14px; font-weight: bold; background: transparent;")
         layout.addWidget(title)
 
         # Divider
         div = QFrame()
         div.setFixedHeight(1)
-        div.setStyleSheet("background: #313244;")
+        div.setStyleSheet(f"background: {C('bg_input')};")
         layout.addWidget(div)
 
         cameras_count = len(self.crossing_data.get("cameras", []))
         active = sum(1 for c in self.crossing_data.get("cameras", []) if c.get("enabled"))
 
         stats = [
-            ("Kameralar", f"{active}/{cameras_count}", "#89b4fa"),
-            ("Jami Transport", "0", "#a6e3a1"),
-            ("Buzilishlar", "0", "#f38ba8"),
-            ("O'rtacha Vaqt", "0s", "#f9e2af"),
+            ("Kameralar", f"{active}/{cameras_count}", C('accent_brand')),
+            ("Jami Transport", "0", C('accent_green')),
+            ("Buzilishlar", "0", C('accent_red')),
+            ("O'rtacha Vaqt", "0s", C('accent_yellow')),
         ]
 
         for name, value, color in stats:
             row = QHBoxLayout()
             n = QLabel(name)
-            n.setStyleSheet("color: #6c7086; font-size: 12px; background: transparent;")
+            n.setStyleSheet(f"color: {C('text_muted')}; font-size: 12px; background: transparent;")
             row.addWidget(n)
             row.addStretch()
             v = QLabel(value)
@@ -601,12 +603,12 @@ class CrossingDetail(QWidget):
 
     def _create_plc_panel(self):
         panel = QFrame()
-        panel.setStyleSheet("""
-            QFrame#plcPanel {
-                background: #1e1e2e;
-                border: 2px solid #313244;
+        panel.setStyleSheet(f"""
+            QFrame#plcPanel {{
+                background: {C('bg_primary')};
+                border: 2px solid {C('bg_input')};
                 border-radius: 12px;
-            }
+            }}
         """)
         panel.setObjectName("plcPanel")
         layout = QVBoxLayout(panel)
@@ -614,12 +616,12 @@ class CrossingDetail(QWidget):
         layout.setSpacing(10)
 
         title = QLabel("PLC Holati")
-        title.setStyleSheet("color: #cdd6f4; font-size: 14px; font-weight: bold; background: transparent;")
+        title.setStyleSheet(f"color: {C('text_primary')}; font-size: 14px; font-weight: bold; background: transparent;")
         layout.addWidget(title)
 
         div = QFrame()
         div.setFixedHeight(1)
-        div.setStyleSheet("background: #313244;")
+        div.setStyleSheet(f"background: {C('bg_input')};")
         layout.addWidget(div)
 
         plc = self.crossing_data.get("plc", {})
@@ -627,41 +629,41 @@ class CrossingDetail(QWidget):
         if plc.get("enabled", False):
             row1 = QHBoxLayout()
             s = QLabel("Holat")
-            s.setStyleSheet("color: #6c7086; font-size: 12px; background: transparent;")
+            s.setStyleSheet(f"color: {C('text_muted')}; font-size: 12px; background: transparent;")
             row1.addWidget(s)
             row1.addStretch()
             sv = QLabel("ULANGAN")
-            sv.setStyleSheet("color: #a6e3a1; font-size: 12px; font-weight: bold; background: transparent;")
+            sv.setStyleSheet(f"color: {C('accent_green')}; font-size: 12px; font-weight: bold; background: transparent;")
             row1.addWidget(sv)
             layout.addLayout(row1)
 
             row2 = QHBoxLayout()
             ip_n = QLabel("IP")
-            ip_n.setStyleSheet("color: #6c7086; font-size: 12px; background: transparent;")
+            ip_n.setStyleSheet(f"color: {C('text_muted')}; font-size: 12px; background: transparent;")
             row2.addWidget(ip_n)
             row2.addStretch()
             ip_v = QLabel(plc.get("ip", "N/A"))
-            ip_v.setStyleSheet("color: #cdd6f4; font-size: 12px; background: transparent;")
+            ip_v.setStyleSheet(f"color: {C('text_primary')}; font-size: 12px; background: transparent;")
             row2.addWidget(ip_v)
             layout.addLayout(row2)
 
             row3 = QHBoxLayout()
             p_n = QLabel("Port")
-            p_n.setStyleSheet("color: #6c7086; font-size: 12px; background: transparent;")
+            p_n.setStyleSheet(f"color: {C('text_muted')}; font-size: 12px; background: transparent;")
             row3.addWidget(p_n)
             row3.addStretch()
             p_v = QLabel(str(plc.get("port", 102)))
-            p_v.setStyleSheet("color: #cdd6f4; font-size: 12px; background: transparent;")
+            p_v.setStyleSheet(f"color: {C('text_primary')}; font-size: 12px; background: transparent;")
             row3.addWidget(p_v)
             layout.addLayout(row3)
         else:
             row = QHBoxLayout()
             s = QLabel("Holat")
-            s.setStyleSheet("color: #6c7086; font-size: 12px; background: transparent;")
+            s.setStyleSheet(f"color: {C('text_muted')}; font-size: 12px; background: transparent;")
             row.addWidget(s)
             row.addStretch()
             sv = QLabel("O'CHIRILGAN")
-            sv.setStyleSheet("color: #6c7086; font-size: 12px; font-weight: bold; background: transparent;")
+            sv.setStyleSheet(f"color: {C('text_muted')}; font-size: 12px; font-weight: bold; background: transparent;")
             row.addWidget(sv)
             layout.addLayout(row)
 
@@ -670,12 +672,12 @@ class CrossingDetail(QWidget):
 
     def _create_events_table(self):
         panel = QFrame()
-        panel.setStyleSheet("""
-            QFrame#eventsPanel {
-                background: #1e1e2e;
-                border: 2px solid #313244;
+        panel.setStyleSheet(f"""
+            QFrame#eventsPanel {{
+                background: {C('bg_primary')};
+                border: 2px solid {C('bg_input')};
                 border-radius: 12px;
-            }
+            }}
         """)
         panel.setObjectName("eventsPanel")
         layout = QVBoxLayout(panel)
@@ -683,28 +685,28 @@ class CrossingDetail(QWidget):
         layout.setSpacing(10)
 
         title = QLabel("So'nggi Hodisalar")
-        title.setStyleSheet("color: #cdd6f4; font-size: 14px; font-weight: bold; background: transparent;")
+        title.setStyleSheet(f"color: {C('text_primary')}; font-size: 14px; font-weight: bold; background: transparent;")
         layout.addWidget(title)
 
         div = QFrame()
         div.setFixedHeight(1)
-        div.setStyleSheet("background: #313244;")
+        div.setStyleSheet(f"background: {C('bg_input')};")
         layout.addWidget(div)
 
         table = QTableWidget()
         table.setColumnCount(4)
         table.setHorizontalHeaderLabels(["Vaqt", "Kamera", "Hodisa", "Transport"])
-        table.setStyleSheet("""
-            QTableWidget {
-                background: #181825; border: 1px solid #313244;
-                color: #cdd6f4; gridline-color: #313244; border-radius: 6px;
-            }
-            QHeaderView::section {
-                background: #1e1e2e; color: #a6adc8;
-                border: 1px solid #313244; padding: 6px;
+        table.setStyleSheet(f"""
+            QTableWidget {{
+                background: {C('bg_secondary')}; border: 1px solid {C('bg_input')};
+                color: {C('text_primary')}; gridline-color: {C('bg_input')}; border-radius: 6px;
+            }}
+            QHeaderView::section {{
+                background: {C('bg_primary')}; color: {C('text_secondary')};
+                border: 1px solid {C('bg_input')}; padding: 6px;
                 font-size: 11px; font-weight: bold;
-            }
-            QTableWidget::item:alternate { background: #1e1e2e; }
+            }}
+            QTableWidget::item:alternate {{ background: {C('bg_primary')}; }}
         """)
 
         header = table.horizontalHeader()

@@ -14,10 +14,11 @@ import cv2
 import numpy as np
 import os
 import time
+from gui.utils.theme_colors import C
 
 # RTSP low-latency + Intel VA-API hw decode (set once, not per-thread)
 os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = (
-    'rtsp_transport;tcp|stimeout;3000000|'
+    'rtsp_transport;tcp|stimeout;2000000|'
     'fflags;nobuffer|flags;low_delay|'
     'analyzeduration;500000|probesize;500000|'
     'hwaccel;vaapi|hwaccel_device;/dev/dri/renderD128'
@@ -109,6 +110,7 @@ class CameraWorker(QThread):
         return r
 
     def stop(self):
+        # Signal thread to stop - grab() will return and loop exits
         try:
             self._mutex.lock()
             self._running = False
@@ -116,22 +118,13 @@ class CameraWorker(QThread):
         except Exception:
             self._running = False
 
-        try:
-            if self.cap:
-                self.cap.release()
-                self.cap = None
-        except Exception:
-            self.cap = None
-
+        # Wait for thread to finish naturally (cap.release happens in run())
         try:
             if self.isRunning():
                 self.quit()
-                if not self.wait(3000):
-                    print(f"[{self.camera_name}] Force terminating thread")
-                    self.terminate()
-                    self.wait(1000)
-        except (RuntimeError, Exception) as e:
-            print(f"[{self.camera_name}] Stop error: {e}")
+                self.wait(5000)
+        except (RuntimeError, Exception):
+            pass
 
 
 class CameraSettingsDialog(QDialog):
@@ -154,25 +147,25 @@ class CameraSettingsDialog(QDialog):
         layout.setSpacing(12)
 
         title = QLabel(f"📷 {self.crossing_data.get('name', 'Pereezd')} - Kameralar")
-        title.setStyleSheet("color: #89b4fa; font-size: 16px; font-weight: bold;")
+        title.setStyleSheet(f"color: {C('accent_brand')}; font-size: 16px; font-weight: bold;")
         layout.addWidget(title)
 
         cameras = self.crossing_data.get("cameras", [])
 
         if not cameras:
             no_cam = QLabel("Kameralar topilmadi")
-            no_cam.setStyleSheet("color: #6c7086; font-size: 13px; padding: 20px;")
+            no_cam.setStyleSheet(f"color: {C('text_muted')}; font-size: 13px; padding: 20px;")
             no_cam.setAlignment(Qt.AlignmentFlag.AlignCenter)
             layout.addWidget(no_cam)
         else:
             for cam in cameras:
                 cam_frame = QFrame()
-                cam_frame.setStyleSheet("""
-                    QFrame {
-                        background-color: #1e1e3a;
-                        border: 1px solid #2d2d50;
+                cam_frame.setStyleSheet(f"""
+                    QFrame {{
+                        background-color: {C('bg_panel')};
+                        border: 1px solid {C('bg_panel_border')};
                         border-radius: 6px;
-                    }
+                    }}
                 """)
                 cam_inner = QVBoxLayout(cam_frame)
                 cam_inner.setContentsMargins(10, 8, 10, 8)
@@ -181,16 +174,15 @@ class CameraSettingsDialog(QDialog):
                 header = QHBoxLayout()
                 header.setSpacing(6)
                 cam_type = cam.get("type", "additional")
-                type_color = "#4a9eff" if cam_type == "main" else "#fab387"
+                type_color = C('accent_blue') if cam_type == "main" else C('accent_orange')
                 type_text = "Asosiy" if cam_type == "main" else "Qo'shimcha"
 
                 name_lbl = QLabel(cam.get("name", "Kamera"))
-                name_lbl.setStyleSheet("color: #ffffff; font-size: 13px; font-weight: bold;")
+                name_lbl.setStyleSheet(f"color: {C('text_primary')}; font-size: 13px; font-weight: bold;")
                 header.addWidget(name_lbl)
 
-                r_v = 74 if cam_type == "main" else 250
-                g_v = 158 if cam_type == "main" else 179
-                b_v = 255 if cam_type == "main" else 135
+                tc = type_color.lstrip('#')
+                r_v, g_v, b_v = int(tc[:2], 16), int(tc[2:4], 16), int(tc[4:6], 16)
                 type_badge = QLabel(type_text)
                 type_badge.setStyleSheet(f"""
                     color: {type_color}; font-size: 10px; font-weight: bold;
@@ -203,11 +195,11 @@ class CameraSettingsDialog(QDialog):
 
                 enabled = cam.get("enabled", True)
                 status_dot = QLabel("●")
-                status_dot.setStyleSheet(f"color: {'#4ade80' if enabled else '#ef4444'}; font-size: 10px;")
+                status_dot.setStyleSheet(f"color: {C('status_online') if enabled else C('status_error')}; font-size: 10px;")
                 header.addWidget(status_dot)
 
                 enabled_lbl = QLabel("Yoqilgan" if enabled else "O'chirilgan")
-                enabled_lbl.setStyleSheet(f"color: {'#4ade80' if enabled else '#ef4444'}; font-size: 10px;")
+                enabled_lbl.setStyleSheet(f"color: {C('status_online') if enabled else C('status_error')}; font-size: 10px;")
                 header.addWidget(enabled_lbl)
 
                 cam_inner.addLayout(header)
@@ -221,7 +213,7 @@ class CameraSettingsDialog(QDialog):
                         if proto_end >= 0 and at_pos > proto_end:
                             display_source = source[:proto_end + 3] + "***@" + source[at_pos + 1:]
                     src_lbl = QLabel(f"Manba: {display_source}")
-                    src_lbl.setStyleSheet("color: #6c7086; font-size: 10px;")
+                    src_lbl.setStyleSheet(f"color: {C('text_muted')}; font-size: 10px;")
                     src_lbl.setWordWrap(True)
                     cam_inner.addWidget(src_lbl)
 
@@ -234,7 +226,7 @@ class CameraSettingsDialog(QDialog):
 
                 # Toggle enable/disable
                 toggle_text = "O'chirish" if enabled else "Yoqish"
-                toggle_color = "#f9e2af" if enabled else "#a6e3a1"
+                toggle_color = C('accent_yellow') if enabled else C('accent_green')
                 toggle_btn = QPushButton(toggle_text)
                 toggle_btn.setStyleSheet(f"""
                     QPushButton {{
@@ -251,13 +243,13 @@ class CameraSettingsDialog(QDialog):
 
                 # Delete button
                 del_btn = QPushButton("O'chirish 🗑")
-                del_btn.setStyleSheet("""
-                    QPushButton {
-                        background-color: transparent; color: #f38ba8;
-                        border: 1px solid #f38ba8; border-radius: 3px;
+                del_btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background-color: transparent; color: {C('accent_red')};
+                        border: 1px solid {C('accent_red')}; border-radius: 3px;
                         padding: 3px 10px; font-size: 10px;
-                    }
-                    QPushButton:hover { background-color: rgba(243, 139, 168, 0.1); }
+                    }}
+                    QPushButton:hover {{ background-color: rgba(243, 139, 168, 0.1); }}
                 """)
                 del_btn.setCursor(Qt.CursorShape.PointingHandCursor)
                 del_btn.clicked.connect(
@@ -271,13 +263,13 @@ class CameraSettingsDialog(QDialog):
         btn_layout.addStretch()
         close_btn = QPushButton("Yopish")
         close_btn.setMinimumWidth(100)
-        close_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #313244; color: #cdd6f4;
-                border: 1px solid #45475a; border-radius: 4px;
+        close_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {C('bg_input')}; color: {C('text_primary')};
+                border: 1px solid {C('bg_hover')}; border-radius: 4px;
                 padding: 6px 16px; font-size: 12px;
-            }
-            QPushButton:hover { background-color: #45475a; }
+            }}
+            QPushButton:hover {{ background-color: {C('bg_hover')}; }}
         """)
         close_btn.clicked.connect(self.accept)
         btn_layout.addWidget(close_btn)
@@ -349,15 +341,15 @@ class CrossingCard(QWidget):
         # Card frame
         self.frame = QFrame()
         self.frame.setObjectName("cardFrame")
-        self.frame.setStyleSheet("""
-            QFrame#cardFrame {
-                background-color: #1a1a2e;
-                border: 2px solid #2d2d44;
+        self.frame.setStyleSheet(f"""
+            QFrame#cardFrame {{
+                background-color: {C('bg_card')};
+                border: 2px solid {C('bg_card_border')};
                 border-radius: 8px;
-            }
-            QFrame#cardFrame:hover {
-                border-color: #4a9eff;
-            }
+            }}
+            QFrame#cardFrame:hover {{
+                border-color: {C('accent_blue')};
+            }}
         """)
         self.frame.setCursor(Qt.CursorShape.PointingHandCursor)
 
@@ -367,13 +359,13 @@ class CrossingCard(QWidget):
 
         # ── HEADER ──
         header_frame = QFrame()
-        header_frame.setStyleSheet("""
-            QFrame {
-                background-color: #16162a;
+        header_frame.setStyleSheet(f"""
+            QFrame {{
+                background-color: {C('bg_card_header')};
                 border-top-left-radius: 6px;
                 border-top-right-radius: 6px;
-                border-bottom: 1px solid #2d2d44;
-            }
+                border-bottom: 1px solid {C('bg_card_border')};
+            }}
         """)
         header_layout = QHBoxLayout(header_frame)
         header_layout.setContentsMargins(12, 6, 8, 6)
@@ -381,19 +373,19 @@ class CrossingCard(QWidget):
 
         name_label = QLabel(self.crossing_data.get("name", "Pereezd"))
         name_label.setStyleSheet(
-            "color: #ffffff; font-size: 14px; font-weight: bold; background: transparent; border: none;")
+            f"color: {C('text_primary')}; font-size: 14px; font-weight: bold; background: transparent; border: none;")
         header_layout.addWidget(name_label)
         header_layout.addStretch()
 
         self.menu_btn = QToolButton()
         self.menu_btn.setText("⋮")
-        self.menu_btn.setStyleSheet("""
-            QToolButton {
-                color: #888; font-size: 18px; font-weight: bold;
+        self.menu_btn.setStyleSheet(f"""
+            QToolButton {{
+                color: {C('text_muted')}; font-size: 18px; font-weight: bold;
                 background: transparent; border: none;
                 border-radius: 4px; padding: 2px 6px;
-            }
-            QToolButton:hover { background-color: #2d2d50; color: #cdd6f4; }
+            }}
+            QToolButton:hover {{ background-color: {C('bg_panel_border')}; color: {C('text_primary')}; }}
         """)
         self.menu_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.menu_btn.clicked.connect(self._show_menu)
@@ -425,8 +417,8 @@ class CrossingCard(QWidget):
         self.main_camera_label.setMinimumSize(200, 150)
         self.main_camera_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.main_camera_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.main_camera_label.setStyleSheet("""
-            background-color: #0d0d1a; border: 1px solid #333;
+        self.main_camera_label.setStyleSheet(f"""
+            background-color: {C('bg_camera')}; border: 1px solid {C('border_light')};
             border-top-left-radius: 4px; border-top-right-radius: 4px;
             border-bottom: none;
         """)
@@ -434,14 +426,14 @@ class CrossingCard(QWidget):
 
         # Main camera bottom bar
         main_bottom = QFrame()
-        main_bottom.setStyleSheet("""
-            QFrame {
-                background-color: #13132a;
-                border: 1px solid #333;
+        main_bottom.setStyleSheet(f"""
+            QFrame {{
+                background-color: {C('bg_camera_bar')};
+                border: 1px solid {C('border_light')};
                 border-top: none;
                 border-bottom-left-radius: 4px;
                 border-bottom-right-radius: 4px;
-            }
+            }}
         """)
         main_bottom_layout = QHBoxLayout(main_bottom)
         main_bottom_layout.setContentsMargins(8, 3, 8, 3)
@@ -449,19 +441,19 @@ class CrossingCard(QWidget):
 
         self.status_indicator = QLabel("●")
         self.status_indicator.setStyleSheet(
-            "color: #4ade80; font-size: 8px; background: transparent; border: none;")
+            f"color: {C('status_online')}; font-size: 8px; background: transparent; border: none;")
         main_bottom_layout.addWidget(self.status_indicator)
 
         main_name_lbl = QLabel(f"  {main_name}")
         main_name_lbl.setStyleSheet(
-            "color: #a6adc8; font-size: 10px; background: transparent; border: none;")
+            f"color: {C('text_secondary')}; font-size: 10px; background: transparent; border: none;")
         main_bottom_layout.addWidget(main_name_lbl)
 
         main_bottom_layout.addStretch()
 
         self.time_label = QLabel("00:00:00")
         self.time_label.setStyleSheet(
-            "color: #ffffff; font-size: 10px; font-weight: bold; background: transparent; border: none;")
+            f"color: {C('text_primary')}; font-size: 10px; font-weight: bold; background: transparent; border: none;")
         main_bottom_layout.addWidget(self.time_label)
 
         main_bottom_layout.addStretch()
@@ -471,8 +463,8 @@ class CrossingCard(QWidget):
         self.additional_camera_label.setMinimumSize(160, 60)
         self.additional_camera_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.additional_camera_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.additional_camera_label.setStyleSheet("""
-            background-color: #0d0d1a; border: 1px solid #333;
+        self.additional_camera_label.setStyleSheet(f"""
+            background-color: {C('bg_camera')}; border: 1px solid {C('border_light')};
             border-top-left-radius: 4px; border-top-right-radius: 4px;
             border-bottom: none;
         """)
@@ -480,20 +472,20 @@ class CrossingCard(QWidget):
 
         # Additional camera bottom bar
         add_bottom = QFrame()
-        add_bottom.setStyleSheet("""
-            QFrame {
-                background-color: #13132a;
-                border: 1px solid #333; border-top: none;
+        add_bottom.setStyleSheet(f"""
+            QFrame {{
+                background-color: {C('bg_camera_bar')};
+                border: 1px solid {C('border_light')}; border-top: none;
                 border-bottom-left-radius: 4px;
                 border-bottom-right-radius: 4px;
-            }
+            }}
         """)
         add_bottom_layout = QHBoxLayout(add_bottom)
         add_bottom_layout.setContentsMargins(8, 3, 8, 3)
         add_name_lbl = QLabel(add_name)
         add_name_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         add_name_lbl.setStyleSheet(
-            "color: #a6adc8; font-size: 10px; background: transparent; border: none;")
+            f"color: {C('text_secondary')}; font-size: 10px; background: transparent; border: none;")
         add_bottom_layout.addWidget(add_name_lbl)
 
         # PLC panel
@@ -590,17 +582,17 @@ class CrossingCard(QWidget):
     def _create_plc_panel(self):
         plc_data = self.crossing_data.get("plc", {})
         plc_enabled = plc_data.get("enabled", False)
-        plc_color = "#4ade80" if plc_enabled else "#6c7086"
+        plc_color = C('status_online') if plc_enabled else C('text_muted')
         plc_status_text = "ONLINE" if plc_enabled else "O'CHIRILGAN"
 
         plc_frame = QFrame()
-        plc_frame.setStyleSheet("""
-            QFrame {
+        plc_frame.setStyleSheet(f"""
+            QFrame {{
                 background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 #1e1e3a, stop:1 #181830);
-                border: 1px solid #2d2d50;
+                    stop:0 {C('bg_panel')}, stop:1 {C('bg_panel_dark')});
+                border: 1px solid {C('bg_panel_border')};
                 border-radius: 5px;
-            }
+            }}
         """)
         plc_inner = QVBoxLayout(plc_frame)
         plc_inner.setContentsMargins(8, 5, 8, 5)
@@ -609,7 +601,7 @@ class CrossingCard(QWidget):
         plc_title = QLabel("PLC HOLATI")
         plc_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         plc_title.setStyleSheet(
-            "color: #585b70; font-size: 9px; font-weight: bold; letter-spacing: 1px;"
+            f"color: {C('text_dim')}; font-size: 9px; font-weight: bold; letter-spacing: 1px;"
             " background: transparent; border: none;")
         plc_inner.addWidget(plc_title)
 
@@ -637,100 +629,150 @@ class CrossingCard(QWidget):
         self.plc_time_label = QLabel(time.strftime("%H:%M:%S"))
         self.plc_time_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.plc_time_label.setStyleSheet(
-            "color: #585b70; font-size: 9px; background: transparent; border: none;")
+            f"color: {C('text_dim')}; font-size: 9px; background: transparent; border: none;")
         plc_inner.addWidget(self.plc_time_label)
 
         return plc_frame
 
+    @staticmethod
+    def _format_count(n):
+        """Format number: 1000 → 1,000 | 1000000 → 1.0M"""
+        if n >= 1_000_000:
+            return f"{n / 1_000_000:.1f}M"
+        if n >= 10_000:
+            return f"{n / 1_000:.1f}K"
+        return f"{n:,}".replace(",", " ")
+
+    @staticmethod
+    def _count_font_size(text):
+        """Dynamic font size based on text length"""
+        length = len(text)
+        if length <= 2:
+            return 18
+        if length <= 4:
+            return 15
+        if length <= 6:
+            return 13
+        return 11
+
+    def _update_stat_label(self, label, value, color):
+        """Update stat label with dynamic font size"""
+        text = self._format_count(value)
+        size = self._count_font_size(text)
+        label.setText(text)
+        label.setStyleSheet(
+            f"font-size: {size}px; font-weight: bold; color: {color};"
+            " background: transparent; border: none;")
+
     def _create_stats_panel(self):
         stats_frame = QFrame()
-        stats_frame.setStyleSheet("""
-            QFrame {
+        stats_frame.setStyleSheet(f"""
+            QFrame {{
                 background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 #1e1e3a, stop:1 #181830);
-                border: 1px solid #2d2d50;
+                    stop:0 {C('bg_panel')}, stop:1 {C('bg_panel_dark')});
+                border: 1px solid {C('bg_panel_border')};
                 border-radius: 5px;
-            }
+            }}
         """)
         stats_inner = QVBoxLayout(stats_frame)
-        stats_inner.setContentsMargins(8, 5, 8, 5)
+        stats_inner.setContentsMargins(6, 4, 6, 4)
         stats_inner.setSpacing(3)
 
         stats_title = QLabel("STATISTIKA")
         stats_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         stats_title.setStyleSheet(
-            "color: #585b70; font-size: 9px; font-weight: bold; letter-spacing: 1px;"
+            f"color: {C('text_dim')}; font-size: 9px; font-weight: bold; letter-spacing: 1px;"
             " background: transparent; border: none;")
         stats_inner.addWidget(stats_title)
 
         counts_row = QHBoxLayout()
         counts_row.setSpacing(4)
 
+        # Car badge
         car_badge = QFrame()
-        car_badge.setStyleSheet("""
-            QFrame {
-                background-color: rgba(74, 158, 255, 0.08);
-                border: 1px solid rgba(74, 158, 255, 0.2);
+        car_badge.setStyleSheet(f"""
+            QFrame {{
+                background-color: {C('bg_panel_dark')};
+                border: 1px solid {C('bg_panel_border')};
                 border-radius: 4px;
-            }
+            }}
         """)
         car_lay = QHBoxLayout(car_badge)
-        car_lay.setContentsMargins(6, 2, 6, 2)
+        car_lay.setContentsMargins(5, 3, 5, 3)
         car_lay.setSpacing(3)
         car_ic = QLabel("🚗")
-        car_ic.setStyleSheet("font-size: 35px; background: transparent; border: none;")
+        car_ic.setStyleSheet("font-size: 16px; background: transparent; border: none;")
+        car_ic.setFixedWidth(20)
         car_lay.addWidget(car_ic)
-        self.car_count = QLabel("16")
-        self.car_count.setStyleSheet(
-            "font-size: 25px; font-weight: bold; color: #4a9eff; background: transparent; border: none;")
+        self.car_count = QLabel("0")
+        self.car_count.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.car_count.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self._update_stat_label(self.car_count, 0, C('accent_blue'))
         car_lay.addWidget(self.car_count)
-        counts_row.addWidget(car_badge)
+        counts_row.addWidget(car_badge, stretch=1)
 
+        # Truck badge
         truck_badge = QFrame()
-        truck_badge.setStyleSheet("""
-            QFrame {
-                background-color: rgba(250, 179, 135, 0.08);
-                border: 1px solid rgba(250, 179, 135, 0.2);
+        truck_badge.setStyleSheet(f"""
+            QFrame {{
+                background-color: {C('bg_panel_dark')};
+                border: 1px solid {C('bg_panel_border')};
                 border-radius: 4px;
-            }
+            }}
         """)
         truck_lay = QHBoxLayout(truck_badge)
-        truck_lay.setContentsMargins(6, 2, 6, 2)
+        truck_lay.setContentsMargins(5, 3, 5, 3)
         truck_lay.setSpacing(3)
         truck_ic = QLabel("🚚")
-        truck_ic.setStyleSheet("font-size: 35px; background: transparent; border: none;")
+        truck_ic.setStyleSheet("font-size: 16px; background: transparent; border: none;")
+        truck_ic.setFixedWidth(20)
         truck_lay.addWidget(truck_ic)
-        self.truck_count = QLabel("24")
-        self.truck_count.setStyleSheet(
-            "font-size: 20px; font-weight: bold; color: #fab387; background: transparent; border: none;")
+        self.truck_count = QLabel("0")
+        self.truck_count.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.truck_count.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self._update_stat_label(self.truck_count, 0, C('accent_orange'))
         truck_lay.addWidget(self.truck_count)
-        counts_row.addWidget(truck_badge)
+        counts_row.addWidget(truck_badge, stretch=1)
 
         stats_inner.addLayout(counts_row)
 
-        self.total_label = QLabel("Jami: 36")
+        # Total
+        self.total_label = QLabel("Jami: 0")
         self.total_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.total_label.setStyleSheet("""
-            font-size: 20px; font-weight: bold; color: #a6e3a1;
-            background-color: rgba(166, 227, 161, 0.06);
-            border: 1px solid rgba(166, 227, 161, 0.15);
-            border-radius: 4px; padding: 2px 0px;
-        """)
+        self.total_label.setStyleSheet(
+            f"font-size: 13px; font-weight: bold; color: {C('accent_green')};"
+            f" background-color: {C('bg_panel_dark')};"
+            f" border: 1px solid {C('bg_panel_border')};"
+            " border-radius: 4px; padding: 2px 0px;")
         stats_inner.addWidget(self.total_label)
 
         return stats_frame
 
+    def update_stats(self, car_count: int, truck_count: int):
+        """Update statistics with dynamic formatting"""
+        self._update_stat_label(self.car_count, car_count, C('accent_blue'))
+        self._update_stat_label(self.truck_count, truck_count, C('accent_orange'))
+        total = car_count + truck_count
+        total_text = self._format_count(total)
+        total_size = self._count_font_size(total_text)
+        self.total_label.setText(f"Jami: {total_text}")
+        self.total_label.setStyleSheet(
+            f"font-size: {total_size}px; font-weight: bold; color: {C('accent_green')};"
+            f" background-color: {C('bg_panel_dark')};"
+            f" border: 1px solid {C('bg_panel_border')};"
+            " border-radius: 4px; padding: 2px 0px;")
+
     def _show_menu(self):
         menu = QMenu(self)
-        menu.setStyleSheet("""
-            QMenu {
-                background-color: #1e1e3a; border: 1px solid #2d2d50;
+        menu.setStyleSheet(f"""
+            QMenu {{
+                background-color: {C('menu_bg')}; border: 1px solid {C('menu_border')};
                 border-radius: 6px; padding: 4px;
-            }
-            QMenu::item {
-                color: #cdd6f4; padding: 6px 20px; border-radius: 4px;
-            }
-            QMenu::item:selected { background-color: #313244; }
+            }}
+            QMenu::item {{
+                color: {C('text_primary')}; padding: 6px 20px; border-radius: 4px;
+            }}
+            QMenu::item:selected {{ background-color: {C('menu_hover')}; }}
         """)
 
         cam_settings = menu.addAction("📷 Kamera Sozlamalari")
@@ -850,10 +892,10 @@ class CrossingCard(QWidget):
         try:
             if status == "online":
                 self.status_indicator.setStyleSheet(
-                    "color: #4ade80; font-size: 10px; background: transparent; border: none;")
+                    f"color: {C('status_online')}; font-size: 10px; background: transparent; border: none;")
             elif status == "error":
                 self.status_indicator.setStyleSheet(
-                    "color: #ef4444; font-size: 10px; background: transparent; border: none;")
+                    f"color: {C('status_error')}; font-size: 10px; background: transparent; border: none;")
                 if self.main_camera_label:
                     self._set_placeholder(self.main_camera_label, "Ulanmadi")
         except RuntimeError:

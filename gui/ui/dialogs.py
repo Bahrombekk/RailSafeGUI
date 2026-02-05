@@ -9,133 +9,137 @@ from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 
-DIALOG_STYLE = """
-    QDialog {
-        background-color: #1e1e2e;
-        color: #cdd6f4;
-    }
-    QLabel {
-        color: #cdd6f4;
+from gui.utils.theme_colors import C
+
+
+def _dialog_style():
+    return f"""
+    QDialog {{
+        background-color: {C('bg_primary')};
+        color: {C('text_primary')};
+    }}
+    QLabel {{
+        color: {C('text_primary')};
         font-size: 13px;
         background: transparent;
-    }
-    QLabel#titleLabel {
-        color: #89b4fa;
+    }}
+    QLabel#titleLabel {{
+        color: {C('accent_brand')};
         font-size: 18px;
         font-weight: bold;
         padding: 4px 0;
-    }
-    QLineEdit, QSpinBox, QComboBox {
-        background-color: #313244;
-        color: #cdd6f4;
-        border: 1px solid #45475a;
+    }}
+    QLineEdit, QSpinBox, QComboBox {{
+        background-color: {C('bg_input')};
+        color: {C('text_primary')};
+        border: 1px solid {C('bg_hover')};
         border-radius: 6px;
         padding: 8px 12px;
         font-size: 13px;
-        selection-background-color: #585b70;
-    }
-    QLineEdit:focus, QSpinBox:focus, QComboBox:focus {
-        border: 1px solid #89b4fa;
-    }
-    QLineEdit::placeholder {
-        color: #585b70;
-    }
-    QComboBox::drop-down {
+        selection-background-color: {C('text_dim')};
+    }}
+    QLineEdit:focus, QSpinBox:focus, QComboBox:focus {{
+        border: 1px solid {C('accent_brand')};
+    }}
+    QLineEdit::placeholder {{
+        color: {C('text_dim')};
+    }}
+    QComboBox::drop-down {{
         border: none;
         padding-right: 8px;
-    }
-    QComboBox QAbstractItemView {
-        background-color: #313244;
-        color: #cdd6f4;
-        border: 1px solid #45475a;
-        selection-background-color: #45475a;
-    }
-    QCheckBox {
-        color: #cdd6f4;
+    }}
+    QComboBox QAbstractItemView {{
+        background-color: {C('bg_input')};
+        color: {C('text_primary')};
+        border: 1px solid {C('bg_hover')};
+        selection-background-color: {C('bg_hover')};
+    }}
+    QCheckBox {{
+        color: {C('text_primary')};
         font-size: 13px;
         spacing: 8px;
-    }
-    QCheckBox::indicator {
+    }}
+    QCheckBox::indicator {{
         width: 18px;
         height: 18px;
         border-radius: 4px;
-        border: 2px solid #45475a;
-        background: #313244;
-    }
-    QCheckBox::indicator:checked {
-        background: #89b4fa;
-        border-color: #89b4fa;
-    }
-    QGroupBox {
-        color: #a6adc8;
+        border: 2px solid {C('bg_hover')};
+        background: {C('bg_input')};
+    }}
+    QCheckBox::indicator:checked {{
+        background: {C('accent_brand')};
+        border-color: {C('accent_brand')};
+    }}
+    QGroupBox {{
+        color: {C('text_secondary')};
         font-size: 13px;
         font-weight: bold;
-        border: 1px solid #313244;
+        border: 1px solid {C('bg_input')};
         border-radius: 8px;
         margin-top: 12px;
         padding: 16px 12px 12px 12px;
-    }
-    QGroupBox::title {
+    }}
+    QGroupBox::title {{
         subcontrol-origin: margin;
         left: 12px;
         padding: 0 6px;
-    }
-    QTabWidget::pane {
-        border: 1px solid #313244;
+    }}
+    QTabWidget::pane {{
+        border: 1px solid {C('bg_input')};
         border-radius: 0 0 8px 8px;
-        background: #1e1e2e;
+        background: {C('bg_primary')};
         top: -1px;
-    }
-    QTabBar::tab {
-        background: #181825;
-        color: #6c7086;
-        border: 1px solid #313244;
+    }}
+    QTabBar::tab {{
+        background: {C('bg_secondary')};
+        color: {C('text_muted')};
+        border: 1px solid {C('bg_input')};
         border-bottom: none;
         border-top-left-radius: 8px;
         border-top-right-radius: 8px;
         padding: 8px 20px;
         font-size: 12px;
         margin-right: 2px;
-    }
-    QTabBar::tab:selected {
-        background: #1e1e2e;
-        color: #89b4fa;
+    }}
+    QTabBar::tab:selected {{
+        background: {C('bg_primary')};
+        color: {C('accent_brand')};
         font-weight: bold;
-    }
-    QTabBar::tab:hover:!selected {
-        background: #1e1e2e;
-        color: #a6adc8;
-    }
-    QPushButton {
-        background-color: #313244;
-        color: #cdd6f4;
-        border: 1px solid #45475a;
+    }}
+    QTabBar::tab:hover:!selected {{
+        background: {C('bg_primary')};
+        color: {C('text_secondary')};
+    }}
+    QPushButton {{
+        background-color: {C('bg_input')};
+        color: {C('text_primary')};
+        border: 1px solid {C('bg_hover')};
         border-radius: 6px;
         padding: 8px 20px;
         font-size: 13px;
-    }
-    QPushButton:hover {
-        background-color: #45475a;
-        border-color: #585b70;
-    }
-    QPushButton#successButton {
-        background-color: #89b4fa;
-        color: #1e1e2e;
+    }}
+    QPushButton:hover {{
+        background-color: {C('bg_hover')};
+        border-color: {C('text_dim')};
+    }}
+    QPushButton#successButton {{
+        background-color: {C('accent_brand')};
+        color: {C('bg_primary')};
         border: none;
         font-weight: bold;
-    }
-    QPushButton#successButton:hover {
-        background-color: #74c7ec;
-    }
-    QPushButton#dangerButton {
+    }}
+    QPushButton#successButton:hover {{
+        background-color: {C('accent_teal')};
+    }}
+    QPushButton#dangerButton {{
         background-color: transparent;
-        color: #f38ba8;
-        border: 1px solid #f38ba8;
-    }
-    QPushButton#dangerButton:hover {
+        color: {C('accent_red')};
+        border: 1px solid {C('accent_red')};
+    }}
+    QPushButton#dangerButton:hover {{
         background-color: rgba(243, 139, 168, 0.1);
-    }
-"""
+    }}
+    """
 
 
 class AddCrossingDialog(QDialog):
@@ -155,7 +159,7 @@ class AddCrossingDialog(QDialog):
             self.setWindowTitle("Yangi Pereezd Qo'shish")
 
         self.setMinimumWidth(600)
-        self.setStyleSheet(DIALOG_STYLE)
+        self.setStyleSheet(_dialog_style())
         self._setup_ui()
 
     def _setup_ui(self):
@@ -359,7 +363,7 @@ class AddCameraDialog(QDialog):
         )
 
         self.setMinimumWidth(600)
-        self.setStyleSheet(DIALOG_STYLE)
+        self.setStyleSheet(_dialog_style())
         self._setup_ui()
 
     def _setup_ui(self):
@@ -398,7 +402,7 @@ class AddCameraDialog(QDialog):
         type_layout = QVBoxLayout()
         type_layout.addWidget(self.type_combo)
         self.type_info = QLabel()
-        self.type_info.setStyleSheet("color: #6c7086; font-size: 10px;")
+        self.type_info.setStyleSheet(f"color: {C('text_muted')}; font-size: 10px;")
         self._update_type_info()
         self.type_combo.currentIndexChanged.connect(self._update_type_info)
         type_layout.addWidget(self.type_info)
@@ -460,13 +464,13 @@ class AddCameraDialog(QDialog):
         is_main_selected = self.type_combo.currentIndex() == 0
         if is_main_selected and self._has_main:
             self.type_info.setText("Diqqat: Avvalgi asosiy kamera qo'shimchaga o'zgaradi")
-            self.type_info.setStyleSheet("color: #f9e2af; font-size: 10px;")
+            self.type_info.setStyleSheet(f"color: {C('accent_yellow')}; font-size: 10px;")
         elif is_main_selected:
             self.type_info.setText("Bu kamera asosiy (katta) sifatida ko'rsatiladi")
-            self.type_info.setStyleSheet("color: #a6e3a1; font-size: 10px;")
+            self.type_info.setStyleSheet(f"color: {C('accent_green')}; font-size: 10px;")
         else:
             self.type_info.setText("Bu kamera qo'shimcha (kichik) sifatida ko'rsatiladi")
-            self.type_info.setStyleSheet("color: #6c7086; font-size: 10px;")
+            self.type_info.setStyleSheet(f"color: {C('text_muted')}; font-size: 10px;")
 
     def _browse_source(self):
         file_path, _ = QFileDialog.getOpenFileName(
@@ -522,79 +526,94 @@ class AddCameraDialog(QDialog):
 
 
 class SettingsDialog(QDialog):
-    """Application settings dialog"""
+    """Application settings dialog - compact centered design"""
 
     def __init__(self, config_manager, parent=None):
         super().__init__(parent)
         self.config_manager = config_manager
         self.settings = config_manager.get_settings()
         self.setWindowTitle("Sozlamalar")
-        self.setMinimumWidth(500)
-        self.setStyleSheet(DIALOG_STYLE)
+        self.setFixedSize(480, 440)
+        self.setStyleSheet(_dialog_style())
         self._setup_ui()
 
     def _setup_ui(self):
         """Setup the user interface"""
         layout = QVBoxLayout(self)
-        layout.setSpacing(20)
+        layout.setSpacing(16)
+        layout.setContentsMargins(24, 20, 24, 20)
 
         # Title
-        title_label = QLabel("Dastur Sozlamalari")
+        title_label = QLabel("Sozlamalar")
         title_label.setObjectName("titleLabel")
+        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title_label)
 
-        # Form
-        form_layout = QFormLayout()
-        form_layout.setSpacing(15)
+        # ── Interfeys section ──
+        iface_group = QGroupBox("Interfeys")
+        iface_form = QFormLayout(iface_group)
+        iface_form.setSpacing(12)
+        iface_form.setContentsMargins(16, 20, 16, 12)
+        iface_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
 
-        # Language
         self.lang_combo = QComboBox()
         self.lang_combo.addItems(["O'zbekcha (uz)", "Русский (ru)", "English (en)"])
         current_lang = self.settings.get("language", "uz")
         lang_map = {"uz": 0, "ru": 1, "en": 2}
         self.lang_combo.setCurrentIndex(lang_map.get(current_lang, 0))
-        form_layout.addRow("Til:", self.lang_combo)
+        iface_form.addRow("Til:", self.lang_combo)
 
-        # Theme
         self.theme_combo = QComboBox()
-        self.theme_combo.addItems(["Qora (Dark)", "Oq (Light)"])
-        self.theme_combo.setCurrentIndex(0 if self.settings.get("theme") == "dark" else 1)
-        form_layout.addRow("Mavzu:", self.theme_combo)
+        self.theme_combo.addItems(["Qora (Dark)", "Harbiy (Military)", "Oq (Light)"])
+        theme_map = {"dark": 0, "military": 1, "light": 2}
+        self.theme_combo.setCurrentIndex(theme_map.get(self.settings.get("theme", "dark"), 0))
+        iface_form.addRow("Mavzu:", self.theme_combo)
 
-        # Warning threshold
+        layout.addWidget(iface_group)
+
+        # ── Monitoring section ──
+        monitor_group = QGroupBox("Monitoring")
+        monitor_form = QFormLayout(monitor_group)
+        monitor_form.setSpacing(12)
+        monitor_form.setContentsMargins(16, 20, 16, 12)
+        monitor_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+
         self.warning_threshold = QSpinBox()
         self.warning_threshold.setRange(1, 60)
         self.warning_threshold.setValue(int(self.settings.get("warning_threshold", 10)))
         self.warning_threshold.setSuffix(" soniya")
-        form_layout.addRow("Ogohlantirish chegarasi:", self.warning_threshold)
+        monitor_form.addRow("Ogohlantirish:", self.warning_threshold)
 
-        # Violation threshold
         self.violation_threshold = QSpinBox()
         self.violation_threshold.setRange(1, 120)
         self.violation_threshold.setValue(int(self.settings.get("violation_threshold", 15)))
         self.violation_threshold.setSuffix(" soniya")
-        form_layout.addRow("Buzilish chegarasi:", self.violation_threshold)
+        monitor_form.addRow("Buzilish:", self.violation_threshold)
 
-        # Auto save
         self.auto_save = QCheckBox("Avtomatik saqlash")
         self.auto_save.setChecked(self.settings.get("auto_save", True))
-        form_layout.addRow("", self.auto_save)
+        monitor_form.addRow("", self.auto_save)
 
-        layout.addLayout(form_layout)
+        layout.addWidget(monitor_group)
 
-        # Buttons
+        layout.addStretch()
+
+        # ── Buttons ──
         buttons_layout = QHBoxLayout()
+        buttons_layout.setSpacing(12)
         buttons_layout.addStretch()
 
-        cancel_btn = QPushButton("❌ Bekor Qilish")
+        cancel_btn = QPushButton("Bekor Qilish")
         cancel_btn.clicked.connect(self.reject)
-        cancel_btn.setMinimumWidth(120)
+        cancel_btn.setMinimumWidth(130)
+        cancel_btn.setMinimumHeight(36)
         buttons_layout.addWidget(cancel_btn)
 
-        save_btn = QPushButton("💾 Saqlash")
+        save_btn = QPushButton("Saqlash")
         save_btn.setObjectName("successButton")
         save_btn.clicked.connect(self._save)
-        save_btn.setMinimumWidth(120)
+        save_btn.setMinimumWidth(130)
+        save_btn.setMinimumHeight(36)
         buttons_layout.addWidget(save_btn)
 
         layout.addLayout(buttons_layout)
@@ -605,7 +624,7 @@ class SettingsDialog(QDialog):
 
         settings = {
             "language": lang_map[self.lang_combo.currentIndex()],
-            "theme": "dark" if self.theme_combo.currentIndex() == 0 else "light",
+            "theme": ["dark", "military", "light"][self.theme_combo.currentIndex()],
             "warning_threshold": float(self.warning_threshold.value()),
             "violation_threshold": float(self.violation_threshold.value()),
             "auto_save": self.auto_save.isChecked()

@@ -6,6 +6,7 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QScrollArea,
                               QGridLayout, QSizePolicy)
 from PyQt6.QtCore import Qt, pyqtSignal
 from gui.widgets.crossing_card import CrossingCard
+from gui.utils.theme_colors import C
 
 
 class Dashboard(QWidget):
@@ -73,7 +74,7 @@ class Dashboard(QWidget):
 
         if not crossings:
             msg = QLabel("Pereezdlar yo'q. Toolbar dan '+ Pereezd Qo'shish' bosing.")
-            msg.setStyleSheet("color: #6c7086; font-size: 14px; padding: 40px;")
+            msg.setStyleSheet(f"color: {C('text_muted')}; font-size: 14px; padding: 40px;")
             msg.setAlignment(Qt.AlignmentFlag.AlignCenter)
             self.grid.addWidget(msg, 0, 0, 1, 3)
             return

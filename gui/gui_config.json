@@ -131,38 +131,36 @@
       },
       "cameras": [
         {
-          "name": "EFEF",
+          "name": "qqqqq",
           "type": "main",
-          "source": "rtsp://admin:1q2w3e4r5t@192.168.170.160:554/Streaming/Channels/601",
-          "polygon_file": "WQD",
+          "source": "rtsp://admin:1q2w3e4r5t@192.168.170.160:554/Streaming/Channels/801",
+          "polygon_file": "qqq",
           "enabled": true,
           "id": 1,
-          "created_at": "2026-02-05T14:00:13.394440",
-          "status": "offline"
+          "updated_at": "2026-02-05T16:37:26.062495"
         },
         {
-          "name": "WADD",
+          "name": "qsqss",
           "type": "additional",
           "source": "rtsp://admin:1q2w3e4r5t@192.168.170.160:554/Streaming/Channels/701",
-          "polygon_file": "WWEWD",
+          "polygon_file": "wddw",
           "enabled": true,
           "id": 2,
-          "created_at": "2026-02-05T14:00:23.920767",
-          "status": "offline"
+          "updated_at": "2026-02-05T16:37:39.227507"
         }
       ],
       "id": 4,
       "created_at": "2026-02-05T13:52:14.946870",
       "status": "offline",
-      "updated_at": "2026-02-05T14:00:23.920816"
+      "updated_at": "2026-02-05T16:37:39.227554"
     }
   ],
   "settings": {
-    "theme": "light",
+    "theme": "military",
     "language": "en",
     "auto_save": true,
     "warning_threshold": 10.0,
-    "violation_threshold": 15.0
+    "violation_threshold": 115.0
   },
-  "last_updated": "2026-02-05T14:00:23.920822"
+  "last_updated": "2026-02-05T17:50:40.999209"
 }

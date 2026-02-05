@@ -13,6 +13,7 @@ from gui.ui.dashboard import Dashboard
 from gui.ui.crossing_detail import CrossingDetail
 from gui.ui.dialogs import AddCrossingDialog, AddCameraDialog, SettingsDialog
 from gui.utils.config_manager import ConfigManager
+from gui.utils.theme_colors import set_theme, C
 
 
 class MainWindow(QMainWindow):
@@ -29,8 +30,8 @@ class MainWindow(QMainWindow):
         # Remove default menu bar
         self.setMenuBar(None)
 
-        self._setup_ui()
         self._load_stylesheet()
+        self._setup_ui()
         self._setup_statusbar()
         self.showMaximized()
 
@@ -52,83 +53,95 @@ class MainWindow(QMainWindow):
 
     def _setup_toolbar(self):
         """Setup single clean toolbar"""
-        toolbar = QToolBar()
-        toolbar.setMovable(False)
-        toolbar.setFixedHeight(40)
-        toolbar.setStyleSheet("""
-            QToolBar {
-                background-color: #1e1e2e;
-                border-bottom: 2px solid #313244;
-                spacing: 5px;
-                padding: 2px 10px;
-            }
-            QToolButton {
-                background-color: transparent;
-                color: #cdd6f4;
-                border: none;
-                border-radius: 4px;
-                padding: 5px 12px;
-                font-size: 12px;
-            }
-            QToolButton:hover {
-                background-color: #313244;
-            }
-            QToolButton:pressed {
-                background-color: #45475a;
-            }
-        """)
-        self.addToolBar(toolbar)
+        self.toolbar = QToolBar()
+        self.toolbar.setMovable(False)
+        self.toolbar.setFixedHeight(40)
+        self.addToolBar(self.toolbar)
 
         # App icon/name
-        app_label = QLabel("  Perez  ")
-        app_label.setStyleSheet("color: #89b4fa; font-size: 14px; font-weight: bold;")
-        toolbar.addWidget(app_label)
+        self.app_label = QLabel("  Perez  ")
+        self.toolbar.addWidget(self.app_label)
 
-        toolbar.addSeparator()
+        self.toolbar.addSeparator()
 
         # Dashboard
         a = QAction("Dashboard", self)
         a.setShortcut("Ctrl+H")
         a.triggered.connect(self._show_dashboard)
-        toolbar.addAction(a)
+        self.toolbar.addAction(a)
 
         # Pereezd Qo'shish
         a = QAction("+ Pereezd Qo'shish", self)
         a.setShortcut("Ctrl+N")
         a.triggered.connect(self._add_crossing)
-        toolbar.addAction(a)
+        self.toolbar.addAction(a)
 
         # Yangilash
         a = QAction("Yangilash", self)
         a.setShortcut("F5")
         a.triggered.connect(self._refresh_current_view)
-        toolbar.addAction(a)
+        self.toolbar.addAction(a)
 
         # Sozlamalar
         a = QAction("Sozlamalar", self)
         a.setShortcut("Ctrl+,")
         a.triggered.connect(self._show_settings)
-        toolbar.addAction(a)
+        self.toolbar.addAction(a)
 
         # Spacer
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        toolbar.addWidget(spacer)
+        self.toolbar.addWidget(spacer)
 
         # Stats label (right side)
         self.toolbar_stats = QLabel("")
-        self.toolbar_stats.setStyleSheet("color: #6c7086; font-size: 11px; padding-right: 10px;")
-        toolbar.addWidget(self.toolbar_stats)
+        self.toolbar.addWidget(self.toolbar_stats)
+
+        self._apply_toolbar_style()
+
+    def _apply_toolbar_style(self):
+        """Apply current theme colors to toolbar"""
+        self.toolbar.setStyleSheet(f"""
+            QToolBar {{
+                background-color: {C('bg_primary')};
+                border-bottom: 2px solid {C('bg_input')};
+                spacing: 5px;
+                padding: 2px 10px;
+            }}
+            QToolButton {{
+                background-color: transparent;
+                color: {C('text_primary')};
+                border: none;
+                border-radius: 4px;
+                padding: 5px 12px;
+                font-size: 12px;
+            }}
+            QToolButton:hover {{
+                background-color: {C('bg_input')};
+            }}
+            QToolButton:pressed {{
+                background-color: {C('bg_hover')};
+            }}
+        """)
+        self.app_label.setStyleSheet(f"color: {C('accent_brand')}; font-size: 14px; font-weight: bold;")
+        self.toolbar_stats.setStyleSheet(f"color: {C('text_muted')}; font-size: 11px; padding-right: 10px;")
 
     def _setup_statusbar(self):
         self.statusbar = QStatusBar()
-        self.statusbar.setStyleSheet("QStatusBar { background: #181825; color: #6c7086; border-top: 1px solid #313244; }")
         self.setStatusBar(self.statusbar)
+        self._apply_statusbar_style()
 
         self.status_timer = QTimer(self)
         self.status_timer.timeout.connect(self._update_stats)
         self.status_timer.start(1000)
         self._update_stats()
+
+    def _apply_statusbar_style(self):
+        """Apply current theme colors to statusbar"""
+        self.statusbar.setStyleSheet(
+            f"QStatusBar {{ background: {C('bg_secondary')}; color: {C('text_muted')}; "
+            f"border-top: 1px solid {C('bg_input')}; }}"
+        )
 
     def _update_stats(self):
         crossings = self.config_manager.get_crossings()
@@ -138,7 +151,15 @@ class MainWindow(QMainWindow):
         self.statusbar.showMessage(f"Jami: {total} pereezd, {total_cams} kamera")
 
     def _load_stylesheet(self):
-        style_path = Path(__file__).parent.parent / "styles" / "dark_theme.qss"
+        theme = self.config_manager.get_settings().get("theme", "dark")
+        set_theme(theme)
+        theme_files = {
+            "dark": "dark_theme.qss",
+            "military": "military_theme.qss",
+            "light": "light_theme.qss",
+        }
+        filename = theme_files.get(theme, "dark_theme.qss")
+        style_path = Path(__file__).parent.parent / "styles" / filename
         if style_path.exists():
             with open(style_path, 'r', encoding='utf-8') as f:
                 self.setStyleSheet(f.read())
@@ -206,6 +227,9 @@ class MainWindow(QMainWindow):
         dialog = SettingsDialog(self.config_manager)
         if dialog.exec():
             self._load_stylesheet()
+            self._apply_toolbar_style()
+            self._apply_statusbar_style()
+            self._refresh_current_view()
 
     def _refresh_current_view(self):
         current = self.stacked_widget.currentWidget()
