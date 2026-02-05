@@ -28,41 +28,122 @@
           "enabled": true,
           "id": 2,
           "updated_at": "2026-02-03T12:36:44.884504"
-        },
-        {
-          "name": "sadwsda",
-          "type": "additional",
-          "source": "rtsp://admin:1q2w3e4r5t@192.168.170.160:554/Streaming/Channels/301",
-          "polygon_file": "/home/bahrombek/Desktop/pereezd_test/polygons/paligon1.json",
-          "enabled": true,
-          "id": 3,
-          "created_at": "2026-02-03T13:01:52.993524",
-          "status": "offline"
-        },
-        {
-          "name": "saa",
-          "type": "additional",
-          "source": "rtsp://admin:1q2w3e4r5t@192.168.170.160:554/Streaming/Channels/301",
-          "polygon_file": "/home/bahrombek/Desktop/pereezd_test/polygons/paligon301.json",
-          "enabled": true,
-          "id": 4,
-          "created_at": "2026-02-03T13:06:26.679100",
-          "status": "offline"
-        },
-        {
-          "name": "22eq",
-          "type": "additional",
-          "source": "rtsp://admin:1q2w3e4r5t@192.168.170.160:554/Streaming/Channels/801",
-          "polygon_file": "wqwd",
-          "enabled": true,
-          "id": 5,
-          "updated_at": "2026-02-03T17:52:15.629159"
         }
       ],
       "id": 1,
       "created_at": "2026-02-02T19:21:53.314502",
       "status": "offline",
-      "updated_at": "2026-02-03T17:52:15.629192"
+      "updated_at": "2026-02-04T16:07:06.464194"
+    },
+    {
+      "name": "dawdad",
+      "location": "wada",
+      "description": "awds",
+      "plc": {
+        "enabled": false,
+        "ip": "",
+        "port": 102,
+        "type": "Siemens S7-1200"
+      },
+      "cameras": [
+        {
+          "name": "dadw",
+          "type": "main",
+          "source": "rtsp://admin:1q2w3e4r5t@192.168.170.160:554/Streaming/Channels/601",
+          "polygon_file": "aaa",
+          "enabled": true,
+          "id": 1,
+          "updated_at": "2026-02-05T11:20:34.233273"
+        },
+        {
+          "name": "xwsxc",
+          "type": "additional",
+          "source": "rtsp://admin:1q2w3e4r5t@192.168.170.160:554/Streaming/Channels/401",
+          "polygon_file": "wwww",
+          "enabled": true,
+          "id": 2,
+          "created_at": "2026-02-05T11:22:40.023647",
+          "status": "offline"
+        }
+      ],
+      "id": 2,
+      "created_at": "2026-02-05T11:08:18.864623",
+      "status": "offline",
+      "updated_at": "2026-02-05T11:22:40.023676"
+    },
+    {
+      "name": "qwd",
+      "location": "wqd",
+      "description": "qwd",
+      "plc": {
+        "enabled": false,
+        "ip": "",
+        "port": 102,
+        "type": "Siemens S7-1200"
+      },
+      "cameras": [
+        {
+          "name": "scaaaaaaaaaaaa",
+          "type": "main",
+          "source": "rtsp://admin:1q2w3e4r5t@192.168.170.160:554/Streaming/Channels/401",
+          "polygon_file": "dawd",
+          "enabled": true,
+          "id": 1,
+          "created_at": "2026-02-05T11:40:36.664215",
+          "status": "offline"
+        },
+        {
+          "name": "wadad",
+          "type": "additional",
+          "source": "rtsp://admin:1q2w3e4r5t@192.168.170.160:554/Streaming/Channels/501",
+          "polygon_file": "wqedwd",
+          "enabled": true,
+          "id": 2,
+          "created_at": "2026-02-05T11:40:51.440106",
+          "status": "offline"
+        }
+      ],
+      "id": 3,
+      "created_at": "2026-02-05T11:23:22.800673",
+      "status": "offline",
+      "updated_at": "2026-02-05T11:40:51.440123"
+    },
+    {
+      "name": "edw",
+      "location": "ewdA",
+      "description": "WEDA",
+      "plc": {
+        "enabled": false,
+        "ip": "",
+        "port": 102,
+        "type": "Siemens S7-1200"
+      },
+      "cameras": [
+        {
+          "name": "wadwd",
+          "type": "main",
+          "source": "rtsp://admin:1q2w3e4r5t@192.168.170.160:554/Streaming/Channels/101",
+          "polygon_file": "fcsed",
+          "enabled": true,
+          "id": 1,
+          "created_at": "2026-02-05T11:41:18.037168",
+          "status": "offline"
+        },
+        {
+          "name": "fewfaf",
+          "type": "additional",
+          "source": "rtsp://admin:1q2w3e4r5t@192.168.170.160:554/Streaming/Channels/701",
+          "polygon_file": "wq",
+          "enabled": true,
+          "id": 2,
+          "created_at": "2026-02-05T11:41:39.402968",
+          "status": "offline"
+        }
+      ],
+      "id": 4,
+      "created_at": "2026-02-05T11:23:42.314965",
+      "status": "offline",
+      "updated_at": "2026-02-05T11:41:39.403015"
     }
   ],
   "settings": {
@@ -72,5 +153,5 @@
     "warning_threshold": 10.0,
     "violation_threshold": 15.0
   },
-  "last_updated": "2026-02-04T10:40:03.708469"
+  "last_updated": "2026-02-05T11:41:39.403023"
 }

@@ -80,22 +80,26 @@ class Dashboard(QWidget):
 
         count = len(crossings)
 
-        # 1 ta = to'liq ekran, 2 ta = teng ikkiga, 3+ = normal grid
+        # 1 ta = to'liq ekran, 2-4 ta = teng bo'lib to'ldiradi, 5+ = scroll grid
         if count == 1:
             cols = 1
         elif count == 2:
+            cols = 2
+        elif count == 3:
+            cols = 3
+        elif count == 4:
             cols = 2
         else:
             cols = self._get_column_count()
 
         self._last_col_count = cols
         rows = (count + cols - 1) // cols
-        fill_screen = (count <= 2)
+        fill_screen = (count <= 4)
 
         for idx, crossing in enumerate(crossings):
             row = idx // cols
             col = idx % cols
-            card = CrossingCard(crossing)
+            card = CrossingCard(crossing, config_manager=self.config_manager, compact=(count in (2, 3) or count >= 5))
             card.clicked.connect(self.crossing_selected.emit)
             if fill_screen:
                 card.setMaximumHeight(16777215)
@@ -124,9 +128,13 @@ class Dashboard(QWidget):
             cols = 1
         elif count == 2:
             cols = 2
+        elif count == 3:
+            cols = 3
+        elif count == 4:
+            cols = 2
 
         rows = (count + cols - 1) // cols
-        fill_screen = (count <= 2)
+        fill_screen = (count <= 4)
 
         for idx, card in enumerate(self.crossing_cards):
             row = idx // cols
@@ -144,10 +152,13 @@ class Dashboard(QWidget):
 
     def _clear_crossings(self):
         for card in self.crossing_cards:
-            if hasattr(card, 'cleanup'):
-                card.cleanup()
-            card.setParent(None)
-            card.deleteLater()
+            try:
+                if hasattr(card, 'cleanup'):
+                    card.cleanup()
+                card.setParent(None)
+                card.deleteLater()
+            except (RuntimeError, Exception):
+                pass
         self.crossing_cards.clear()
 
     def resizeEvent(self, event):

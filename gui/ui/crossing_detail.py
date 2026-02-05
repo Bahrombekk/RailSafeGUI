@@ -98,14 +98,18 @@ class DetailCameraWorker(QThread):
         return r
 
     def stop(self):
-        self._mutex.lock()
-        self._running = False
-        self._mutex.unlock()
-        if self.isRunning():
-            self.quit()
-            if not self.wait(3000):
-                self.terminate()
-                self.wait(1000)
+        try:
+            self._mutex.lock()
+            self._running = False
+            self._mutex.unlock()
+        except Exception:
+            self._running = False
+        try:
+            if self.isRunning():
+                self.quit()
+                self.wait(5000)
+        except (RuntimeError, Exception):
+            pass
 
 
 class CrossingDetail(QWidget):
@@ -307,10 +311,13 @@ class CrossingDetail(QWidget):
         cameras_grid = QGridLayout()
         cameras_grid.setSpacing(10)
 
+        cam_count = len(cameras)
         for i, cam in enumerate(cameras):
             row = i // cols
             col = i % cols
             panel = self._create_camera_panel(cam, i)
+            if cam_count == 1:
+                panel.setMaximumHeight(500)
             cameras_grid.addWidget(panel, row, col)
 
         layout.addLayout(cameras_grid)
@@ -383,7 +390,7 @@ class CrossingDetail(QWidget):
         video.setMinimumSize(200, 120)
         video.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         video.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        video.setScaledContents(True)
+        video.setScaledContents(False)
         video.setStyleSheet("""
             background: #11111b;
             border: 1px solid #313244;
@@ -430,7 +437,11 @@ class CrossingDetail(QWidget):
             h, w = frame.shape[:2]
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             qimg = QImage(rgb.data, w, h, w * 3, QImage.Format.Format_RGB888)
-            label.setPixmap(QPixmap.fromImage(qimg))
+            pixmap = QPixmap.fromImage(qimg)
+            label_size = label.size()
+            scaled = pixmap.scaled(label_size, Qt.AspectRatioMode.KeepAspectRatio,
+                                   Qt.TransformationMode.SmoothTransformation)
+            label.setPixmap(scaled)
         except Exception:
             pass
 
@@ -463,35 +474,44 @@ class CrossingDetail(QWidget):
 
     def _on_frame(self, label, frame):
         if not self._destroyed:
-            self._show_frame(label, frame)
+            try:
+                self._show_frame(label, frame)
+            except RuntimeError:
+                self._destroyed = True
 
     def _on_camera_status(self, cam_id, status):
         if self._destroyed:
             return
-        dot = self.camera_status_labels.get(cam_id)
-        label = self.camera_labels.get(cam_id)
-        if dot:
-            if status == "online":
-                dot.setStyleSheet("color: #a6e3a1; font-size: 12px; background: transparent;")
-            elif status == "reconnecting":
-                dot.setStyleSheet("color: #f9e2af; font-size: 12px; background: transparent;")
-                if label:
-                    self._set_placeholder(label, "Qayta ulanmoqda...", 480, 270)
-            elif status == "error":
-                dot.setStyleSheet("color: #f38ba8; font-size: 12px; background: transparent;")
-                if label:
-                    self._set_placeholder(label, "Ulanmadi", 480, 270)
+        try:
+            dot = self.camera_status_labels.get(cam_id)
+            label = self.camera_labels.get(cam_id)
+            if dot:
+                if status == "online":
+                    dot.setStyleSheet("color: #a6e3a1; font-size: 12px; background: transparent;")
+                elif status == "reconnecting":
+                    dot.setStyleSheet("color: #f9e2af; font-size: 12px; background: transparent;")
+                    if label:
+                        self._set_placeholder(label, "Qayta ulanmoqda...", 480, 270)
+                elif status == "error":
+                    dot.setStyleSheet("color: #f38ba8; font-size: 12px; background: transparent;")
+                    if label:
+                        self._set_placeholder(label, "Ulanmadi", 480, 270)
+        except RuntimeError:
+            self._destroyed = True
 
     def _update_time(self):
         if self._destroyed:
             return
-        current = time.strftime("%H:%M:%S")
-        cameras = self.crossing_data.get("cameras", [])
-        for cam in cameras:
-            cid = cam.get("id", 0)
-            lbl = self.findChild(QLabel, f"time_label_{cid}")
-            if lbl:
-                lbl.setText(current)
+        try:
+            current = time.strftime("%H:%M:%S")
+            cameras = self.crossing_data.get("cameras", [])
+            for cam in cameras:
+                cid = cam.get("id", 0)
+                lbl = self.findChild(QLabel, f"time_label_{cid}")
+                if lbl:
+                    lbl.setText(current)
+        except RuntimeError:
+            self._destroyed = True
 
     def _open_camera_settings(self, camera_id):
         from gui.ui.dialogs import AddCameraDialog
@@ -674,15 +694,21 @@ class CrossingDetail(QWidget):
         if self._destroyed:
             return
         self._destroyed = True
-        if hasattr(self, 'time_timer'):
-            self.time_timer.stop()
+        try:
+            if hasattr(self, 'time_timer') and self.time_timer is not None:
+                self.time_timer.stop()
+        except RuntimeError:
+            pass
         for w in self.camera_workers:
             try:
                 w.frame_ready.disconnect()
                 w.status_changed.disconnect()
             except Exception:
                 pass
-            w.stop()
+            try:
+                w.stop()
+            except (RuntimeError, Exception):
+                pass
         self.camera_workers.clear()
 
     def refresh(self):
@@ -693,14 +719,17 @@ class CrossingDetail(QWidget):
         self.camera_status_labels.clear()
         self.camera_workers = []
 
-        layout = self.layout()
-        if layout:
-            for i in reversed(range(layout.count())):
-                item = layout.itemAt(i)
-                if item.widget():
-                    item.widget().setParent(None)
-                elif item.spacerItem():
-                    layout.removeItem(item)
+        # Remove all child widgets
+        old_layout = self.layout()
+        if old_layout:
+            while old_layout.count():
+                item = old_layout.takeAt(0)
+                w = item.widget()
+                if w:
+                    w.setParent(None)
+                    w.deleteLater()
+            # Transfer old layout to temp widget so it gets deleted
+            QWidget().setLayout(old_layout)
 
         self._setup_ui()
         QTimer.singleShot(300, self._start_all_cameras)
@@ -711,4 +740,7 @@ class CrossingDetail(QWidget):
 
     def deleteLater(self):
         self.cleanup()
-        super().deleteLater()
+        try:
+            super().deleteLater()
+        except RuntimeError:
+            pass

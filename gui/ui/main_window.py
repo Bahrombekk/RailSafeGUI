@@ -148,9 +148,13 @@ class MainWindow(QMainWindow):
         while self.stacked_widget.count() > 1:
             w = self.stacked_widget.widget(1)
             self.stacked_widget.removeWidget(w)
-            if hasattr(w, 'cleanup'):
-                w.cleanup()
-            w.setParent(None)
+            try:
+                if hasattr(w, 'cleanup'):
+                    w.cleanup()
+                w.setParent(None)
+                w.deleteLater()
+            except (RuntimeError, Exception):
+                pass
 
     def _show_dashboard(self):
         self._cleanup_detail_views()
@@ -213,14 +217,16 @@ class MainWindow(QMainWindow):
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No)
         if reply == QMessageBox.StandardButton.Yes:
-            self.status_timer.stop()
-            # Clean up detail views first
-            self._cleanup_detail_views()
-            if hasattr(self, 'dashboard'):
-                self.dashboard._clear_crossings()
-            settings = self.config_manager.get_settings()
-            if settings.get("auto_save", True):
-                self.config_manager.save_config()
+            try:
+                self.status_timer.stop()
+                self._cleanup_detail_views()
+                if hasattr(self, 'dashboard'):
+                    self.dashboard._clear_crossings()
+                settings = self.config_manager.get_settings()
+                if settings.get("auto_save", True):
+                    self.config_manager.save_config()
+            except (RuntimeError, Exception) as e:
+                print(f"[CloseEvent] Cleanup error: {e}")
             event.accept()
         else:
             event.ignore()

@@ -9,6 +9,134 @@ from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 
+DIALOG_STYLE = """
+    QDialog {
+        background-color: #1e1e2e;
+        color: #cdd6f4;
+    }
+    QLabel {
+        color: #cdd6f4;
+        font-size: 13px;
+        background: transparent;
+    }
+    QLabel#titleLabel {
+        color: #89b4fa;
+        font-size: 18px;
+        font-weight: bold;
+        padding: 4px 0;
+    }
+    QLineEdit, QSpinBox, QComboBox {
+        background-color: #313244;
+        color: #cdd6f4;
+        border: 1px solid #45475a;
+        border-radius: 6px;
+        padding: 8px 12px;
+        font-size: 13px;
+        selection-background-color: #585b70;
+    }
+    QLineEdit:focus, QSpinBox:focus, QComboBox:focus {
+        border: 1px solid #89b4fa;
+    }
+    QLineEdit::placeholder {
+        color: #585b70;
+    }
+    QComboBox::drop-down {
+        border: none;
+        padding-right: 8px;
+    }
+    QComboBox QAbstractItemView {
+        background-color: #313244;
+        color: #cdd6f4;
+        border: 1px solid #45475a;
+        selection-background-color: #45475a;
+    }
+    QCheckBox {
+        color: #cdd6f4;
+        font-size: 13px;
+        spacing: 8px;
+    }
+    QCheckBox::indicator {
+        width: 18px;
+        height: 18px;
+        border-radius: 4px;
+        border: 2px solid #45475a;
+        background: #313244;
+    }
+    QCheckBox::indicator:checked {
+        background: #89b4fa;
+        border-color: #89b4fa;
+    }
+    QGroupBox {
+        color: #a6adc8;
+        font-size: 13px;
+        font-weight: bold;
+        border: 1px solid #313244;
+        border-radius: 8px;
+        margin-top: 12px;
+        padding: 16px 12px 12px 12px;
+    }
+    QGroupBox::title {
+        subcontrol-origin: margin;
+        left: 12px;
+        padding: 0 6px;
+    }
+    QTabWidget::pane {
+        border: 1px solid #313244;
+        border-radius: 0 0 8px 8px;
+        background: #1e1e2e;
+        top: -1px;
+    }
+    QTabBar::tab {
+        background: #181825;
+        color: #6c7086;
+        border: 1px solid #313244;
+        border-bottom: none;
+        border-top-left-radius: 8px;
+        border-top-right-radius: 8px;
+        padding: 8px 20px;
+        font-size: 12px;
+        margin-right: 2px;
+    }
+    QTabBar::tab:selected {
+        background: #1e1e2e;
+        color: #89b4fa;
+        font-weight: bold;
+    }
+    QTabBar::tab:hover:!selected {
+        background: #1e1e2e;
+        color: #a6adc8;
+    }
+    QPushButton {
+        background-color: #313244;
+        color: #cdd6f4;
+        border: 1px solid #45475a;
+        border-radius: 6px;
+        padding: 8px 20px;
+        font-size: 13px;
+    }
+    QPushButton:hover {
+        background-color: #45475a;
+        border-color: #585b70;
+    }
+    QPushButton#successButton {
+        background-color: #89b4fa;
+        color: #1e1e2e;
+        border: none;
+        font-weight: bold;
+    }
+    QPushButton#successButton:hover {
+        background-color: #74c7ec;
+    }
+    QPushButton#dangerButton {
+        background-color: transparent;
+        color: #f38ba8;
+        border: 1px solid #f38ba8;
+    }
+    QPushButton#dangerButton:hover {
+        background-color: rgba(243, 139, 168, 0.1);
+    }
+"""
+
 
 class AddCrossingDialog(QDialog):
     """Dialog for adding/editing a railway crossing"""
@@ -27,6 +155,7 @@ class AddCrossingDialog(QDialog):
             self.setWindowTitle("Yangi Pereezd Qo'shish")
 
         self.setMinimumWidth(600)
+        self.setStyleSheet(DIALOG_STYLE)
         self._setup_ui()
 
     def _setup_ui(self):
@@ -230,6 +359,7 @@ class AddCameraDialog(QDialog):
         )
 
         self.setMinimumWidth(600)
+        self.setStyleSheet(DIALOG_STYLE)
         self._setup_ui()
 
     def _setup_ui(self):
@@ -400,6 +530,7 @@ class SettingsDialog(QDialog):
         self.settings = config_manager.get_settings()
         self.setWindowTitle("Sozlamalar")
         self.setMinimumWidth(500)
+        self.setStyleSheet(DIALOG_STYLE)
         self._setup_ui()
 
     def _setup_ui(self):
