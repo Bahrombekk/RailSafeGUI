@@ -577,7 +577,10 @@ class CrossingCard(QWidget):
             frame_layout.addWidget(content_widget, stretch=1)
 
         main_layout.addWidget(self.frame)
-        self.frame.mousePressEvent = self._on_click
+        self.frame.mousePressEvent = self._on_mouse_press
+        self.frame.mouseDoubleClickEvent = self._on_double_click
+        self.frame.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.frame.customContextMenuRequested.connect(self._show_context_menu)
 
     def _create_plc_panel(self):
         plc_data = self.crossing_data.get("plc", {})
@@ -910,8 +913,41 @@ class CrossingCard(QWidget):
         except RuntimeError:
             self._is_destroyed = True
 
-    def _on_click(self, event):
-        self.clicked.emit(self.crossing_id)
+    def _on_mouse_press(self, event):
+        """Single click - do nothing, wait for double click"""
+        pass
+
+    def _on_double_click(self, event):
+        """Double click - open crossing detail"""
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit(self.crossing_id)
+
+    def _show_context_menu(self, pos):
+        """Right click context menu"""
+        menu = QMenu(self)
+        menu.setStyleSheet(f"""
+            QMenu {{
+                background-color: {C('menu_bg')}; border: 1px solid {C('menu_border')};
+                border-radius: 6px; padding: 4px;
+            }}
+            QMenu::item {{
+                color: {C('text_primary')}; padding: 6px 20px; border-radius: 4px;
+            }}
+            QMenu::item:selected {{ background-color: {C('menu_hover')}; }}
+        """)
+
+        open_action = menu.addAction("📂 Ochish")
+        open_action.triggered.connect(lambda: self.clicked.emit(self.crossing_id))
+
+        cam_settings = menu.addAction("📷 Kamera Sozlamalari")
+        cam_settings.triggered.connect(self._open_camera_settings)
+
+        menu.addSeparator()
+
+        info_action = menu.addAction("ℹ️ Ma'lumotlar")
+        info_action.triggered.connect(lambda: self.clicked.emit(self.crossing_id))
+
+        menu.exec(self.frame.mapToGlobal(pos))
 
     def stop_cameras(self):
         for worker in self.camera_workers:

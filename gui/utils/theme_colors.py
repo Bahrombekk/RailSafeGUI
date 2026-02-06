@@ -106,10 +106,10 @@ THEMES = {
         "bg_secondary": "#eef0f5",
         "bg_card": "#ffffff",
         "bg_card_header": "#f0f2f7",
-        "bg_card_border": "#d1d5db",
+        "bg_card_border": "#c0c5d0",
         "bg_panel": "#f8f9fc",
         "bg_panel_dark": "#f0f2f7",
-        "bg_panel_border": "#d1d5db",
+        "bg_panel_border": "#c0c5d0",
         "bg_camera": "#1e293b",
         "bg_camera_bar": "#f0f2f7",
         "bg_input": "#ffffff",
@@ -118,12 +118,12 @@ THEMES = {
         # Text
         "text_primary": "#2d3436",
         "text_secondary": "#4b5563",
-        "text_muted": "#9ca3af",
-        "text_dim": "#b0b8c4",
+        "text_muted": "#6b7280",
+        "text_dim": "#9ca3af",
 
         # Accent colors
         "accent_blue": "#3b82f6",
-        "accent_brand": "#1e40af",
+        "accent_brand": "#2563eb",
         "accent_purple": "#6366f1",
         "accent_orange": "#f59e0b",
         "accent_green": "#22c55e",
@@ -138,13 +138,13 @@ THEMES = {
         "status_offline": "#9ca3af",
 
         # Borders
-        "border_light": "#d1d5db",
-        "border_card": "#d1d5db",
-        "border_panel": "#d1d5db",
+        "border_light": "#b0b8c4",
+        "border_card": "#c0c5d0",
+        "border_panel": "#c0c5d0",
 
         # Menu
         "menu_bg": "#ffffff",
-        "menu_border": "#d1d5db",
+        "menu_border": "#c0c5d0",
         "menu_hover": "#e8edf5",
     },
 }

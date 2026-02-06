@@ -6,10 +6,135 @@ from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                               QLineEdit, QPushButton, QGroupBox, QFormLayout,
                               QSpinBox, QCheckBox, QFileDialog, QComboBox,
                               QMessageBox, QTabWidget, QWidget)
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont
+from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QFont, QPainter, QPen, QColor
 
 from gui.utils.theme_colors import C
+
+
+class StyledCheckBox(QWidget):
+    """Custom checkbox with visible checkmark"""
+    toggled = pyqtSignal(bool)
+
+    def __init__(self, text: str, parent=None):
+        super().__init__(parent)
+        self._checked = False
+        self._text = text
+        self._hovered = False
+        self.setFixedHeight(28)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setMouseTracking(True)
+
+    def isChecked(self) -> bool:
+        return self._checked
+
+    def setChecked(self, checked: bool):
+        self._checked = checked
+        self.update()
+        self.toggled.emit(checked)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.setChecked(not self._checked)
+
+    def enterEvent(self, event):
+        self._hovered = True
+        self.update()
+
+    def leaveEvent(self, event):
+        self._hovered = False
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        # Box dimensions
+        box_size = 22
+        box_x = 4
+        box_y = (self.height() - box_size) // 2
+
+        # Draw box background
+        if self._checked:
+            painter.setBrush(QColor(C('accent_brand')))
+            painter.setPen(QPen(QColor(C('accent_brand')), 2))
+        else:
+            painter.setBrush(QColor(C('bg_input')))
+            border_color = C('accent_brand') if self._hovered else C('text_muted')
+            painter.setPen(QPen(QColor(border_color), 2))
+
+        painter.drawRoundedRect(box_x, box_y, box_size, box_size, 5, 5)
+
+        # Draw checkmark if checked
+        if self._checked:
+            pen = QPen(QColor(C('bg_primary')), 3)
+            pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+            painter.setPen(pen)
+
+            # Checkmark path
+            cx = box_x + box_size // 2
+            cy = box_y + box_size // 2
+            painter.drawLine(cx - 5, cy, cx - 1, cy + 4)
+            painter.drawLine(cx - 1, cy + 4, cx + 6, cy - 4)
+
+        # Draw text
+        painter.setPen(QColor(C('text_primary')))
+        font = painter.font()
+        font.setPointSize(11)
+        painter.setFont(font)
+        text_x = box_x + box_size + 10
+        painter.drawText(text_x, 0, self.width() - text_x, self.height(),
+                        Qt.AlignmentFlag.AlignVCenter, self._text)
+
+
+class StyledSpinBox(QSpinBox):
+    """Styled spinbox for manual input"""
+
+    def __init__(self, min_val: int = 0, max_val: int = 9999, suffix: str = "", parent=None):
+        super().__init__(parent)
+        self.setRange(min_val, max_val)
+        self.setSuffix(suffix)
+        self.setMinimumWidth(180)
+        self.setMinimumHeight(38)
+        self.setStyleSheet(f"""
+            QSpinBox {{
+                background: {C('bg_input')};
+                color: {C('text_primary')};
+                border: 1px solid {C('border_light')};
+                border-radius: 6px;
+                padding: 6px 30px 6px 12px;
+                font-size: 14px;
+                font-weight: bold;
+            }}
+            QSpinBox:focus {{
+                border-color: {C('accent_brand')};
+            }}
+            QSpinBox::up-button {{
+                subcontrol-origin: border;
+                subcontrol-position: center right;
+                width: 24px;
+                height: 36px;
+                right: 4px;
+                border: none;
+                background: transparent;
+            }}
+            QSpinBox::down-button {{
+                width: 0;
+                height: 0;
+                border: none;
+            }}
+            QSpinBox::up-arrow {{
+                image: none;
+                width: 0;
+                height: 0;
+            }}
+            QSpinBox::down-arrow {{
+                image: none;
+                width: 0;
+                height: 0;
+            }}
+        """)
 
 
 def _dialog_style():
@@ -32,7 +157,7 @@ def _dialog_style():
     QLineEdit, QSpinBox, QComboBox {{
         background-color: {C('bg_input')};
         color: {C('text_primary')};
-        border: 1px solid {C('bg_hover')};
+        border: 1px solid {C('border_light')};
         border-radius: 6px;
         padding: 8px 12px;
         font-size: 13px;
@@ -51,20 +176,24 @@ def _dialog_style():
     QComboBox QAbstractItemView {{
         background-color: {C('bg_input')};
         color: {C('text_primary')};
-        border: 1px solid {C('bg_hover')};
+        border: 1px solid {C('border_light')};
         selection-background-color: {C('bg_hover')};
     }}
     QCheckBox {{
         color: {C('text_primary')};
         font-size: 13px;
-        spacing: 8px;
+        spacing: 10px;
     }}
     QCheckBox::indicator {{
-        width: 18px;
-        height: 18px;
+        width: 20px;
+        height: 20px;
         border-radius: 4px;
-        border: 2px solid {C('bg_hover')};
+        border: 2px solid {C('text_muted')};
         background: {C('bg_input')};
+    }}
+    QCheckBox::indicator:hover {{
+        border-color: {C('accent_brand')};
+        background: {C('bg_hover')};
     }}
     QCheckBox::indicator:checked {{
         background: {C('accent_brand')};
@@ -74,10 +203,10 @@ def _dialog_style():
         color: {C('text_secondary')};
         font-size: 13px;
         font-weight: bold;
-        border: 1px solid {C('bg_input')};
+        border: 1px solid {C('border_light')};
         border-radius: 8px;
-        margin-top: 12px;
-        padding: 16px 12px 12px 12px;
+        margin-top: 16px;
+        padding: 20px 12px 16px 12px;
     }}
     QGroupBox::title {{
         subcontrol-origin: margin;
@@ -85,7 +214,7 @@ def _dialog_style():
         padding: 0 6px;
     }}
     QTabWidget::pane {{
-        border: 1px solid {C('bg_input')};
+        border: 1px solid {C('border_light')};
         border-radius: 0 0 8px 8px;
         background: {C('bg_primary')};
         top: -1px;
@@ -93,7 +222,7 @@ def _dialog_style():
     QTabBar::tab {{
         background: {C('bg_secondary')};
         color: {C('text_muted')};
-        border: 1px solid {C('bg_input')};
+        border: 1px solid {C('border_light')};
         border-bottom: none;
         border-top-left-radius: 8px;
         border-top-right-radius: 8px;
@@ -113,7 +242,7 @@ def _dialog_style():
     QPushButton {{
         background-color: {C('bg_input')};
         color: {C('text_primary')};
-        border: 1px solid {C('bg_hover')};
+        border: 1px solid {C('border_light')};
         border-radius: 6px;
         padding: 8px 20px;
         font-size: 13px;
@@ -533,7 +662,7 @@ class SettingsDialog(QDialog):
         self.config_manager = config_manager
         self.settings = config_manager.get_settings()
         self.setWindowTitle("Sozlamalar")
-        self.setFixedSize(480, 440)
+        self.setFixedSize(500, 520)
         self.setStyleSheet(_dialog_style())
         self._setup_ui()
 
@@ -575,22 +704,19 @@ class SettingsDialog(QDialog):
         monitor_group = QGroupBox("Monitoring")
         monitor_form = QFormLayout(monitor_group)
         monitor_form.setSpacing(12)
-        monitor_form.setContentsMargins(16, 20, 16, 12)
+        monitor_form.setVerticalSpacing(16)
+        monitor_form.setContentsMargins(16, 24, 16, 16)
         monitor_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
 
-        self.warning_threshold = QSpinBox()
-        self.warning_threshold.setRange(1, 60)
+        self.warning_threshold = StyledSpinBox(0, 9999, " s")
         self.warning_threshold.setValue(int(self.settings.get("warning_threshold", 10)))
-        self.warning_threshold.setSuffix(" soniya")
         monitor_form.addRow("Ogohlantirish:", self.warning_threshold)
 
-        self.violation_threshold = QSpinBox()
-        self.violation_threshold.setRange(1, 120)
+        self.violation_threshold = StyledSpinBox(0, 9999, " s")
         self.violation_threshold.setValue(int(self.settings.get("violation_threshold", 15)))
-        self.violation_threshold.setSuffix(" soniya")
         monitor_form.addRow("Buzilish:", self.violation_threshold)
 
-        self.auto_save = QCheckBox("Avtomatik saqlash")
+        self.auto_save = StyledCheckBox("Avtomatik saqlash")
         self.auto_save.setChecked(self.settings.get("auto_save", True))
         monitor_form.addRow("", self.auto_save)
 

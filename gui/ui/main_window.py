@@ -12,6 +12,7 @@ from pathlib import Path
 from gui.ui.dashboard import Dashboard
 from gui.ui.crossing_detail import CrossingDetail
 from gui.ui.dialogs import AddCrossingDialog, AddCameraDialog, SettingsDialog
+from gui.ui.about_page import AboutPage
 from gui.utils.config_manager import ConfigManager
 from gui.utils.theme_colors import set_theme, C
 
@@ -86,6 +87,12 @@ class MainWindow(QMainWindow):
         a = QAction("Sozlamalar", self)
         a.setShortcut("Ctrl+,")
         a.triggered.connect(self._show_settings)
+        self.toolbar.addAction(a)
+
+        # Tizim haqida
+        a = QAction("Tizim haqida", self)
+        a.setShortcut("F1")
+        a.triggered.connect(self._show_about)
         self.toolbar.addAction(a)
 
         # Spacer
@@ -230,6 +237,14 @@ class MainWindow(QMainWindow):
             self._apply_toolbar_style()
             self._apply_statusbar_style()
             self._refresh_current_view()
+
+    def _show_about(self):
+        """Show about page"""
+        self._cleanup_detail_views()
+        about_page = AboutPage()
+        about_page.back_clicked.connect(self._show_dashboard)
+        self.stacked_widget.addWidget(about_page)
+        self.stacked_widget.setCurrentWidget(about_page)
 
     def _refresh_current_view(self):
         current = self.stacked_widget.currentWidget()
