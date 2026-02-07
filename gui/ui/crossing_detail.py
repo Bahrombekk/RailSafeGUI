@@ -16,6 +16,14 @@ import time
 
 from gui.utils.theme_colors import C
 
+# Car detector import (optional - graceful degradation)
+try:
+    from detectors import BatchCarDetector
+    CAR_DETECTOR_AVAILABLE = True
+except ImportError:
+    CAR_DETECTOR_AVAILABLE = False
+    print("[CrossingDetail] BatchCarDetector not available, running without detection")
+
 # RTSP low-latency + Intel VA-API hw decode (set once, not per-thread)
 os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = (
     'rtsp_transport;tcp|stimeout;2000000|'
@@ -30,8 +38,10 @@ class DetailCameraWorker(QThread):
     """Worker thread - all heavy work here, GUI only does setPixmap, auto-reconnect"""
     frame_ready = pyqtSignal(QImage)
     status_changed = pyqtSignal(str)
+    detection_updated = pyqtSignal(int, float)  # detection_count, fps
 
-    def __init__(self, source: str, camera_name: str = "Camera", display_width: int = 960):
+    def __init__(self, source: str, camera_name: str = "Camera", display_width: int = 960,
+                 car_detector: 'CarDetector' = None, detection_enabled: bool = True):
         super().__init__()
         self.source = source
         self.camera_name = camera_name
@@ -41,6 +51,10 @@ class DetailCameraWorker(QThread):
         self._frame_pending = False
         self._frame_mutex = QMutex()
         self._retry_delay = 3
+
+        # Car detector - non-blocking real-time mode
+        self.car_detector = car_detector
+        self.detection_enabled = detection_enabled and car_detector is not None
 
     def set_frame_delivered(self):
         self._frame_mutex.lock()
@@ -85,6 +99,29 @@ class DetailCameraWorker(QThread):
                                 frame = cv2.resize(frame, (self.display_width, int(h * scale)),
                                                    interpolation=cv2.INTER_AREA)
                                 h, w = frame.shape[:2]
+
+                            # Car detection - SYNC mode (LAG YO'Q)
+                            detection_count = 0
+                            if self.detection_enabled and self.car_detector is not None:
+                                try:
+                                    # Sync detect - real-time, lag yo'q
+                                    detections = self.car_detector.detect_sync(
+                                        frame,
+                                        camera_id=self.camera_name
+                                    )
+                                    detection_count = len(detections)
+                                    if detections:
+                                        frame = self.car_detector.draw_detections(
+                                            frame, detections,
+                                            thickness=2,
+                                            font_scale=0.6
+                                        )
+                                    # FPS signali
+                                    fps = self.car_detector.get_fps()
+                                    self.detection_updated.emit(detection_count, fps)
+                                except Exception as e:
+                                    print(f"[{self.camera_name}] Detection error: {e}")
+
                             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                             qimg = QImage(rgb.data, w, h, w * 3,
                                           QImage.Format.Format_RGB888).copy()
@@ -156,13 +193,58 @@ class CrossingDetail(QWidget):
         self.camera_workers = []
         self.camera_labels = {}
         self.camera_status_labels = {}
+        self.camera_detection_labels = {}  # Detection info labels
         self._destroyed = False
+
+        # Car detector initialization
+        self.car_detector = None
+        self._init_car_detector()
 
         if not self.crossing_data:
             raise ValueError(f"Crossing {crossing_id} not found")
 
         self._setup_ui()
         QTimer.singleShot(300, self._start_all_cameras)
+
+    def _init_car_detector(self):
+        """Initialize batch car detector for max GPU utilization"""
+        if not CAR_DETECTOR_AVAILABLE:
+            print("[CrossingDetail] BatchCarDetector module not available")
+            return
+
+        try:
+            car_config = self.config_manager.get_car_detector_config()
+            if not car_config.get("enabled", False):
+                print("[CrossingDetail] Car detector disabled in config")
+                return
+
+            model_path = car_config.get("model_path", "")
+            if not model_path or not os.path.exists(model_path):
+                print(f"[CrossingDetail] Car detector model not found: {model_path}")
+                return
+
+            # Batch detector - tezkor rejim (lag kamaytirish)
+            self.car_detector = BatchCarDetector(
+                model_path=model_path,
+                confidence_threshold=car_config.get("confidence", 0.5),
+                iou_threshold=car_config.get("iou_threshold", 0.45),
+                imgsz=car_config.get("imgsz", 640),
+                device=car_config.get("device", "cuda"),
+                half=car_config.get("half", True),
+                batch_size=4,  # 4 ga kamaytirdik - tezroq response
+                filter_classes=car_config.get("filter_classes"),  # COCO: 2=car, 3=moto, 5=bus, 7=truck
+            )
+
+            # Pre-load model
+            if self.car_detector.load():
+                print(f"[CrossingDetail] Batch car detector loaded: {self.car_detector}")
+            else:
+                self.car_detector = None
+                print("[CrossingDetail] Failed to load batch car detector")
+
+        except Exception as e:
+            print(f"[CrossingDetail] Car detector init error: {e}")
+            self.car_detector = None
 
     def _get_camera_grid_cols(self):
         """Calculate camera grid columns based on screen and camera count"""
@@ -439,6 +521,12 @@ class CrossingDetail(QWidget):
         time_lbl.setStyleSheet(f"color: {C('text_secondary')}; font-size: 10px; background: transparent;")
         bottom.addWidget(time_lbl)
 
+        # Detection info label
+        det_lbl = QLabel("Detect: 0 | FPS: 0.0")
+        det_lbl.setStyleSheet(f"color: {C('text_secondary')}; font-size: 10px; background: transparent;")
+        self.camera_detection_labels[cam_id] = det_lbl
+        bottom.addWidget(det_lbl)
+
         bottom.addStretch()
 
         plate_lbl = QLabel("Avtomobil: -- --- --")
@@ -496,12 +584,21 @@ class CrossingDetail(QWidget):
             if not label:
                 continue
 
-            worker = DetailCameraWorker(src, cam.get("name", f"Cam-{cam_id}"))
+            # Create worker with car detector
+            worker = DetailCameraWorker(
+                src,
+                cam.get("name", f"Cam-{cam_id}"),
+                car_detector=self.car_detector,
+                detection_enabled=cam.get("detection_enabled", True)
+            )
             worker.frame_ready.connect(
                 lambda f, lbl=label, w=worker: self._on_frame(lbl, f, w)
             )
             worker.status_changed.connect(
                 lambda s, cid=cam_id: self._on_camera_status(cid, s)
+            )
+            worker.detection_updated.connect(
+                lambda count, fps, cid=cam_id: self._on_detection_update(cid, count, fps)
             )
             worker.start()
             self.camera_workers.append(worker)
@@ -530,6 +627,21 @@ class CrossingDetail(QWidget):
                     dot.setStyleSheet(f"color: {C('accent_red')}; font-size: 12px; background: transparent;")
                     if label:
                         self._set_placeholder(label, "Ulanmadi", 480, 270)
+        except RuntimeError:
+            self._destroyed = True
+
+    def _on_detection_update(self, cam_id, count, fps):
+        """Handle detection updates from camera worker"""
+        if self._destroyed:
+            return
+        try:
+            det_label = self.camera_detection_labels.get(cam_id)
+            if det_label:
+                det_label.setText(f"Detect: {count} | FPS: {fps:.1f}")
+                if count > 0:
+                    det_label.setStyleSheet(f"color: {C('accent_green')}; font-size: 10px; font-weight: bold; background: transparent;")
+                else:
+                    det_label.setStyleSheet(f"color: {C('text_secondary')}; font-size: 10px; background: transparent;")
         except RuntimeError:
             self._destroyed = True
 
@@ -737,6 +849,7 @@ class CrossingDetail(QWidget):
             try:
                 w.frame_ready.disconnect()
                 w.status_changed.disconnect()
+                w.detection_updated.disconnect()
             except Exception:
                 pass
             try:
@@ -744,6 +857,7 @@ class CrossingDetail(QWidget):
             except (RuntimeError, Exception):
                 pass
         self.camera_workers.clear()
+        self.camera_detection_labels.clear()
 
     def refresh(self):
         self.cleanup()
@@ -751,6 +865,7 @@ class CrossingDetail(QWidget):
         self.crossing_data = self.config_manager.get_crossing(self.crossing_id)
         self.camera_labels.clear()
         self.camera_status_labels.clear()
+        self.camera_detection_labels.clear()
         self.camera_workers = []
 
         # Remove all child widgets

@@ -16,6 +16,14 @@ import os
 import time
 from gui.utils.theme_colors import C
 
+# Car detector import (optional)
+try:
+    from detectors import BatchCarDetector
+    CAR_DETECTOR_AVAILABLE = True
+except ImportError:
+    CAR_DETECTOR_AVAILABLE = False
+    print("[CrossingCard] BatchCarDetector not available")
+
 # RTSP low-latency + Intel VA-API hw decode (set once, not per-thread)
 os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = (
     'rtsp_transport;tcp|stimeout;2000000|'
@@ -30,8 +38,10 @@ class CameraWorker(QThread):
     """Worker thread - all heavy work here, GUI thread only does setPixmap"""
     frame_ready = pyqtSignal(QImage)
     status_changed = pyqtSignal(str)
+    detection_updated = pyqtSignal(int)  # detection count
 
-    def __init__(self, source: str, camera_name: str = "Camera", display_width: int = 640):
+    def __init__(self, source: str, camera_name: str = "Camera", display_width: int = 640,
+                 car_detector=None, detection_enabled: bool = True):
         super().__init__()
         self.source = source
         self.camera_name = camera_name
@@ -41,6 +51,10 @@ class CameraWorker(QThread):
         self._frame_pending = False
         self._frame_mutex = QMutex()
         self.cap = None
+
+        # Car detector - non-blocking real-time mode
+        self.car_detector = car_detector
+        self.detection_enabled = detection_enabled and car_detector is not None
 
     def set_frame_delivered(self):
         self._frame_mutex.lock()
@@ -83,6 +97,27 @@ class CameraWorker(QThread):
                             frame = cv2.resize(frame, (self.display_width, int(h * scale)),
                                                interpolation=cv2.INTER_AREA)
                             h, w = frame.shape[:2]
+
+                        # Car detection - SYNC mode (LAG YO'Q)
+                        detection_count = 0
+                        if self.detection_enabled and self.car_detector is not None:
+                            try:
+                                # Sync detect - real-time, lag yo'q
+                                detections = self.car_detector.detect_sync(
+                                    frame,
+                                    camera_id=self.camera_name
+                                )
+                                detection_count = len(detections)
+                                if detections:
+                                    frame = self.car_detector.draw_detections(
+                                        frame, detections,
+                                        thickness=2,
+                                        font_scale=0.5
+                                    )
+                                self.detection_updated.emit(detection_count)
+                            except Exception as e:
+                                print(f"[{self.camera_name}] Detection error: {e}")
+
                         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                         # QImage created in worker thread (thread-safe)
                         qimg = QImage(rgb.data, w, h, w * 3,
@@ -318,7 +353,8 @@ class CrossingCard(QWidget):
 
     clicked = pyqtSignal(int)
 
-    def __init__(self, crossing_data: dict, config_manager=None, compact=False, parent=None):
+    def __init__(self, crossing_data: dict, config_manager=None, compact=False,
+                 car_detector=None, parent=None):
         super().__init__(parent)
         self.crossing_data = crossing_data
         self.crossing_id = crossing_data.get("id", 0)
@@ -329,9 +365,48 @@ class CrossingCard(QWidget):
         self.additional_camera_label = None
         self._is_destroyed = False
 
+        # Car detector - HAR BIR CROSSING O'ZINING DETECTORIGA EGA
+        self.car_detector = None
+        self._init_own_detector()
+
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self._setup_ui()
         QTimer.singleShot(100, self._start_cameras)
+
+    def _init_own_detector(self):
+        """Har bir crossing uchun alohida detector - parallel ishlash"""
+        if not CAR_DETECTOR_AVAILABLE or not self.config_manager:
+            return
+
+        try:
+            car_config = self.config_manager.get_car_detector_config()
+            if not car_config.get("enabled", False):
+                return
+
+            model_path = car_config.get("model_path", "")
+            if not model_path or not os.path.exists(model_path):
+                return
+
+            # Har bir crossing uchun alohida detector
+            self.car_detector = BatchCarDetector(
+                model_path=model_path,
+                confidence_threshold=car_config.get("confidence", 0.5),
+                iou_threshold=car_config.get("iou_threshold", 0.45),
+                imgsz=car_config.get("imgsz", 640),
+                device=car_config.get("device", "cuda"),
+                half=car_config.get("half", True),
+                batch_size=2,  # Kichik batch - tezroq response
+                filter_classes=car_config.get("filter_classes"),
+            )
+
+            if self.car_detector.load():
+                print(f"[CrossingCard {self.crossing_id}] Detector yuklandi")
+            else:
+                self.car_detector = None
+
+        except Exception as e:
+            print(f"[CrossingCard {self.crossing_id}] Detector xato: {e}")
+            self.car_detector = None
 
     def _setup_ui(self):
         main_layout = QVBoxLayout(self)
@@ -859,11 +934,17 @@ class CrossingCard(QWidget):
                 cam_type = camera.get("type", "main")
                 cam_name = camera.get("name", f"Camera {i+1}")
 
-                worker = CameraWorker(source, cam_name)
+                # Create worker with car detector
+                worker = CameraWorker(
+                    source, cam_name,
+                    car_detector=self.car_detector,
+                    detection_enabled=camera.get("detection_enabled", True)
+                )
 
                 if i == 0 or cam_type == "main":
                     worker.frame_ready.connect(lambda f, w=worker: self._on_main_frame(f, w))
                     worker.status_changed.connect(self._on_main_status)
+                    worker.detection_updated.connect(self._on_detection_update)
                 else:
                     worker.frame_ready.connect(lambda f, w=worker: self._on_additional_frame(f, w))
                     worker.status_changed.connect(self._on_additional_status)
@@ -910,6 +991,16 @@ class CrossingCard(QWidget):
         try:
             if status == "error" and self.additional_camera_label:
                 self._set_placeholder(self.additional_camera_label, "Ulanmadi")
+        except RuntimeError:
+            self._is_destroyed = True
+
+    def _on_detection_update(self, count):
+        """Handle detection count updates"""
+        if self._is_destroyed:
+            return
+        try:
+            # Update car count stat
+            self._update_stat_label(self.car_count, count, C('accent_blue'))
         except RuntimeError:
             self._is_destroyed = True
 
@@ -965,6 +1056,13 @@ class CrossingCard(QWidget):
         except RuntimeError:
             pass
         self.stop_cameras()
+        # Detector to'xtatish
+        if self.car_detector is not None:
+            try:
+                self.car_detector.stop()
+            except Exception:
+                pass
+            self.car_detector = None
 
     def closeEvent(self, event):
         self.cleanup()

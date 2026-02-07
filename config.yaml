@@ -5,7 +5,7 @@ model:
   path: "/home/bahrombek/Desktop/RailSafeAI_v1.1/models/yolo26m.pt"
 
   # ✅ TO'G'IRLANDI - Yuk mashinalar ham qo'shildi
-  target_classes: [2, 5, 7]  # 2: car, 5: bus, 7: truck
+  target_classes: [2,3, 5, 7]  # 2: car, 5: bus, 7: truck
 
   class_names:
     2: "Yengil avtomobil"
@@ -13,6 +13,19 @@ model:
     5: "Avtobus"
     6: "Poyezd"
     7: "Yuk mashinasi"
+
+# Avtomobil aniqlash modeli
+car_detector:
+  enabled: true
+  model_path: "models/yolo26m.pt"  # 148 FPS - eng tez!
+  confidence: 0.3
+  iou_threshold: 0.45
+  imgsz: 640
+  device: "cuda"    # GPU majburiy
+  half: true        # FP16 - 2x tezroq
+  stream: true      # Streaming mode - real-time uchun
+  # COCO classlar: 2=car, 3=motorcycle, 5=bus, 7=truck
+  filter_classes: [2, 3, 5, 7]
 
 plc:
   device_ip: '192.168.170.159'
@@ -50,7 +63,7 @@ cameras:
     name: "Sharqiy Yo'nalish"
     source: "rtsp://admin:1q2w3e4r5t@192.168.170.160:554/Streaming/Channels/801"
     polygon_file: "/home/bahrombek/Desktop/RailSafeAI_v1.1/polygons/aa/labels_my-project-name_2026-01-23-09-20-43.json"
-    enabled: true
+    enabled: false
 
   - id: 4
     name: "G'arbiy Yo'nalish"

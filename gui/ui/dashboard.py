@@ -1,7 +1,9 @@
 """
 Dashboard View - Responsive view, cards fill viewport proportionally
+HAR BIR CROSSING O'ZINING DETECTORINI YARATADI
 """
 
+import os
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QScrollArea,
                               QGridLayout, QSizePolicy)
 from PyQt6.QtCore import Qt, pyqtSignal
@@ -21,6 +23,7 @@ class Dashboard(QWidget):
         self.config_manager = config_manager
         self.crossing_cards = []
         self._last_col_count = 0
+
         self._setup_ui()
         self._load_crossings()
 
@@ -100,7 +103,12 @@ class Dashboard(QWidget):
         for idx, crossing in enumerate(crossings):
             row = idx // cols
             col = idx % cols
-            card = CrossingCard(crossing, config_manager=self.config_manager, compact=(count in (2, 3) or count >= 5))
+            # Har bir card o'zining detectorini yaratadi
+            card = CrossingCard(
+                crossing,
+                config_manager=self.config_manager,
+                compact=(count in (2, 3) or count >= 5)
+            )
             card.clicked.connect(self.crossing_selected.emit)
             if fill_screen:
                 card.setMaximumHeight(16777215)

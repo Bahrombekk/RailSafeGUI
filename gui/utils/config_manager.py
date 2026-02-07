@@ -5,6 +5,7 @@ Manages crossings, cameras, and PLC configurations
 
 import json
 import yaml
+import os
 from pathlib import Path
 from typing import Dict, List, Optional
 from datetime import datetime
@@ -239,3 +240,49 @@ class ConfigManager:
         except Exception as e:
             print(f"Error importing YAML: {e}")
             return None
+
+    def get_car_detector_config(self, config_yaml_path: str = "config.yaml") -> Dict:
+        """
+        Get car detector configuration from main config.yaml
+
+        Args:
+            config_yaml_path: Path to config.yaml
+
+        Returns:
+            Car detector config dict
+        """
+        default_config = {
+            "enabled": False,
+            "model_path": "models/car_detect.pt",
+            "confidence": 0.5,
+            "iou_threshold": 0.45,
+            "imgsz": 640,
+            "device": "cuda",
+            "half": True,     # FP16 - 2x faster on GPU
+            "stream": True    # Real-time streaming mode
+        }
+
+        try:
+            config_path = Path(config_yaml_path)
+            if not config_path.is_absolute():
+                # Relative to project root
+                project_root = Path(__file__).parent.parent.parent
+                config_path = project_root / config_yaml_path
+
+            if config_path.exists():
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    yaml_config = yaml.safe_load(f)
+
+                if yaml_config and "car_detector" in yaml_config:
+                    car_config = yaml_config["car_detector"]
+                    # Make model_path absolute if relative
+                    if "model_path" in car_config:
+                        model_path = Path(car_config["model_path"])
+                        if not model_path.is_absolute():
+                            car_config["model_path"] = str(project_root / model_path)
+                    return car_config
+
+        except Exception as e:
+            print(f"[ConfigManager] Error loading car detector config: {e}")
+
+        return default_config
