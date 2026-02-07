@@ -1,6 +1,8 @@
 """
 Batch Car Detector - GPU ni maksimal ishlatish uchun
 Bir vaqtda ko'p kameradan kadrlarni batch qilib process qiladi
+
+REAL-TIME PARALLEL: Har bir kamera o'z natijasini kutadi
 """
 
 import cv2
@@ -9,8 +11,9 @@ import threading
 import time
 from queue import Queue, Empty
 from typing import List, Dict, Tuple, Optional
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+from concurrent.futures import Future
 
 
 @dataclass
@@ -28,6 +31,7 @@ class DetectionRequest:
     camera_id: str
     frame: np.ndarray
     timestamp: float
+    future: Future = field(default=None)  # Natijani kutish uchun
 
 
 @dataclass
@@ -141,23 +145,26 @@ class BatchCarDetector:
             return False
 
     def _worker_loop(self):
-        """Background worker - tezkor batch processing (lag kamaytirish)"""
+        """Background worker - GPU MAKSIMAL, REAL-TIME natija"""
+        import torch
+
         while self._running:
             batch_requests = []
 
-            # Collect batch - TEZKOR rejim
+            # Collect batch - TEZKOR: 2ms kutish, keyin process
             try:
-                # Birinchi requestni kut (qisqa timeout)
-                req = self._request_queue.get(timeout=0.02)  # 20ms
+                # Birinchi requestni kut
+                req = self._request_queue.get(timeout=0.002)  # 2ms - tezroq
                 batch_requests.append(req)
 
-                # Qo'shimcha requestlarni ol (juda qisqa vaqt)
-                deadline = time.perf_counter() + 0.005  # 5ms ichida batch yig'
+                # Qisqa vaqt ichida boshqa requestlarni yig'ish
+                collect_end = time.perf_counter() + 0.003  # 3ms ichida yig'ish
                 while len(batch_requests) < self.batch_size:
-                    if time.perf_counter() > deadline:
-                        break
                     try:
-                        req = self._request_queue.get_nowait()
+                        remaining = collect_end - time.perf_counter()
+                        if remaining <= 0:
+                            break
+                        req = self._request_queue.get(timeout=remaining)
                         batch_requests.append(req)
                     except Empty:
                         break
@@ -168,7 +175,7 @@ class BatchCarDetector:
             if not batch_requests:
                 continue
 
-            # Process batch
+            # Process batch - GPU MAKSIMAL
             try:
                 start_time = time.perf_counter()
 
@@ -189,6 +196,10 @@ class BatchCarDetector:
                     classes=list(self.filter_classes) if self.filter_classes else None,
                 )
 
+                # GPU sync - natijalar tayyor
+                if torch.cuda.is_available():
+                    torch.cuda.synchronize()
+
                 inference_time = (time.perf_counter() - start_time) * 1000
                 per_frame_time = inference_time / len(batch_requests)
 
@@ -198,16 +209,30 @@ class BatchCarDetector:
                     self._inference_times.pop(0)
                 self._processed_count += len(batch_requests)
 
-                # Parse results for each camera
-                for i, (req, result) in enumerate(zip(batch_requests, results)):
+                # Parse results va Future'larni complete qilish
+                for req, result in zip(batch_requests, results):
                     detections = self._parse_result(result)
 
                     # Update cache
                     with self._cache_lock:
                         self._camera_cache[req.camera_id] = detections
 
+                    # Future bormi? Complete qil
+                    if req.future is not None:
+                        try:
+                            req.future.set_result(detections)
+                        except Exception:
+                            pass  # Already completed
+
             except Exception as e:
                 print(f"[BatchDetector] Worker error: {e}")
+                # Xatolik bo'lsa futures ni ham complete qilish
+                for req in batch_requests:
+                    if req.future is not None:
+                        try:
+                            req.future.set_result([])
+                        except Exception:
+                            pass
 
     def _parse_result(self, result) -> List[Detection]:
         """YOLO natijasini Detection listga aylantirish"""
@@ -243,7 +268,11 @@ class BatchCarDetector:
 
     def detect_sync(self, frame: np.ndarray, camera_id: str = None) -> List[Detection]:
         """
-        Sinxron detection - LAG YO'Q, thread-safe
+        Sinxron detection - LAG YO'Q, PARALLEL GPU inference
+
+        PyTorch/CUDA o'zi thread-safe - lock kerak emas!
+        Har bir kamera o'z threadida parallel inference qiladi.
+        GPU maksimal ishlatiladi.
 
         Args:
             frame: BGR rasm
@@ -255,49 +284,98 @@ class BatchCarDetector:
         if not self._is_loaded:
             return []
 
-        # Thread-safe: bir vaqtda faqat bitta inference
-        with self._sync_lock:
-            try:
-                start = time.perf_counter()
+        # LOCK YO'Q - parallel GPU inference!
+        # PyTorch/CUDA o'zi thread-safe
+        try:
+            start = time.perf_counter()
 
-                # To'g'ridan-to'g'ri inference
-                results = self._model.predict(
-                    frame,
-                    conf=self.confidence_threshold,
-                    iou=self.iou_threshold,
-                    imgsz=self.imgsz,
-                    device=self.device,
-                    half=self.half,
-                    verbose=False,
-                    max_det=50,
-                    classes=list(self.filter_classes) if self.filter_classes else None,
-                )
+            # To'g'ridan-to'g'ri inference - parallel
+            results = self._model.predict(
+                frame,
+                conf=self.confidence_threshold,
+                iou=self.iou_threshold,
+                imgsz=self.imgsz,
+                device=self.device,
+                half=self.half,
+                verbose=False,
+                max_det=50,
+                classes=list(self.filter_classes) if self.filter_classes else None,
+            )
 
-                # Inference vaqtini track qilish
-                inference_ms = (time.perf_counter() - start) * 1000
-                self._inference_times.append(inference_ms)
-                if len(self._inference_times) > 100:
-                    self._inference_times.pop(0)
+            # Inference vaqtini track qilish
+            inference_ms = (time.perf_counter() - start) * 1000
+            self._inference_times.append(inference_ms)
+            if len(self._inference_times) > 100:
+                self._inference_times.pop(0)
+            self._processed_count += 1
 
-                detections = []
-                if results and len(results) > 0:
-                    detections = self._parse_result(results[0])
+            detections = []
+            if results and len(results) > 0:
+                detections = self._parse_result(results[0])
 
-                # Cache yangilash
-                if camera_id:
-                    with self._cache_lock:
-                        self._camera_cache[camera_id] = detections
+            # Cache yangilash
+            if camera_id:
+                with self._cache_lock:
+                    self._camera_cache[camera_id] = detections
 
-                return detections
+            return detections
 
-            except Exception as e:
-                print(f"[BatchDetector] Sync detect error: {e}")
-                return []
+        except Exception as e:
+            print(f"[BatchDetector] Sync detect error: {e}")
+            return []
+
+    def detect_realtime(self, frame: np.ndarray, camera_id: str, timeout: float = 0.1) -> List[Detection]:
+        """
+        REAL-TIME batch detection - GPU maksimal, LAG YO'Q
+
+        Frame queue ga qo'yiladi va natija kutiladi.
+        Bir nechta kameralar parallel batch qilinadi.
+
+        Args:
+            frame: BGR rasm
+            camera_id: Kamera identifikatori
+            timeout: Maksimal kutish vaqti (sekund)
+
+        Returns:
+            Hozirgi kadrning detections (real-time)
+        """
+        if not self._is_loaded:
+            return []
+
+        from concurrent.futures import Future
+
+        # Future yaratish - natijani kutish uchun
+        future = Future()
+
+        # Request yaratish
+        request = DetectionRequest(
+            camera_id=camera_id,
+            frame=frame,
+            timestamp=time.time(),
+            future=future
+        )
+
+        # Queue ga qo'shish
+        try:
+            self._request_queue.put(request, timeout=0.01)
+        except:
+            # Queue to'lgan - cached natijani qaytar
+            with self._cache_lock:
+                return self._camera_cache.get(camera_id, [])
+
+        # Natijani kutish
+        try:
+            detections = future.result(timeout=timeout)
+            return detections
+        except Exception:
+            # Timeout yoki xatolik - cached natijani qaytar
+            with self._cache_lock:
+                return self._camera_cache.get(camera_id, [])
 
     def detect_async(self, frame: np.ndarray, camera_id: str) -> List[Detection]:
         """
         Async detection - tezkor, lekin biroz lag bo'lishi mumkin
-        Agar real-time kerak bo'lsa detect_sync() ishlating
+        Real-time uchun detect_realtime() ishlating
 
         Args:
             frame: BGR rasm

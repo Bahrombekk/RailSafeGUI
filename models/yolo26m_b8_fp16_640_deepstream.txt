@@ -1,0 +1,38 @@
+
+# DeepStream Primary Inference Config
+# Auto-generated for: models/yolo26m_b8_fp16_640.engine
+
+[property]
+gpu-id=0
+net-scale-factor=0.0039215697906911373
+model-engine-file=models/yolo26m_b8_fp16_640.engine
+labelfile-path=labels.txt
+batch-size=8
+process-mode=1
+model-color-format=0
+network-mode=2
+num-detected-classes=80
+interval=0
+gie-unique-id=1
+output-blob-names=output0
+cluster-mode=2
+maintain-aspect-ratio=1
+symmetric-padding=1
+
+[class-attrs-all]
+nms-iou-threshold=0.45
+pre-cluster-threshold=0.3
+topk=300
+
+# Car, Motorcycle, Bus, Truck only
+[class-attrs-2]
+pre-cluster-threshold=0.3
+
+[class-attrs-3]
+pre-cluster-threshold=0.3
+
+[class-attrs-5]
+pre-cluster-threshold=0.3
+
+[class-attrs-7]
+pre-cluster-threshold=0.3

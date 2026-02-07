@@ -49,7 +49,7 @@
       "location": "fewz",
       "description": "efaw",
       "plc": {
-        "enabled": false,
+        "enabled": true,
         "ip": "",
         "port": 102,
         "type": "Siemens S7-1200"
@@ -86,7 +86,7 @@
       "location": "qaed",
       "description": "qae",
       "plc": {
-        "enabled": false,
+        "enabled": true,
         "ip": "",
         "port": 102,
         "type": "Siemens S7-1200"
@@ -123,7 +123,7 @@
       "location": "awd",
       "description": "awdd",
       "plc": {
-        "enabled": false,
+        "enabled": true,
         "ip": "",
         "port": 102,
         "type": "Siemens S7-1200"
@@ -162,5 +162,5 @@
     "violation_threshold": 115.0,
     "video_recording_enabled": true
   },
-  "last_updated": "2026-02-07T16:09:53.627925"
+  "last_updated": "2026-02-07T19:38:13.910938"
 }

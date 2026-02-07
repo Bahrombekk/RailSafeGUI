@@ -1,6 +1,6 @@
 """
-Dashboard View - Responsive view, cards fill viewport proportionally
-HAR BIR CROSSING O'ZINING DETECTORINI YARATADI
+Dashboard View - GPU MAKSIMAL ISHLATISH
+TensorRT native inference (208 FPS) yoki PyTorch/ONNX fallback
 """
 
 import os
@@ -10,9 +10,15 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from gui.widgets.crossing_card import CrossingCard
 from gui.utils.theme_colors import C
 
+try:
+    from detectors import RealtimeMultiCameraDetector
+    CAR_DETECTOR_AVAILABLE = True
+except ImportError:
+    CAR_DETECTOR_AVAILABLE = False
+
 
 class Dashboard(QWidget):
-    """Dashboard - max 3 columns, proportional cards"""
+    """Dashboard - GPU maksimal ishlatish, bitta shared detector"""
 
     crossing_selected = pyqtSignal(int)
     add_crossing_clicked = pyqtSignal()
@@ -24,8 +30,52 @@ class Dashboard(QWidget):
         self.crossing_cards = []
         self._last_col_count = 0
 
+        # BITTA detector - barcha kameralar uchun (GPU maksimal)
+        self.car_detector = None
+        self._init_shared_detector()
+
         self._setup_ui()
         self._load_crossings()
+
+    def _init_shared_detector(self):
+        """
+        RealtimeMultiCameraDetector - TensorRT native yoki Ultralytics fallback
+        """
+        if not CAR_DETECTOR_AVAILABLE:
+            return
+
+        try:
+            car_config = self.config_manager.get_car_detector_config()
+            if not car_config.get("enabled", False):
+                return
+
+            model_path = car_config.get("model_path", "")
+            if not model_path or not os.path.exists(model_path):
+                print(f"[Dashboard] Model not found: {model_path}")
+                return
+
+            self.car_detector = RealtimeMultiCameraDetector(
+                model_path=model_path,
+                confidence_threshold=car_config.get("confidence", 0.3),
+                iou_threshold=car_config.get("iou_threshold", 0.45),
+                imgsz=car_config.get("imgsz", 640),
+                device=car_config.get("device", "cuda"),
+                half=car_config.get("half", True),
+                filter_classes=car_config.get("filter_classes"),
+                batch_interval_ms=15.0,
+            )
+
+            if self.car_detector.load():
+                stats = self.car_detector.get_stats()
+                print(f"[Dashboard] Detector yuklandi! Mode: {stats['model_type'].upper()}")
+            else:
+                self.car_detector = None
+
+        except Exception as e:
+            print(f"[Dashboard] Detector error: {e}")
+            import traceback
+            traceback.print_exc()
+            self.car_detector = None
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
@@ -84,7 +134,6 @@ class Dashboard(QWidget):
 
         count = len(crossings)
 
-        # 1 ta = to'liq ekran, 2-4 ta = teng bo'lib to'ldiradi, 5+ = scroll grid
         if count == 1:
             cols = 1
         elif count == 2:
@@ -103,11 +152,11 @@ class Dashboard(QWidget):
         for idx, crossing in enumerate(crossings):
             row = idx // cols
             col = idx % cols
-            # Har bir card o'zining detectorini yaratadi
             card = CrossingCard(
                 crossing,
                 config_manager=self.config_manager,
-                compact=(count in (2, 3) or count >= 5)
+                compact=(count in (2, 3) or count >= 5),
+                car_detector=self.car_detector
             )
             card.clicked.connect(self.crossing_selected.emit)
             if fill_screen:

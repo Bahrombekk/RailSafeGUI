@@ -13,23 +13,24 @@ import cv2
 import numpy as np
 import os
 import time
+import threading
 
 from gui.utils.theme_colors import C
 
 # Car detector import (optional - graceful degradation)
 try:
-    from detectors import BatchCarDetector
+    from detectors import RealtimeMultiCameraDetector
     CAR_DETECTOR_AVAILABLE = True
 except ImportError:
     CAR_DETECTOR_AVAILABLE = False
-    print("[CrossingDetail] BatchCarDetector not available, running without detection")
+    print("[CrossingDetail] RealtimeMultiCameraDetector not available")
 
-# RTSP low-latency + Intel VA-API hw decode (set once, not per-thread)
+# RTSP ultra-low-latency (NVIDIA GPU - VA-API o'rniga software decode)
 os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = (
     'rtsp_transport;tcp|stimeout;2000000|'
-    'fflags;nobuffer|flags;low_delay|'
-    'analyzeduration;500000|probesize;500000|'
-    'hwaccel;vaapi|hwaccel_device;/dev/dri/renderD128'
+    'fflags;nobuffer+discardcorrupt|flags;low_delay|'
+    'analyzeduration;100000|probesize;100000|'
+    'max_delay;0|reorder_queue_size;0'
 )
 os.environ['OPENCV_LOG_LEVEL'] = 'ERROR'
 
@@ -65,71 +66,99 @@ class DetailCameraWorker(QThread):
         retry_count = 0
         while self._is_running():
             cap = None
+            gt = None
+            _grab_running = [True]
+
             try:
                 cap = cv2.VideoCapture(self.source, cv2.CAP_FFMPEG)
                 if cap.isOpened():
                     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+
+                    # RTSP buffer tozalash - eski kadrlarni tashlash (~3 sek)
+                    for _ in range(90):
+                        cap.grab()
+
                     self.status_changed.emit("online")
                     retry_count = 0
-                    consecutive_fails = 0
 
-                    while self._is_running():
-                        # ALWAYS grab to flush RTSP buffer (real-time)
-                        ret = cap.grab()
-                        if not ret:
-                            consecutive_fails += 1
-                            if consecutive_fails > 30:
-                                break
-                            continue
-                        consecutive_fails = 0
+                    # --- Dedicated grab thread: grab() HECH QACHON to'xtamaydi ---
+                    _latest_frame = [None]
+                    _frame_lock = threading.Lock()
+                    _grab_error = [False]
 
-                        # Only decode when GUI is ready
+                    def _grab_loop():
+                        fails = 0
+                        while _grab_running[0]:
+                            ret = cap.grab()
+                            if not ret:
+                                fails += 1
+                                if fails > 30:
+                                    _grab_error[0] = True
+                                    break
+                                continue
+                            fails = 0
+                            # Faqat kerak bo'lganda decode (CPU 50% tejash)
+                            with _frame_lock:
+                                need_decode = _latest_frame[0] is None
+                            if need_decode:
+                                ret, frame = cap.retrieve()
+                                if ret:
+                                    with _frame_lock:
+                                        _latest_frame[0] = frame
+
+                    gt = threading.Thread(target=_grab_loop, daemon=True)
+                    gt.start()
+
+                    # --- Main loop: eng oxirgi kadrni process qilish ---
+                    while self._is_running() and not _grab_error[0]:
                         self._frame_mutex.lock()
                         pending = self._frame_pending
                         self._frame_mutex.unlock()
                         if pending:
+                            time.sleep(0.001)
                             continue
 
-                        ret, frame = cap.retrieve()
-                        if ret and self._is_running():
-                            # ALL heavy work in worker thread
+                        with _frame_lock:
+                            frame = _latest_frame[0]
+                            _latest_frame[0] = None
+
+                        if frame is None:
+                            time.sleep(0.003)
+                            continue
+
+                        h, w = frame.shape[:2]
+                        if w > self.display_width:
+                            scale = self.display_width / w
+                            frame = cv2.resize(frame, (self.display_width, int(h * scale)),
+                                               interpolation=cv2.INTER_AREA)
                             h, w = frame.shape[:2]
-                            if w > self.display_width:
-                                scale = self.display_width / w
-                                frame = cv2.resize(frame, (self.display_width, int(h * scale)),
-                                                   interpolation=cv2.INTER_AREA)
-                                h, w = frame.shape[:2]
 
-                            # Car detection - SYNC mode (LAG YO'Q)
-                            detection_count = 0
-                            if self.detection_enabled and self.car_detector is not None:
-                                try:
-                                    # Sync detect - real-time, lag yo'q
-                                    detections = self.car_detector.detect_sync(
-                                        frame,
-                                        camera_id=self.camera_name
-                                    )
-                                    detection_count = len(detections)
-                                    if detections:
-                                        frame = self.car_detector.draw_detections(
-                                            frame, detections,
-                                            thickness=2,
-                                            font_scale=0.6
-                                        )
-                                    # FPS signali
-                                    fps = self.car_detector.get_fps()
-                                    self.detection_updated.emit(detection_count, fps)
-                                except Exception as e:
-                                    print(f"[{self.camera_name}] Detection error: {e}")
+                        # Car detection - NON-BLOCKING
+                        detection_count = 0
+                        if self.detection_enabled and self.car_detector is not None:
+                            try:
+                                detections, det_frame = self.car_detector.detect_async(
+                                    frame, camera_id=self.camera_name)
+                                detection_count = len(detections)
+                                if detections:
+                                    draw_on = det_frame if det_frame is not None else frame
+                                    frame = self.car_detector.draw_detections(
+                                        draw_on, detections,
+                                        thickness=2, font_scale=0.6)
+                                    h, w = frame.shape[:2]
+                                fps = self.car_detector.get_fps()
+                                self.detection_updated.emit(detection_count, fps)
+                            except Exception as e:
+                                print(f"[{self.camera_name}] Detection error: {e}")
 
-                            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                            qimg = QImage(rgb.data, w, h, w * 3,
-                                          QImage.Format.Format_RGB888).copy()
+                        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                        qimg = QImage(rgb.data, w, h, w * 3,
+                                      QImage.Format.Format_RGB888).copy()
 
-                            self._frame_mutex.lock()
-                            self._frame_pending = True
-                            self._frame_mutex.unlock()
-                            self.frame_ready.emit(qimg)
+                        self._frame_mutex.lock()
+                        self._frame_pending = True
+                        self._frame_mutex.unlock()
+                        self.frame_ready.emit(qimg)
                 else:
                     if self._is_running():
                         self.status_changed.emit("error")
@@ -137,6 +166,9 @@ class DetailCameraWorker(QThread):
                 if self._is_running():
                     print(f"[Detail-{self.camera_name}] Error: {e}")
             finally:
+                _grab_running[0] = False
+                if gt is not None:
+                    gt.join(timeout=3.0)
                 if cap is not None:
                     try:
                         cap.release()
@@ -207,9 +239,12 @@ class CrossingDetail(QWidget):
         QTimer.singleShot(300, self._start_all_cameras)
 
     def _init_car_detector(self):
-        """Initialize batch car detector for max GPU utilization"""
+        """
+        REAL-TIME Multi-Camera Detector - GPU 100%
+        TensorRT qo'llab-quvvatlaydi - 3-5x tezroq inference
+        """
         if not CAR_DETECTOR_AVAILABLE:
-            print("[CrossingDetail] BatchCarDetector module not available")
+            print("[CrossingDetail] RealtimeMultiCameraDetector not available")
             return
 
         try:
@@ -223,27 +258,31 @@ class CrossingDetail(QWidget):
                 print(f"[CrossingDetail] Car detector model not found: {model_path}")
                 return
 
-            # Batch detector - tezkor rejim (lag kamaytirish)
-            self.car_detector = BatchCarDetector(
+            # REAL-TIME detector - barcha kameralar BITTA batch
+            # TensorRT engine mavjud bo'lsa, avtomatik ishlatiladi
+            self.car_detector = RealtimeMultiCameraDetector(
                 model_path=model_path,
-                confidence_threshold=car_config.get("confidence", 0.5),
+                confidence_threshold=car_config.get("confidence", 0.3),
                 iou_threshold=car_config.get("iou_threshold", 0.45),
                 imgsz=car_config.get("imgsz", 640),
                 device=car_config.get("device", "cuda"),
                 half=car_config.get("half", True),
-                batch_size=4,  # 4 ga kamaytirdik - tezroq response
-                filter_classes=car_config.get("filter_classes"),  # COCO: 2=car, 3=moto, 5=bus, 7=truck
+                filter_classes=car_config.get("filter_classes"),
+                batch_interval_ms=15.0,  # Har 15ms batch process
             )
 
-            # Pre-load model
+            # Pre-load model (TensorRT auto-detected)
             if self.car_detector.load():
-                print(f"[CrossingDetail] Batch car detector loaded: {self.car_detector}")
+                stats = self.car_detector.get_stats()
+                print(f"[CrossingDetail] Detector yuklandi! Mode: {stats['model_type'].upper()}")
             else:
                 self.car_detector = None
-                print("[CrossingDetail] Failed to load batch car detector")
+                print("[CrossingDetail] Detector yuklanmadi")
 
         except Exception as e:
             print(f"[CrossingDetail] Car detector init error: {e}")
+            import traceback
+            traceback.print_exc()
             self.car_detector = None
 
     def _get_camera_grid_cols(self):

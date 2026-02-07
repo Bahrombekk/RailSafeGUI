@@ -20,7 +20,7 @@ car_detector:
   model_path: "models/yolo26m.pt"  # 148 FPS - eng tez!
   confidence: 0.3
   iou_threshold: 0.45
-  imgsz: 640
+  imgsz: 640        # 480 = tezroq (640 dan ~40% tez)
   device: "cuda"    # GPU majburiy
   half: true        # FP16 - 2x tezroq
   stream: true      # Streaming mode - real-time uchun
@@ -51,7 +51,7 @@ cameras:
     name: "Shimoliy Yo'nalish"
     source: "rtsp://admin:1q2w3e4r5t@192.168.170.160:554/Streaming/Channels/201"
     polygon_file: "polygons/paligon_pereezd.json"
-    enabled: false
+    enabled: true
 
   - id: 2
     name: "Janubiy Yo'nalish"
@@ -63,7 +63,7 @@ cameras:
     name: "Sharqiy Yo'nalish"
     source: "rtsp://admin:1q2w3e4r5t@192.168.170.160:554/Streaming/Channels/801"
     polygon_file: "/home/bahrombek/Desktop/RailSafeAI_v1.1/polygons/aa/labels_my-project-name_2026-01-23-09-20-43.json"
-    enabled: false
+    enabled: true
 
   - id: 4
     name: "G'arbiy Yo'nalish"
