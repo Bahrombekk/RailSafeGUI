@@ -14,6 +14,7 @@ import cv2
 import numpy as np
 import os
 import time
+import json
 import threading
 from gui.utils.theme_colors import C
 
@@ -25,7 +26,7 @@ except ImportError:
     CAR_DETECTOR_AVAILABLE = False
     print("[CrossingCard] RealtimeMultiCameraDetector not available")
 
-# RTSP ultra-low-latency (NVIDIA GPU - VA-API o'rniga software decode)
+# RTSP ultra-low-latency (FFmpeg fallback uchun)
 os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = (
     'rtsp_transport;tcp|stimeout;2000000|'
     'fflags;nobuffer+discardcorrupt|flags;low_delay|'
@@ -35,30 +36,100 @@ os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = (
 os.environ['OPENCV_LOG_LEVEL'] = 'ERROR'
 
 
+def _open_camera(source: str, camera_name: str = "") -> tuple:
+    """RTSP kamerani ochish: GStreamer NVDEC → GStreamer CPU → FFmpeg fallback.
+    Returns (cap, backend_name) or (None, None)."""
+    is_rtsp = source.lower().startswith("rtsp://")
+
+    if is_rtsp:
+        # 1) GStreamer NVDEC (GPU H.265 decode)
+        gst_nvdec = (
+            f"rtspsrc location={source} latency=0 protocols=tcp ! "
+            f"rtph265depay ! h265parse ! nvh265dec ! "
+            f"videoconvert ! video/x-raw,format=BGR ! "
+            f"appsink drop=true max-buffers=1 sync=false"
+        )
+        cap = cv2.VideoCapture(gst_nvdec, cv2.CAP_GSTREAMER)
+        if cap.isOpened():
+            print(f"[{camera_name}] GStreamer NVDEC (GPU H.265)")
+            return cap, "gst-nvdec"
+
+        # 2) GStreamer CPU (software H.265 decode)
+        gst_cpu = (
+            f"rtspsrc location={source} latency=0 protocols=tcp ! "
+            f"rtph265depay ! h265parse ! avdec_h265 ! "
+            f"videoconvert ! video/x-raw,format=BGR ! "
+            f"appsink drop=true max-buffers=1 sync=false"
+        )
+        cap = cv2.VideoCapture(gst_cpu, cv2.CAP_GSTREAMER)
+        if cap.isOpened():
+            print(f"[{camera_name}] GStreamer CPU (H.265)")
+            return cap, "gst-cpu"
+
+    # 3) FFmpeg fallback (har doim ishlaydi)
+    cap = cv2.VideoCapture(source, cv2.CAP_FFMPEG)
+    if cap.isOpened():
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        print(f"[{camera_name}] FFmpeg fallback")
+        return cap, "ffmpeg"
+
+    return None, None
+
+
+def _load_polygon(polygon_file: str, frame_w: int, frame_h: int):
+    """Polygon JSON yuklash va frame o'lchamiga scale qilish.
+    Returns (poly_pts, poly_mask) or (None, None)."""
+    if not polygon_file or not os.path.isfile(polygon_file):
+        return None, None
+    try:
+        with open(polygon_file, 'r') as f:
+            data = json.load(f)
+        orig_w = data['images'][0]['width']
+        orig_h = data['images'][0]['height']
+        scale_x = frame_w / orig_w
+        scale_y = frame_h / orig_h
+        pts = np.array(data['annotations'][0]['segmentation'][0]).reshape(-1, 2)
+        poly_pts = (pts * [scale_x, scale_y]).astype(np.int32)
+        poly_mask = np.zeros((frame_h, frame_w), np.uint8)
+        cv2.fillPoly(poly_mask, [poly_pts], 255)
+        return poly_pts, poly_mask
+    except Exception as e:
+        print(f"[Polygon] Yuklab bo'lmadi: {polygon_file}: {e}")
+        return None, None
+
+
 class CameraWorker(QThread):
     """Worker thread - all heavy work here, GUI thread only does setPixmap"""
-    frame_ready = pyqtSignal(QImage)
+    frame_ready = pyqtSignal()  # Lightweight - payload yo'q (queue backup bo'lmaydi)
     status_changed = pyqtSignal(str)
     detection_updated = pyqtSignal(int)  # detection count
 
-    def __init__(self, source: str, camera_name: str = "Camera", display_width: int = 640,
-                 car_detector=None, detection_enabled: bool = True):
+    def __init__(self, source: str, camera_name: str = "Camera", display_width: int = 1280,
+                 car_detector=None, detection_enabled: bool = True,
+                 polygon_file: str = None, warning_threshold: float = 10.0,
+                 violation_threshold: float = 15.0):
         super().__init__()
         self.source = source
         self.camera_name = camera_name
         self.display_width = display_width
         self._running = True
         self._mutex = QMutex()
-        self._frame_pending = False
-        self._frame_mutex = QMutex()
+        self._latest_qimg = None  # Atomic latest frame (GIL-safe)
         # Car detector - non-blocking real-time mode
         self.car_detector = car_detector
         self.detection_enabled = detection_enabled and car_detector is not None
+        # Polygon
+        self.polygon_file = polygon_file
+        self.warning_threshold = warning_threshold
+        self.violation_threshold = violation_threshold
+        self._poly_pts = None
+        self._poly_mask = None
 
-    def set_frame_delivered(self):
-        self._frame_mutex.lock()
-        self._frame_pending = False
-        self._frame_mutex.unlock()
+    def take_frame(self):
+        """Eng oxirgi kadrni olish - eski framelar avtomatik tashlanadi"""
+        qimg = self._latest_qimg
+        self._latest_qimg = None
+        return qimg
 
     def run(self):
         cap = None
@@ -66,11 +137,9 @@ class CameraWorker(QThread):
         _grab_running = [True]
 
         try:
-            cap = cv2.VideoCapture(self.source, cv2.CAP_FFMPEG)
+            cap, backend = _open_camera(self.source, self.camera_name)
 
-            if cap.isOpened():
-                cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-
+            if cap is not None:
                 # RTSP buffer tozalash - eski kadrlarni tashlash (~3 sek)
                 for _ in range(90):
                     cap.grab()
@@ -108,14 +177,8 @@ class CameraWorker(QThread):
                 gt.start()
 
                 # --- Main loop: eng oxirgi kadrni process qilish ---
+                _poly_loaded = False
                 while self._is_running() and not _grab_error[0]:
-                    self._frame_mutex.lock()
-                    pending = self._frame_pending
-                    self._frame_mutex.unlock()
-                    if pending:
-                        time.sleep(0.001)
-                        continue
-
                     with _frame_lock:
                         frame = _latest_frame[0]
                         _latest_frame[0] = None
@@ -131,36 +194,49 @@ class CameraWorker(QThread):
                                            interpolation=cv2.INTER_AREA)
                         h, w = frame.shape[:2]
 
+                    # Polygon yuklash (birinchi frame kelganda)
+                    if not _poly_loaded:
+                        _poly_loaded = True
+                        if self.polygon_file:
+                            self._poly_pts, self._poly_mask = _load_polygon(
+                                self.polygon_file, w, h)
+
                     # Car detection - NON-BLOCKING
-                    # detect_async frameni batch ga qo'yadi, oldingi natijalarni
-                    # + ularning ORIGINAL frameini qaytaradi
-                    # Boxlar shu framega chiziladi -> objectlar bilan 100% mos
                     detection_count = 0
+                    in_poly_count = 0
                     if self.detection_enabled and self.car_detector is not None:
                         try:
                             detections, det_frame = self.car_detector.detect_async(
                                 frame, camera_id=self.camera_name)
                             detection_count = len(detections)
                             if detections:
-                                # det_frame = detection hisoblangan frame
-                                # Boxlar shu framega chizilsa, object bilan mos tushadi
                                 draw_on = det_frame if det_frame is not None else frame
+                                # Polygon ichidagi detectionlarni belgilash
+                                if self._poly_mask is not None:
+                                    for det in detections:
+                                        cx = int((det.bbox[0] + det.bbox[2]) / 2)
+                                        cy = int((det.bbox[1] + det.bbox[3]) / 2)
+                                        if 0 <= cy < h and 0 <= cx < w and self._poly_mask[cy, cx] > 0:
+                                            in_poly_count += 1
                                 frame = self.car_detector.draw_detections(
                                     draw_on, detections,
                                     thickness=2, font_scale=0.5)
                                 h, w = frame.shape[:2]
-                            self.detection_updated.emit(detection_count)
+                            self.detection_updated.emit(in_poly_count if self._poly_mask is not None else detection_count)
                         except Exception as e:
                             print(f"[{self.camera_name}] Detection error: {e}")
+
+                    # Polygon chizish
+                    if self._poly_pts is not None:
+                        color = (0, 255, 0) if in_poly_count == 0 else (0, 0, 255)
+                        cv2.polylines(frame, [self._poly_pts], True, color, 2)
 
                     rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                     qimg = QImage(rgb.data, w, h, w * 3,
                                   QImage.Format.Format_RGB888).copy()
 
-                    self._frame_mutex.lock()
-                    self._frame_pending = True
-                    self._frame_mutex.unlock()
-                    self.frame_ready.emit(qimg)
+                    self._latest_qimg = qimg
+                    self.frame_ready.emit()
 
                 if _grab_error[0]:
                     self.status_changed.emit("error")
@@ -403,6 +479,7 @@ class CrossingCard(QWidget):
         self.main_camera_label = None
         self.additional_camera_label = None
         self._is_destroyed = False
+        self._main_camera_down = False  # Asosiy kamera uzilsa True
 
         # Car detector - SHARED instance (GPU maksimal ishlatish)
         self.car_detector = car_detector
@@ -900,11 +977,9 @@ class CrossingCard(QWidget):
             scaled = pixmap.scaled(
                 label.size(),
                 Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.FastTransformation
+                Qt.TransformationMode.SmoothTransformation
             )
             label.setPixmap(scaled)
-            if worker is not None:
-                worker.set_frame_delivered()
         except (RuntimeError, Exception):
             pass
 
@@ -938,19 +1013,36 @@ class CrossingCard(QWidget):
                 cam_type = camera.get("type", "main")
                 cam_name = camera.get("name", f"Camera {i+1}")
 
-                # Create worker with car detector
+                # Polygon file yo'lini aniqlash
+                poly_file = camera.get("polygon_file", "")
+                if poly_file and not os.path.isabs(poly_file):
+                    # Relative path — project root dan qidirish
+                    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+                    poly_file = os.path.join(project_root, poly_file)
+
+                # Settings dan thresholdlar
+                settings = self.config_manager.get_settings() if self.config_manager else {}
+                warn_t = settings.get("warning_threshold", 10.0)
+                viol_t = settings.get("violation_threshold", 15.0)
+
+                # Create worker with car detector + polygon
                 worker = CameraWorker(
                     source, cam_name,
                     car_detector=self.car_detector,
-                    detection_enabled=camera.get("detection_enabled", True)
+                    detection_enabled=camera.get("detection_enabled", True),
+                    polygon_file=poly_file if poly_file and os.path.isfile(poly_file) else None,
+                    warning_threshold=warn_t,
+                    violation_threshold=viol_t,
                 )
 
-                if i == 0 or cam_type == "main":
-                    worker.frame_ready.connect(lambda f, w=worker: self._on_main_frame(f, w))
+                # cam_type bo'yicha aniqlash, fallback: birinchi=main
+                is_main = cam_type == "main" if cam_type in ("main", "additional") else (i == 0)
+                if is_main:
+                    worker.frame_ready.connect(lambda w=worker: self._on_main_frame(w))
                     worker.status_changed.connect(self._on_main_status)
                     worker.detection_updated.connect(self._on_detection_update)
                 else:
-                    worker.frame_ready.connect(lambda f, w=worker: self._on_additional_frame(f, w))
+                    worker.frame_ready.connect(lambda w=worker: self._on_additional_frame(w))
                     worker.status_changed.connect(self._on_additional_status)
 
                 worker.start()
@@ -958,19 +1050,28 @@ class CrossingCard(QWidget):
         except (RuntimeError, Exception) as e:
             print(f"[StartCameras] Error: {e}")
 
-    def _on_main_frame(self, frame, worker=None):
+    def _on_main_frame(self, worker):
         if self._is_destroyed or self.main_camera_label is None:
             return
+        qimg = worker.take_frame()
+        if qimg is None:
+            return
         try:
-            self._display_frame(self.main_camera_label, frame, worker)
+            self._display_frame(self.main_camera_label, qimg)
         except RuntimeError:
             self._is_destroyed = True
 
-    def _on_additional_frame(self, frame, worker=None):
+    def _on_additional_frame(self, worker):
         if self._is_destroyed or self.additional_camera_label is None:
             return
+        qimg = worker.take_frame()
+        if qimg is None:
+            return
         try:
-            self._display_frame(self.additional_camera_label, frame, worker)
+            self._display_frame(self.additional_camera_label, qimg)
+            # Asosiy kamera uzilgan bo'lsa — qo'shimchani asosiy joyda ham ko'rsatish
+            if self._main_camera_down and self.main_camera_label is not None:
+                self._display_frame(self.main_camera_label, qimg)
         except RuntimeError:
             self._is_destroyed = True
 
@@ -979,13 +1080,15 @@ class CrossingCard(QWidget):
             return
         try:
             if status == "online":
+                self._main_camera_down = False
                 self.status_indicator.setStyleSheet(
                     f"color: {C('status_online')}; font-size: 10px; background: transparent; border: none;")
             elif status == "error":
+                self._main_camera_down = True
                 self.status_indicator.setStyleSheet(
                     f"color: {C('status_error')}; font-size: 10px; background: transparent; border: none;")
                 if self.main_camera_label:
-                    self._set_placeholder(self.main_camera_label, "Ulanmadi")
+                    self._set_placeholder(self.main_camera_label, "Asosiy kamera uzildi")
         except RuntimeError:
             self._is_destroyed = True
 
