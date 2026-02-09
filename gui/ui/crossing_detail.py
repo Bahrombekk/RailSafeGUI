@@ -17,14 +17,6 @@ import threading
 
 from gui.utils.theme_colors import C
 
-# Car detector import (optional - graceful degradation)
-try:
-    from detectors import RealtimeMultiCameraDetector
-    CAR_DETECTOR_AVAILABLE = True
-except ImportError:
-    CAR_DETECTOR_AVAILABLE = False
-    print("[CrossingDetail] RealtimeMultiCameraDetector not available")
-
 # RTSP ultra-low-latency (NVIDIA GPU - VA-API o'rniga software decode)
 os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = (
     'rtsp_transport;tcp|stimeout;2000000|'
@@ -110,6 +102,10 @@ class DetailCameraWorker(QThread):
                     gt.start()
 
                     # --- Main loop: eng oxirgi kadrni process qilish ---
+                    _fc = 0
+                    _fps_t = time.perf_counter()
+                    _cam_fps = 0.0
+
                     while self._is_running() and not _grab_error[0]:
                         self._frame_mutex.lock()
                         pending = self._frame_pending
@@ -146,8 +142,6 @@ class DetailCameraWorker(QThread):
                                         draw_on, detections,
                                         thickness=2, font_scale=0.6)
                                     h, w = frame.shape[:2]
-                                fps = self.car_detector.get_fps()
-                                self.detection_updated.emit(detection_count, fps)
                             except Exception as e:
                                 print(f"[{self.camera_name}] Detection error: {e}")
 
@@ -159,6 +153,16 @@ class DetailCameraWorker(QThread):
                         self._frame_pending = True
                         self._frame_mutex.unlock()
                         self.frame_ready.emit(qimg)
+
+                        # FPS hisoblash (test_new_peerezd.py uslubida)
+                        _fc += 1
+                        _now = time.time()
+                        _el = _now - _fps_t
+                        if _el >= 1.0:
+                            _cam_fps = _fc / _el
+                            _fc = 0
+                            _fps_t = _now
+                        self.detection_updated.emit(detection_count, _cam_fps)
                 else:
                     if self._is_running():
                         self.status_changed.emit("error")
@@ -217,7 +221,7 @@ class CrossingDetail(QWidget):
     edit_crossing_clicked = pyqtSignal(int)
     delete_crossing_clicked = pyqtSignal(int)
 
-    def __init__(self, config_manager, crossing_id: int, parent=None):
+    def __init__(self, config_manager, crossing_id: int, car_detector=None, parent=None):
         super().__init__(parent)
         self.config_manager = config_manager
         self.crossing_id = crossing_id
@@ -228,62 +232,14 @@ class CrossingDetail(QWidget):
         self.camera_detection_labels = {}  # Detection info labels
         self._destroyed = False
 
-        # Car detector initialization
-        self.car_detector = None
-        self._init_car_detector()
+        # Shared car detector (dashboard dan keladi - bitta TensorRT engine)
+        self.car_detector = car_detector
 
         if not self.crossing_data:
             raise ValueError(f"Crossing {crossing_id} not found")
 
         self._setup_ui()
         QTimer.singleShot(300, self._start_all_cameras)
-
-    def _init_car_detector(self):
-        """
-        REAL-TIME Multi-Camera Detector - GPU 100%
-        TensorRT qo'llab-quvvatlaydi - 3-5x tezroq inference
-        """
-        if not CAR_DETECTOR_AVAILABLE:
-            print("[CrossingDetail] RealtimeMultiCameraDetector not available")
-            return
-
-        try:
-            car_config = self.config_manager.get_car_detector_config()
-            if not car_config.get("enabled", False):
-                print("[CrossingDetail] Car detector disabled in config")
-                return
-
-            model_path = car_config.get("model_path", "")
-            if not model_path or not os.path.exists(model_path):
-                print(f"[CrossingDetail] Car detector model not found: {model_path}")
-                return
-
-            # REAL-TIME detector - barcha kameralar BITTA batch
-            # TensorRT engine mavjud bo'lsa, avtomatik ishlatiladi
-            self.car_detector = RealtimeMultiCameraDetector(
-                model_path=model_path,
-                confidence_threshold=car_config.get("confidence", 0.3),
-                iou_threshold=car_config.get("iou_threshold", 0.45),
-                imgsz=car_config.get("imgsz", 640),
-                device=car_config.get("device", "cuda"),
-                half=car_config.get("half", True),
-                filter_classes=car_config.get("filter_classes"),
-                batch_interval_ms=15.0,  # Har 15ms batch process
-            )
-
-            # Pre-load model (TensorRT auto-detected)
-            if self.car_detector.load():
-                stats = self.car_detector.get_stats()
-                print(f"[CrossingDetail] Detector yuklandi! Mode: {stats['model_type'].upper()}")
-            else:
-                self.car_detector = None
-                print("[CrossingDetail] Detector yuklanmadi")
-
-        except Exception as e:
-            print(f"[CrossingDetail] Car detector init error: {e}")
-            import traceback
-            traceback.print_exc()
-            self.car_detector = None
 
     def _get_camera_grid_cols(self):
         """Calculate camera grid columns based on screen and camera count"""

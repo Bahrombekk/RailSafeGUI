@@ -302,6 +302,8 @@ class RealtimeMultiCameraDetector:
         # Stats
         self._inference_times = []
         self._batch_sizes = []
+        self._cycle_times = []  # Actual wall-clock cycle time (sleep + infer)
+        self._last_cycle_time = 0.0
         self._processed_count = 0
 
     def load(self) -> bool:
@@ -374,7 +376,7 @@ class RealtimeMultiCameraDetector:
                 continue
 
             try:
-                start = time.perf_counter()
+                now = time.perf_counter()
                 frames = [item[1] for item in batch_data]
                 batch_size = len(frames)
 
@@ -383,7 +385,15 @@ class RealtimeMultiCameraDetector:
                 else:
                     detections_list = self._infer_ultralytics(frames)
 
-                inference_ms = (time.perf_counter() - start) * 1000
+                inference_ms = (time.perf_counter() - now) * 1000
+
+                # Cycle time = real wall-clock between batches (sleep + infer)
+                if self._last_cycle_time > 0:
+                    cycle_ms = (now - self._last_cycle_time) * 1000
+                    self._cycle_times.append(cycle_ms)
+                    if len(self._cycle_times) > 50:
+                        self._cycle_times.pop(0)
+                self._last_cycle_time = now
 
                 # Stats
                 self._inference_times.append(inference_ms)
@@ -616,21 +626,24 @@ class RealtimeMultiCameraDetector:
         return result
 
     def get_fps(self) -> float:
-        if not self._inference_times:
+        """Per-camera FPS (har bir kamera uchun haqiqiy tezlik)"""
+        if not self._cycle_times:
             return 0.0
-        avg_ms = sum(self._inference_times) / len(self._inference_times)
-        avg_batch = sum(self._batch_sizes) / len(self._batch_sizes) if self._batch_sizes else 1
-        return (1000.0 / avg_ms) * avg_batch if avg_ms > 0 else 0.0
+        avg_cycle = sum(self._cycle_times) / len(self._cycle_times)
+        return 1000.0 / avg_cycle if avg_cycle > 0 else 0.0
 
     def get_stats(self) -> Dict:
         avg_ms = sum(self._inference_times) / len(self._inference_times) if self._inference_times else 0
         avg_batch = sum(self._batch_sizes) / len(self._batch_sizes) if self._batch_sizes else 0
+        avg_cycle = sum(self._cycle_times) / len(self._cycle_times) if self._cycle_times else 0
         return {
             "processed": self._processed_count,
             "avg_batch_ms": avg_ms,
             "avg_batch_size": avg_batch,
+            "avg_cycle_ms": avg_cycle,
             "per_frame_ms": avg_ms / avg_batch if avg_batch > 0 else 0,
-            "fps": self.get_fps(),
+            "fps_per_camera": self.get_fps(),
+            "fps_total": (1000.0 / avg_ms) * avg_batch if avg_ms > 0 else 0,
             "model_type": self._model_type,
         }
 

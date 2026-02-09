@@ -193,8 +193,14 @@ class MainWindow(QMainWindow):
         self.current_crossing_id = crossing_id
         self._cleanup_detail_views()
 
+        # Dashboard kameralarini to'xtatish - GPU faqat detail uchun ishlaydi
+        self.dashboard.stop_all_cameras()
+
         try:
-            detail = CrossingDetail(self.config_manager, crossing_id)
+            detail = CrossingDetail(
+                self.config_manager, crossing_id,
+                car_detector=self.dashboard.car_detector
+            )
             detail.back_clicked.connect(self._show_dashboard)
             detail.add_camera_clicked.connect(self._add_camera)
             detail.edit_crossing_clicked.connect(self._edit_crossing)

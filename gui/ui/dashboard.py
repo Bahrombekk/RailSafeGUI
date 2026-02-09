@@ -223,5 +223,14 @@ class Dashboard(QWidget):
         super().resizeEvent(event)
         self._relayout_cards()
 
+    def stop_all_cameras(self):
+        """Kamera workerlarni to'xtatish (detail view uchun GPU bo'shatish)"""
+        for card in self.crossing_cards:
+            try:
+                if hasattr(card, 'cleanup'):
+                    card.cleanup()
+            except (RuntimeError, Exception):
+                pass
+
     def refresh(self):
         self._load_crossings()
