@@ -17,6 +17,7 @@ import time
 import json
 import threading
 from gui.utils.theme_colors import C
+from gui.utils.polygon_tracker import PolygonTracker
 
 # Car detector import (optional)
 try:
@@ -102,7 +103,7 @@ class CameraWorker(QThread):
     """Worker thread - all heavy work here, GUI thread only does setPixmap"""
     frame_ready = pyqtSignal()  # Lightweight - payload yo'q (queue backup bo'lmaydi)
     status_changed = pyqtSignal(str)
-    detection_updated = pyqtSignal(int)  # detection count
+    stats_updated = pyqtSignal(int, int, int)  # light_count, heavy_count, in_poly_count
 
     def __init__(self, source: str, camera_name: str = "Camera", display_width: int = 1280,
                  car_detector=None, detection_enabled: bool = True,
@@ -178,6 +179,7 @@ class CameraWorker(QThread):
 
                 # --- Main loop: eng oxirgi kadrni process qilish ---
                 _poly_loaded = False
+                _tracker = None  # PolygonTracker (polygon yuklangandan keyin yaratiladi)
                 while self._is_running() and not _grab_error[0]:
                     with _frame_lock:
                         frame = _latest_frame[0]
@@ -200,6 +202,15 @@ class CameraWorker(QThread):
                         if self.polygon_file:
                             self._poly_pts, self._poly_mask = _load_polygon(
                                 self.polygon_file, w, h)
+                        # Tracker yaratish (polygon mavjud bo'lsa)
+                        if self._poly_mask is not None:
+                            _tracker = PolygonTracker(
+                                poly_mask=self._poly_mask,
+                                iou_threshold=0.3,
+                                max_age=2.0,
+                                frame_width=w,
+                                frame_height=h
+                            )
 
                     # Car detection - NON-BLOCKING
                     detection_count = 0
@@ -211,18 +222,21 @@ class CameraWorker(QThread):
                             detection_count = len(detections)
                             if detections:
                                 draw_on = det_frame if det_frame is not None else frame
-                                # Polygon ichidagi detectionlarni belgilash
-                                if self._poly_mask is not None:
-                                    for det in detections:
-                                        cx = int((det.bbox[0] + det.bbox[2]) / 2)
-                                        cy = int((det.bbox[1] + det.bbox[3]) / 2)
-                                        if 0 <= cy < h and 0 <= cx < w and self._poly_mask[cy, cx] > 0:
-                                            in_poly_count += 1
+                                # Tracking + counting
+                                if _tracker is not None:
+                                    _tracker.process_detections(detections)
+                                    in_poly_count = _tracker.get_inside_count()
+                                    self.stats_updated.emit(
+                                        _tracker.light_count,
+                                        _tracker.heavy_count,
+                                        in_poly_count
+                                    )
+                                else:
+                                    self.stats_updated.emit(0, 0, detection_count)
                                 frame = self.car_detector.draw_detections(
                                     draw_on, detections,
                                     thickness=2, font_scale=0.5)
                                 h, w = frame.shape[:2]
-                            self.detection_updated.emit(in_poly_count if self._poly_mask is not None else detection_count)
                         except Exception as e:
                             print(f"[{self.camera_name}] Detection error: {e}")
 
@@ -1040,7 +1054,7 @@ class CrossingCard(QWidget):
                 if is_main:
                     worker.frame_ready.connect(lambda w=worker: self._on_main_frame(w))
                     worker.status_changed.connect(self._on_main_status)
-                    worker.detection_updated.connect(self._on_detection_update)
+                    worker.stats_updated.connect(self._on_stats_update)
                 else:
                     worker.frame_ready.connect(lambda w=worker: self._on_additional_frame(w))
                     worker.status_changed.connect(self._on_additional_status)
@@ -1101,13 +1115,12 @@ class CrossingCard(QWidget):
         except RuntimeError:
             self._is_destroyed = True
 
-    def _on_detection_update(self, count):
-        """Handle detection count updates"""
+    def _on_stats_update(self, light_count: int, heavy_count: int, in_poly_count: int):
+        """Handle cumulative tracking stats from CameraWorker"""
         if self._is_destroyed:
             return
         try:
-            # Update car count stat
-            self._update_stat_label(self.car_count, count, C('accent_blue'))
+            self.update_stats(light_count, heavy_count)
         except RuntimeError:
             self._is_destroyed = True
 

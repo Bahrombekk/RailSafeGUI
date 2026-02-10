@@ -17,6 +17,7 @@ import json
 import threading
 
 from gui.utils.theme_colors import C
+from gui.utils.polygon_tracker import PolygonTracker
 
 # RTSP ultra-low-latency (FFmpeg fallback uchun)
 os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = (
@@ -94,7 +95,7 @@ class DetailCameraWorker(QThread):
     """Worker thread - all heavy work here, GUI only does setPixmap, auto-reconnect"""
     frame_ready = pyqtSignal()  # Lightweight - payload yo'q (queue backup bo'lmaydi)
     status_changed = pyqtSignal(str)
-    detection_updated = pyqtSignal(int, float)  # detection_count, fps
+    stats_updated = pyqtSignal(int, int, int, float)  # light_count, heavy_count, in_poly_count, fps
 
     def __init__(self, source: str, camera_name: str = "Camera", display_width: int = 1920,
                  car_detector: 'CarDetector' = None, detection_enabled: bool = True,
@@ -173,6 +174,7 @@ class DetailCameraWorker(QThread):
                     _fps_t = time.perf_counter()
                     _cam_fps = 0.0
                     _poly_loaded = False
+                    _tracker = None  # PolygonTracker (polygon yuklangandan keyin yaratiladi)
 
                     while self._is_running() and not _grab_error[0]:
                         with _frame_lock:
@@ -196,6 +198,14 @@ class DetailCameraWorker(QThread):
                             if self.polygon_file:
                                 self._poly_pts, self._poly_mask = _load_polygon(
                                     self.polygon_file, w, h)
+                            if self._poly_mask is not None:
+                                _tracker = PolygonTracker(
+                                    poly_mask=self._poly_mask,
+                                    iou_threshold=0.3,
+                                    max_age=2.0,
+                                    frame_width=w,
+                                    frame_height=h
+                                )
 
                         # Car detection - NON-BLOCKING
                         detection_count = 0
@@ -207,13 +217,10 @@ class DetailCameraWorker(QThread):
                                 detection_count = len(detections)
                                 if detections:
                                     draw_on = det_frame if det_frame is not None else frame
-                                    # Polygon ichidagi detectionlarni belgilash
-                                    if self._poly_mask is not None:
-                                        for det in detections:
-                                            cx = int((det.bbox[0] + det.bbox[2]) / 2)
-                                            cy = int((det.bbox[1] + det.bbox[3]) / 2)
-                                            if 0 <= cy < h and 0 <= cx < w and self._poly_mask[cy, cx] > 0:
-                                                in_poly_count += 1
+                                    # Tracking + counting
+                                    if _tracker is not None:
+                                        _tracker.process_detections(detections)
+                                        in_poly_count = _tracker.get_inside_count()
                                     frame = self.car_detector.draw_detections(
                                         draw_on, detections,
                                         thickness=2, font_scale=0.6)
@@ -233,7 +240,7 @@ class DetailCameraWorker(QThread):
                         self._latest_qimg = qimg
                         self.frame_ready.emit()
 
-                        # FPS hisoblash (test_new_peerezd.py uslubida)
+                        # FPS hisoblash
                         _fc += 1
                         _now = time.time()
                         _el = _now - _fps_t
@@ -241,9 +248,15 @@ class DetailCameraWorker(QThread):
                             _cam_fps = _fc / _el
                             _fc = 0
                             _fps_t = _now
-                        self.detection_updated.emit(
-                            in_poly_count if self._poly_mask is not None else detection_count,
-                            _cam_fps)
+                        if _tracker is not None:
+                            self.stats_updated.emit(
+                                _tracker.light_count,
+                                _tracker.heavy_count,
+                                in_poly_count,
+                                _cam_fps
+                            )
+                        else:
+                            self.stats_updated.emit(0, 0, detection_count, _cam_fps)
                 else:
                     if self._is_running():
                         self.status_changed.emit("error")
@@ -678,8 +691,9 @@ class CrossingDetail(QWidget):
             worker.status_changed.connect(
                 lambda s, cid=cam_id: self._on_camera_status(cid, s)
             )
-            worker.detection_updated.connect(
-                lambda count, fps, cid=cam_id: self._on_detection_update(cid, count, fps)
+            worker.stats_updated.connect(
+                lambda light, heavy, in_poly, fps, cid=cam_id:
+                    self._on_stats_update(cid, light, heavy, in_poly, fps)
             )
             worker.start()
             self.camera_workers.append(worker)
@@ -714,20 +728,35 @@ class CrossingDetail(QWidget):
         except RuntimeError:
             self._destroyed = True
 
-    def _on_detection_update(self, cam_id, count, fps):
-        """Handle detection updates from camera worker"""
+    def _on_stats_update(self, cam_id, light_count, heavy_count, in_poly_count, fps):
+        """Handle tracking stats from DetailCameraWorker"""
         if self._destroyed:
             return
         try:
             det_label = self.camera_detection_labels.get(cam_id)
             if det_label:
-                det_label.setText(f"Detect: {count} | FPS: {fps:.1f}")
-                if count > 0:
+                total = light_count + heavy_count
+                det_label.setText(f"Yengil: {light_count} | Og'ir: {heavy_count} | Jami: {total} | FPS: {fps:.1f}")
+                if in_poly_count > 0:
                     det_label.setStyleSheet(f"color: {C('accent_green')}; font-size: 10px; font-weight: bold; background: transparent;")
                 else:
                     det_label.setStyleSheet(f"color: {C('text_secondary')}; font-size: 10px; background: transparent;")
+            # Statistika panelni yangilash
+            self._update_statistics_panel(light_count, heavy_count)
         except RuntimeError:
             self._destroyed = True
+
+    def _update_statistics_panel(self, light: int, heavy: int):
+        """Statistika panel qiymatlarini yangilash"""
+        try:
+            if hasattr(self, '_stat_light_label'):
+                self._stat_light_label.setText(str(light))
+            if hasattr(self, '_stat_heavy_label'):
+                self._stat_heavy_label.setText(str(heavy))
+            if hasattr(self, '_stat_total_label'):
+                self._stat_total_label.setText(str(light + heavy))
+        except RuntimeError:
+            pass
 
     def _update_time(self):
         if self._destroyed:
@@ -776,23 +805,49 @@ class CrossingDetail(QWidget):
         cameras_count = len(self.crossing_data.get("cameras", []))
         active = sum(1 for c in self.crossing_data.get("cameras", []) if c.get("enabled"))
 
-        stats = [
-            ("Kameralar", f"{active}/{cameras_count}", C('accent_brand')),
-            ("Jami Transport", "0", C('accent_green')),
-            ("Buzilishlar", "0", C('accent_red')),
-            ("O'rtacha Vaqt", "0s", C('accent_yellow')),
-        ]
+        # Kameralar (statik)
+        row_cam = QHBoxLayout()
+        n_cam = QLabel("Kameralar")
+        n_cam.setStyleSheet(f"color: {C('text_muted')}; font-size: 12px; background: transparent;")
+        row_cam.addWidget(n_cam)
+        row_cam.addStretch()
+        v_cam = QLabel(f"{active}/{cameras_count}")
+        v_cam.setStyleSheet(f"color: {C('accent_brand')}; font-size: 14px; font-weight: bold; background: transparent;")
+        row_cam.addWidget(v_cam)
+        layout.addLayout(row_cam)
 
-        for name, value, color in stats:
-            row = QHBoxLayout()
-            n = QLabel(name)
-            n.setStyleSheet(f"color: {C('text_muted')}; font-size: 12px; background: transparent;")
-            row.addWidget(n)
-            row.addStretch()
-            v = QLabel(value)
-            v.setStyleSheet(f"color: {color}; font-size: 14px; font-weight: bold; background: transparent;")
-            row.addWidget(v)
-            layout.addLayout(row)
+        # Yengil transport (dinamik)
+        row_light = QHBoxLayout()
+        n_light = QLabel("Yengil transport")
+        n_light.setStyleSheet(f"color: {C('text_muted')}; font-size: 12px; background: transparent;")
+        row_light.addWidget(n_light)
+        row_light.addStretch()
+        self._stat_light_label = QLabel("0")
+        self._stat_light_label.setStyleSheet(f"color: {C('accent_blue')}; font-size: 14px; font-weight: bold; background: transparent;")
+        row_light.addWidget(self._stat_light_label)
+        layout.addLayout(row_light)
+
+        # Og'ir transport (dinamik)
+        row_heavy = QHBoxLayout()
+        n_heavy = QLabel("Og'ir transport")
+        n_heavy.setStyleSheet(f"color: {C('text_muted')}; font-size: 12px; background: transparent;")
+        row_heavy.addWidget(n_heavy)
+        row_heavy.addStretch()
+        self._stat_heavy_label = QLabel("0")
+        self._stat_heavy_label.setStyleSheet(f"color: {C('accent_orange')}; font-size: 14px; font-weight: bold; background: transparent;")
+        row_heavy.addWidget(self._stat_heavy_label)
+        layout.addLayout(row_heavy)
+
+        # Jami transport (dinamik)
+        row_total = QHBoxLayout()
+        n_total = QLabel("Jami transport")
+        n_total.setStyleSheet(f"color: {C('text_muted')}; font-size: 12px; background: transparent;")
+        row_total.addWidget(n_total)
+        row_total.addStretch()
+        self._stat_total_label = QLabel("0")
+        self._stat_total_label.setStyleSheet(f"color: {C('accent_green')}; font-size: 14px; font-weight: bold; background: transparent;")
+        row_total.addWidget(self._stat_total_label)
+        layout.addLayout(row_total)
 
         layout.addStretch()
         return panel
@@ -933,7 +988,7 @@ class CrossingDetail(QWidget):
             try:
                 w.frame_ready.disconnect()
                 w.status_changed.disconnect()
-                w.detection_updated.disconnect()
+                w.stats_updated.disconnect()
             except Exception:
                 pass
             try:
