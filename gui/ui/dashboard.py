@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QScrollArea,
 from PyQt6.QtCore import Qt, pyqtSignal
 from gui.widgets.crossing_card import CrossingCard
 from gui.utils.theme_colors import C
+from gui.utils.stats_db import StatsDB
 
 try:
     from detectors import RealtimeMultiCameraDetector
@@ -33,6 +34,9 @@ class Dashboard(QWidget):
         # BITTA detector - barcha kameralar uchun (GPU maksimal)
         self.car_detector = None
         self._init_shared_detector()
+
+        # Statistika bazasi (barcha pereezdlar uchun bitta)
+        self.stats_db = StatsDB()
 
         self._setup_ui()
         self._load_crossings()
@@ -156,7 +160,8 @@ class Dashboard(QWidget):
                 crossing,
                 config_manager=self.config_manager,
                 compact=(count in (2, 3) or count >= 5),
-                car_detector=self.car_detector
+                car_detector=self.car_detector,
+                stats_db=self.stats_db
             )
             card.clicked.connect(self.crossing_selected.emit)
             if fill_screen:

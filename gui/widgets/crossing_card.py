@@ -103,7 +103,7 @@ class CameraWorker(QThread):
     """Worker thread - all heavy work here, GUI thread only does setPixmap"""
     frame_ready = pyqtSignal()  # Lightweight - payload yo'q (queue backup bo'lmaydi)
     status_changed = pyqtSignal(str)
-    stats_updated = pyqtSignal(int, int, int)  # light_count, heavy_count, in_poly_count
+    stats_updated = pyqtSignal(int, int, int, float)  # light_count, heavy_count, in_poly_count, max_poly_time
 
     def __init__(self, source: str, camera_name: str = "Camera", display_width: int = 1280,
                  car_detector=None, detection_enabled: bool = True,
@@ -226,13 +226,15 @@ class CameraWorker(QThread):
                                 if _tracker is not None:
                                     _tracker.process_detections(detections)
                                     in_poly_count = _tracker.get_inside_count()
+                                    max_time = _tracker.get_max_time()
                                     self.stats_updated.emit(
                                         _tracker.light_count,
                                         _tracker.heavy_count,
-                                        in_poly_count
+                                        in_poly_count,
+                                        max_time
                                     )
                                 else:
-                                    self.stats_updated.emit(0, 0, detection_count)
+                                    self.stats_updated.emit(0, 0, detection_count, 0.0)
                                 frame = self.car_detector.draw_detections(
                                     draw_on, detections,
                                     thickness=2, font_scale=0.5)
@@ -483,12 +485,13 @@ class CrossingCard(QWidget):
     clicked = pyqtSignal(int)
 
     def __init__(self, crossing_data: dict, config_manager=None, compact=False,
-                 car_detector=None, parent=None):
+                 car_detector=None, stats_db=None, parent=None):
         super().__init__(parent)
         self.crossing_data = crossing_data
         self.crossing_id = crossing_data.get("id", 0)
         self.config_manager = config_manager
         self.compact = compact
+        self.stats_db = stats_db
         self.camera_workers = []
         self.main_camera_label = None
         self.additional_camera_label = None
@@ -501,7 +504,19 @@ class CrossingCard(QWidget):
 
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self._setup_ui()
+        self._load_startup_counts()
         QTimer.singleShot(100, self._start_cameras)
+
+    def _load_startup_counts(self):
+        """DB dan bugungi sanashni yuklash (dastur qayta ishga tushganda davom etadi)"""
+        if not self.stats_db:
+            return
+        try:
+            light, heavy = self.stats_db.get_today_total(self.crossing_id)
+            if light > 0 or heavy > 0:
+                self.update_stats(light, heavy)
+        except Exception:
+            pass
 
     def _setup_ui(self):
         main_layout = QVBoxLayout(self)
@@ -1115,12 +1130,21 @@ class CrossingCard(QWidget):
         except RuntimeError:
             self._is_destroyed = True
 
-    def _on_stats_update(self, light_count: int, heavy_count: int, in_poly_count: int):
+    def _on_stats_update(self, light_count: int, heavy_count: int,
+                         in_poly_count: int, max_time: float):
         """Handle cumulative tracking stats from CameraWorker"""
         if self._is_destroyed:
             return
         try:
             self.update_stats(light_count, heavy_count)
+            # DB ga yozish (asosiy kamera uchun)
+            if self.stats_db and light_count + heavy_count > 0:
+                main_name = ""
+                if self.main_camera_data:
+                    main_name = self.main_camera_data.get("name", "Camera")
+                if main_name:
+                    self.stats_db.record_count(
+                        self.crossing_id, main_name, light_count, heavy_count)
         except RuntimeError:
             self._is_destroyed = True
 

@@ -4,8 +4,7 @@ Crossing Detail View - Responsive cameras with grid layout, auto-reconnect
 
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
                               QLabel, QScrollArea, QFrame,
-                              QTableWidget, QTableWidgetItem,
-                              QHeaderView, QSizePolicy, QApplication,
+                              QSizePolicy, QApplication,
                               QGridLayout)
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QThread, QMutex
 from PyQt6.QtGui import QPixmap, QImage
@@ -18,6 +17,7 @@ import threading
 
 from gui.utils.theme_colors import C
 from gui.utils.polygon_tracker import PolygonTracker
+from gui.widgets.hourly_chart import HourlyChartPanel
 
 # RTSP ultra-low-latency (FFmpeg fallback uchun)
 os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = (
@@ -95,7 +95,7 @@ class DetailCameraWorker(QThread):
     """Worker thread - all heavy work here, GUI only does setPixmap, auto-reconnect"""
     frame_ready = pyqtSignal()  # Lightweight - payload yo'q (queue backup bo'lmaydi)
     status_changed = pyqtSignal(str)
-    stats_updated = pyqtSignal(int, int, int, float)  # light_count, heavy_count, in_poly_count, fps
+    stats_updated = pyqtSignal(int, int, int, float, float)  # light_count, heavy_count, in_poly_count, max_time, fps
 
     def __init__(self, source: str, camera_name: str = "Camera", display_width: int = 1920,
                  car_detector: 'CarDetector' = None, detection_enabled: bool = True,
@@ -253,10 +253,11 @@ class DetailCameraWorker(QThread):
                                 _tracker.light_count,
                                 _tracker.heavy_count,
                                 in_poly_count,
+                                _tracker.get_max_time(),
                                 _cam_fps
                             )
                         else:
-                            self.stats_updated.emit(0, 0, detection_count, _cam_fps)
+                            self.stats_updated.emit(0, 0, detection_count, 0.0, _cam_fps)
                 else:
                     if self._is_running():
                         self.status_changed.emit("error")
@@ -315,7 +316,8 @@ class CrossingDetail(QWidget):
     edit_crossing_clicked = pyqtSignal(int)
     delete_crossing_clicked = pyqtSignal(int)
 
-    def __init__(self, config_manager, crossing_id: int, car_detector=None, parent=None):
+    def __init__(self, config_manager, crossing_id: int, car_detector=None,
+                 stats_db=None, parent=None):
         super().__init__(parent)
         self.config_manager = config_manager
         self.crossing_id = crossing_id
@@ -324,6 +326,9 @@ class CrossingDetail(QWidget):
         self.camera_labels = {}
         self.camera_status_labels = {}
         self.camera_detection_labels = {}  # Detection info labels
+        self.camera_polytime_labels = {}  # Polygon time labels
+        self.camera_types = {}  # cam_id -> "main"/"additional"
+        self.stats_db = stats_db
         self._destroyed = False
 
         # Shared car detector (dashboard dan keladi - bitta TensorRT engine)
@@ -474,9 +479,9 @@ class CrossingDetail(QWidget):
 
         content_layout.addLayout(info_row)
 
-        # Events
-        events = self._create_events_table()
-        content_layout.addWidget(events)
+        # Soatlik grafik (So'nggi Hodisalar o'rniga)
+        self._hourly_chart = self._create_hourly_chart()
+        content_layout.addWidget(self._hourly_chart)
 
         content_layout.addStretch()
         scroll.setWidget(content)
@@ -486,6 +491,13 @@ class CrossingDetail(QWidget):
         self.time_timer = QTimer(self)
         self.time_timer.timeout.connect(self._update_time)
         self.time_timer.start(1000)
+
+        # Grafik yangilash timer (60 sekundda bir)
+        self._chart_timer = QTimer(self)
+        self._chart_timer.timeout.connect(self._refresh_chart)
+        self._chart_timer.start(60000)
+        # Dastlabki yuklash
+        QTimer.singleShot(500, self._refresh_chart)
 
     def _create_cameras_section(self):
         container = QWidget()
@@ -611,16 +623,18 @@ class CrossingDetail(QWidget):
         bottom.addWidget(time_lbl)
 
         # Detection info label
-        det_lbl = QLabel("Detect: 0 | FPS: 0.0")
+        det_lbl = QLabel("Yengil: 0 | Og'ir: 0 | Jami: 0 | FPS: 0.0")
         det_lbl.setStyleSheet(f"color: {C('text_secondary')}; font-size: 10px; background: transparent;")
         self.camera_detection_labels[cam_id] = det_lbl
         bottom.addWidget(det_lbl)
 
         bottom.addStretch()
 
-        plate_lbl = QLabel("Avtomobil: -- --- --")
-        plate_lbl.setStyleSheet(f"color: {C('accent_orange')}; font-size: 10px; font-weight: bold; background: transparent;")
-        bottom.addWidget(plate_lbl)
+        # Polygon vaqt label
+        poly_time_lbl = QLabel("Polygon: bo'sh")
+        poly_time_lbl.setStyleSheet(f"color: {C('text_muted')}; font-size: 10px; background: transparent;")
+        self.camera_polytime_labels[cam_id] = poly_time_lbl
+        bottom.addWidget(poly_time_lbl)
 
         p_layout.addLayout(bottom)
         return panel
@@ -667,6 +681,10 @@ class CrossingDetail(QWidget):
                 continue
 
             cam_id = cam.get("id", 0)
+            cam_name = cam.get("name", f"Cam-{cam_id}")
+            cam_type = cam.get("type", "additional")
+            self.camera_types[cam_id] = cam_type
+
             label = self.camera_labels.get(cam_id)
             if not label:
                 continue
@@ -680,7 +698,7 @@ class CrossingDetail(QWidget):
             # Create worker with car detector + polygon
             worker = DetailCameraWorker(
                 src,
-                cam.get("name", f"Cam-{cam_id}"),
+                cam_name,
                 car_detector=self.car_detector,
                 detection_enabled=cam.get("detection_enabled", True),
                 polygon_file=poly_file if poly_file and os.path.isfile(poly_file) else None,
@@ -692,8 +710,8 @@ class CrossingDetail(QWidget):
                 lambda s, cid=cam_id: self._on_camera_status(cid, s)
             )
             worker.stats_updated.connect(
-                lambda light, heavy, in_poly, fps, cid=cam_id:
-                    self._on_stats_update(cid, light, heavy, in_poly, fps)
+                lambda light, heavy, in_poly, max_t, fps, cid=cam_id, cname=cam_name:
+                    self._on_stats_update(cid, cname, light, heavy, in_poly, max_t, fps)
             )
             worker.start()
             self.camera_workers.append(worker)
@@ -728,7 +746,8 @@ class CrossingDetail(QWidget):
         except RuntimeError:
             self._destroyed = True
 
-    def _on_stats_update(self, cam_id, light_count, heavy_count, in_poly_count, fps):
+    def _on_stats_update(self, cam_id, cam_name, light_count, heavy_count,
+                         in_poly_count, max_time, fps):
         """Handle tracking stats from DetailCameraWorker"""
         if self._destroyed:
             return
@@ -741,8 +760,23 @@ class CrossingDetail(QWidget):
                     det_label.setStyleSheet(f"color: {C('accent_green')}; font-size: 10px; font-weight: bold; background: transparent;")
                 else:
                     det_label.setStyleSheet(f"color: {C('text_secondary')}; font-size: 10px; background: transparent;")
-            # Statistika panelni yangilash
-            self._update_statistics_panel(light_count, heavy_count)
+            # Polygon vaqtni yangilash
+            poly_lbl = self.camera_polytime_labels.get(cam_id)
+            if poly_lbl:
+                if max_time > 0:
+                    poly_lbl.setText(f"Polygon: {max_time:.1f}s")
+                    poly_lbl.setStyleSheet(f"color: {C('accent_red')}; font-size: 10px; font-weight: bold; background: transparent;")
+                else:
+                    poly_lbl.setText("Polygon: bo'sh")
+                    poly_lbl.setStyleSheet(f"color: {C('text_muted')}; font-size: 10px; background: transparent;")
+            # Asosiy kamera bo'lsa → statistika panelni yangilash
+            cam_type = self.camera_types.get(cam_id, "additional")
+            if cam_type == "main":
+                self._update_statistics_panel(light_count, heavy_count)
+            # DB ga yozish
+            if self.stats_db and light_count + heavy_count > 0:
+                self.stats_db.record_count(
+                    self.crossing_id, cam_name, light_count, heavy_count)
         except RuntimeError:
             self._destroyed = True
 
@@ -921,59 +955,20 @@ class CrossingDetail(QWidget):
         layout.addStretch()
         return panel
 
-    def _create_events_table(self):
-        panel = QFrame()
-        panel.setStyleSheet(f"""
-            QFrame#eventsPanel {{
-                background: {C('bg_primary')};
-                border: 2px solid {C('bg_input')};
-                border-radius: 12px;
-            }}
-        """)
-        panel.setObjectName("eventsPanel")
-        layout = QVBoxLayout(panel)
-        layout.setContentsMargins(16, 12, 16, 12)
-        layout.setSpacing(10)
+    def _create_hourly_chart(self):
+        """Soatlik transport grafigi (HourlyChartPanel)"""
+        chart_panel = HourlyChartPanel()
+        return chart_panel
 
-        title = QLabel("So'nggi Hodisalar")
-        title.setStyleSheet(f"color: {C('text_primary')}; font-size: 14px; font-weight: bold; background: transparent;")
-        layout.addWidget(title)
-
-        div = QFrame()
-        div.setFixedHeight(1)
-        div.setStyleSheet(f"background: {C('bg_input')};")
-        layout.addWidget(div)
-
-        table = QTableWidget()
-        table.setColumnCount(4)
-        table.setHorizontalHeaderLabels(["Vaqt", "Kamera", "Hodisa", "Transport"])
-        table.setStyleSheet(f"""
-            QTableWidget {{
-                background: {C('bg_secondary')}; border: 1px solid {C('bg_input')};
-                color: {C('text_primary')}; gridline-color: {C('bg_input')}; border-radius: 6px;
-            }}
-            QHeaderView::section {{
-                background: {C('bg_primary')}; color: {C('text_secondary')};
-                border: 1px solid {C('bg_input')}; padding: 6px;
-                font-size: 11px; font-weight: bold;
-            }}
-            QTableWidget::item:alternate {{ background: {C('bg_primary')}; }}
-        """)
-
-        header = table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
-
-        table.setAlternatingRowColors(True)
-        table.setMinimumHeight(120)
-        table.setMaximumHeight(180)
-        table.setRowCount(0)
-        table.verticalHeader().setVisible(False)
-
-        layout.addWidget(table)
-        return panel
+    def _refresh_chart(self):
+        """Grafik ma'lumotlarini DB dan yangilash"""
+        if self._destroyed or not self.stats_db:
+            return
+        try:
+            data = self.stats_db.get_hourly_data(self.crossing_id)
+            self._hourly_chart.set_data(data)
+        except Exception:
+            pass
 
     def cleanup(self):
         if self._destroyed:
@@ -982,6 +977,11 @@ class CrossingDetail(QWidget):
         try:
             if hasattr(self, 'time_timer') and self.time_timer is not None:
                 self.time_timer.stop()
+        except RuntimeError:
+            pass
+        try:
+            if hasattr(self, '_chart_timer') and self._chart_timer is not None:
+                self._chart_timer.stop()
         except RuntimeError:
             pass
         for w in self.camera_workers:
@@ -997,6 +997,8 @@ class CrossingDetail(QWidget):
                 pass
         self.camera_workers.clear()
         self.camera_detection_labels.clear()
+        self.camera_polytime_labels.clear()
+        self.camera_types.clear()
 
     def refresh(self):
         self.cleanup()
@@ -1005,6 +1007,8 @@ class CrossingDetail(QWidget):
         self.camera_labels.clear()
         self.camera_status_labels.clear()
         self.camera_detection_labels.clear()
+        self.camera_polytime_labels.clear()
+        self.camera_types.clear()
         self.camera_workers = []
 
         # Remove all child widgets

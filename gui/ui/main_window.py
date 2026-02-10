@@ -199,7 +199,8 @@ class MainWindow(QMainWindow):
         try:
             detail = CrossingDetail(
                 self.config_manager, crossing_id,
-                car_detector=self.dashboard.car_detector
+                car_detector=self.dashboard.car_detector,
+                stats_db=self.dashboard.stats_db
             )
             detail.back_clicked.connect(self._show_dashboard)
             detail.add_camera_clicked.connect(self._add_camera)
