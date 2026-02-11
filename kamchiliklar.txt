@@ -1,0 +1,27 @@
+paligon ichidagi vaqtini dashbortga ham chiqarish ✅
+paligon ichidagi aftomabillar sonini ham chiqarish ✅
+
+gui ga moslab joylashtirish
+
+pereezd ni malumotlarini json qilib yuklab olish barcha malumotlarini
+pereezd qo'shayotganda json orqaliy ham qo'shaydigan qilish 
+perez nomi o'zgarganda bazadagi malumotlarini ham o'zgaran nomga ko'chirish
+----------------------------------------------------
+Paligo ranglarini to'g'ri tartibda o'zgartirish 
+1) paligon bo'sh bo'lsa yashil
+2) paligon ichida aftomabil bo'lsa sariq
+3) agar buzulish sodir bo'lsa paligon qizil
+
+
+-----------------------------------------------------
+
+keyinchalik qilinadigan ishlar 
+
+hafta kuni vaqtga qara analitika qilish kunlik nechta poyez o'tganini aniqlashtirish PLC signaliga qarab
+soatlik paligonni ichida o'tgan aftomabil va maksimal nechta aftomabil bo'lishi o'rtachasi vaqti yaniy paligondan o'tish vaqti umumiy o'rtachasi
+1 oylik malumot yig'ib har bir pereezd uchun analitika qaysi vaqtda aftomabil ko'p bo'lish
+qay vaqtlarda poyez o'tishini oldindan bashorat qilishi va bildirishnoma chiqarish
+
+til: uzb,rus,ingliz tilida o'llash
+
+Tizim haqida bo'limga to'lliq ishlatilishi hafsizligi va boshqa algoritimlarni kiritib chiqish to'lliq 3 ta tilda 

@@ -136,6 +136,12 @@ class MainWindow(QMainWindow):
     def _setup_statusbar(self):
         self.statusbar = QStatusBar()
         self.setStatusBar(self.statusbar)
+
+        # Markaziy soat label
+        self.clock_label = QLabel("")
+        self.clock_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.statusbar.addPermanentWidget(self.clock_label, 1)
+
         self._apply_statusbar_style()
 
         self.status_timer = QTimer(self)
@@ -149,13 +155,19 @@ class MainWindow(QMainWindow):
             f"QStatusBar {{ background: {C('bg_secondary')}; color: {C('text_muted')}; "
             f"border-top: 1px solid {C('bg_input')}; }}"
         )
+        self.clock_label.setStyleSheet(
+            f"color: {C('text_primary')}; font-size: 13px; font-weight: bold;"
+        )
 
     def _update_stats(self):
+        import time as _time
         crossings = self.config_manager.get_crossings()
         total = len(crossings)
         total_cams = sum(len(c.get("cameras", [])) for c in crossings)
+        now = _time.strftime("%H:%M:%S")
         self.toolbar_stats.setText(f"Pereezdlar: {total} | Kameralar: {total_cams}")
         self.statusbar.showMessage(f"Jami: {total} pereezd, {total_cams} kamera")
+        self.clock_label.setText(now)
 
     def _load_stylesheet(self):
         theme = self.config_manager.get_settings().get("theme", "dark")

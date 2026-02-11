@@ -509,10 +509,29 @@ class CrossingCard(QWidget):
 
     def _load_startup_counts(self):
         """DB dan bugungi sanashni yuklash (dastur qayta ishga tushganda davom etadi)"""
+        self._light_offset = 0
+        self._heavy_offset = 0
         if not self.stats_db:
             return
         try:
-            light, heavy = self.stats_db.get_today_total(self.crossing_id)
+            # Asosiy kamera nomini topish
+            cameras = self.crossing_data.get("cameras", [])
+            main_cam_name = ""
+            for cam in cameras:
+                if cam.get("type", "additional") == "main":
+                    main_cam_name = cam.get("name", "")
+                    break
+            if not main_cam_name and cameras:
+                main_cam_name = cameras[0].get("name", "")
+
+            if main_cam_name:
+                light, heavy = self.stats_db.get_camera_today(
+                    self.crossing_id, main_cam_name)
+            else:
+                light, heavy = self.stats_db.get_today_total(self.crossing_id)
+
+            self._light_offset = light
+            self._heavy_offset = heavy
             if light > 0 or heavy > 0:
                 self.update_stats(light, heavy)
         except Exception:
@@ -609,39 +628,46 @@ class CrossingCard(QWidget):
         """)
         self._set_placeholder(self.main_camera_label, "Yuklanmoqda...")
 
-        # Main camera bottom bar
+        # Bottom bar: status + kamera nomi + bandlik + polygon + vaqt
         main_bottom = QFrame()
         main_bottom.setStyleSheet(f"""
             QFrame {{
                 background-color: {C('bg_camera_bar')};
                 border: 1px solid {C('border_light')};
                 border-top: none;
-                border-bottom-left-radius: 4px;
-                border-bottom-right-radius: 4px;
+                border-bottom-left-radius: 6px;
+                border-bottom-right-radius: 6px;
             }}
         """)
         main_bottom_layout = QHBoxLayout(main_bottom)
         main_bottom_layout.setContentsMargins(8, 3, 8, 3)
-        main_bottom_layout.setSpacing(0)
+        main_bottom_layout.setSpacing(6)
 
         self.status_indicator = QLabel("●")
         self.status_indicator.setStyleSheet(
             f"color: {C('status_online')}; font-size: 8px; background: transparent; border: none;")
         main_bottom_layout.addWidget(self.status_indicator)
 
-        main_name_lbl = QLabel(f"  {main_name}")
+        main_name_lbl = QLabel(main_name)
         main_name_lbl.setStyleSheet(
             f"color: {C('text_secondary')}; font-size: 10px; background: transparent; border: none;")
         main_bottom_layout.addWidget(main_name_lbl)
 
         main_bottom_layout.addStretch()
 
-        self.time_label = QLabel("00:00:00")
-        self.time_label.setStyleSheet(
-            f"color: {C('text_primary')}; font-size: 10px; font-weight: bold; background: transparent; border: none;")
-        main_bottom_layout.addWidget(self.time_label)
+        # Bandlik
+        self.bandlik_label = QLabel("Bandlik: 0")
+        self.bandlik_label.setStyleSheet(
+            f"color: {C('accent_green')}; font-size: 10px; font-weight: bold; background: transparent; border: none;")
+        main_bottom_layout.addWidget(self.bandlik_label)
 
         main_bottom_layout.addStretch()
+
+        # Polygon vaqt (soat o'rniga)
+        self.poly_time_label = QLabel("Polygon: 0.0s")
+        self.poly_time_label.setStyleSheet(
+            f"color: {C('text_muted')}; font-size: 10px; font-weight: bold; background: transparent; border: none;")
+        main_bottom_layout.addWidget(self.poly_time_label)
 
         # Additional camera label
         self.additional_camera_label = QLabel()
@@ -679,87 +705,51 @@ class CrossingCard(QWidget):
         # Stats panel
         stats_frame = self._create_stats_panel()
 
-        # Time timer
-        self.time_timer = QTimer(self)
-        self.time_timer.timeout.connect(self._update_time)
-        self.time_timer.start(1000)
 
         # ── COMPOSE LAYOUT ──
-        if self.compact:
-            # Compact: top=main camera, bottom row=(camera2 | PLC+stats)
-            content_widget = QWidget()
-            content_widget.setStyleSheet("background: transparent;")
-            content_layout = QVBoxLayout(content_widget)
-            content_layout.setContentsMargins(8, 6, 8, 6)
-            content_layout.setSpacing(4)
+        # Top: main camera, Bottom: camera2 (65%) | PLC+stats (35%)
+        content_widget = QWidget()
+        content_widget.setStyleSheet("background: transparent;")
+        content_layout = QVBoxLayout(content_widget)
+        content_layout.setContentsMargins(8, 6, 8, 6)
+        content_layout.setSpacing(4)
 
-            # Main camera (full width, top)
-            content_layout.addWidget(self.main_camera_label, stretch=3)
+        # Main camera (full width, top)
+        content_layout.addWidget(self.main_camera_label, stretch=3)
 
-            # Bottom row: camera2 (left) | PLC+stats (right)
-            bottom_row = QWidget()
-            bottom_row.setStyleSheet("background: transparent;")
-            bottom_row_layout = QHBoxLayout(bottom_row)
-            bottom_row_layout.setContentsMargins(0, 0, 0, 0)
-            bottom_row_layout.setSpacing(4)
+        # Bottom row: camera2 (left 65%) | PLC+stats (right 35%)
+        bottom_row = QWidget()
+        bottom_row.setStyleSheet("background: transparent;")
+        bottom_row_layout = QHBoxLayout(bottom_row)
+        bottom_row_layout.setContentsMargins(0, 0, 0, 0)
+        bottom_row_layout.setSpacing(4)
 
-            # Camera 2 + name bar
-            cam2_widget = QWidget()
-            cam2_widget.setStyleSheet("background: transparent;")
-            cam2_layout = QVBoxLayout(cam2_widget)
-            cam2_layout.setContentsMargins(0, 0, 0, 0)
-            cam2_layout.setSpacing(0)
-            cam2_layout.addWidget(self.additional_camera_label, stretch=1)
-            cam2_layout.addWidget(add_bottom)
-            bottom_row_layout.addWidget(cam2_widget, stretch=1)
+        # Camera 2 + name bar
+        cam2_widget = QWidget()
+        cam2_widget.setStyleSheet("background: transparent;")
+        cam2_layout = QVBoxLayout(cam2_widget)
+        cam2_layout.setContentsMargins(0, 0, 0, 0)
+        cam2_layout.setSpacing(0)
+        cam2_layout.addWidget(self.additional_camera_label, stretch=1)
+        cam2_layout.addWidget(add_bottom)
+        bottom_row_layout.addWidget(cam2_widget, stretch=65)
 
-            # PLC + Stats stacked
-            right_panel = QWidget()
-            right_panel.setStyleSheet("background: transparent;")
-            right_panel_layout = QVBoxLayout(right_panel)
-            right_panel_layout.setContentsMargins(0, 0, 0, 0)
-            right_panel_layout.setSpacing(4)
-            right_panel_layout.addWidget(plc_frame, stretch=1)
-            right_panel_layout.addWidget(stats_frame, stretch=2)
-            bottom_row_layout.addWidget(right_panel, stretch=1)
+        # PLC + Stats stacked
+        right_panel = QWidget()
+        right_panel.setStyleSheet("background: transparent;")
+        right_panel_layout = QVBoxLayout(right_panel)
+        right_panel_layout.setContentsMargins(0, 0, 0, 0)
+        right_panel_layout.setSpacing(4)
+        right_panel_layout.addWidget(plc_frame, stretch=1)
+        right_panel_layout.addWidget(stats_frame, stretch=2)
+        bottom_row_layout.addWidget(right_panel, stretch=35)
 
-            content_layout.addWidget(bottom_row, stretch=2)
+        content_layout.addWidget(bottom_row, stretch=2)
 
-            frame_layout.addWidget(content_widget, stretch=1)
+        frame_layout.addWidget(content_widget, stretch=1)
 
-            # Bottom bar at very bottom
-            frame_layout.addWidget(main_bottom)
-        else:
-            # Wide: left=main camera+bar, right=camera2+PLC+stats
-            content_widget = QWidget()
-            content_widget.setStyleSheet("background: transparent;")
-            content_layout = QHBoxLayout(content_widget)
-            content_layout.setContentsMargins(8, 6, 8, 6)
-            content_layout.setSpacing(6)
-
-            # LEFT: Main camera + bottom bar
-            left_widget = QWidget()
-            left_widget.setStyleSheet("background: transparent;")
-            left_layout = QVBoxLayout(left_widget)
-            left_layout.setContentsMargins(0, 0, 0, 0)
-            left_layout.setSpacing(0)
-            left_layout.addWidget(self.main_camera_label, stretch=1)
-            left_layout.addWidget(main_bottom)
-            content_layout.addWidget(left_widget, stretch=4)
-
-            # RIGHT: camera2 + PLC + stats
-            right_widget = QWidget()
-            right_widget.setStyleSheet("background: transparent;")
-            right_layout = QVBoxLayout(right_widget)
-            right_layout.setContentsMargins(0, 0, 0, 0)
-            right_layout.setSpacing(4)
-            right_layout.addWidget(self.additional_camera_label, stretch=5)
-            right_layout.addWidget(add_bottom)
-            right_layout.addWidget(plc_frame, stretch=1)
-            right_layout.addWidget(stats_frame, stretch=2)
-            content_layout.addWidget(right_widget, stretch=2)
-
-            frame_layout.addWidget(content_widget, stretch=1)
+        # Bottom bar: kamera nomi + bandlik + polygon vaqt + soat
+        frame_layout.addWidget(main_bottom)
 
         main_layout.addWidget(self.frame)
         self.frame.mousePressEvent = self._on_mouse_press
@@ -813,12 +803,6 @@ class CrossingCard(QWidget):
 
         plc_row.addStretch()
         plc_inner.addLayout(plc_row)
-
-        self.plc_time_label = QLabel(time.strftime("%H:%M:%S"))
-        self.plc_time_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.plc_time_label.setStyleSheet(
-            f"color: {C('text_dim')}; font-size: 9px; background: transparent; border: none;")
-        plc_inner.addWidget(self.plc_time_label)
 
         return plc_frame
 
@@ -1012,18 +996,6 @@ class CrossingCard(QWidget):
         except (RuntimeError, Exception):
             pass
 
-    def _update_time(self):
-        if self._is_destroyed:
-            return
-        try:
-            current_time = time.strftime("%H:%M:%S")
-            if hasattr(self, 'time_label') and self.time_label is not None:
-                self.time_label.setText(current_time)
-            if hasattr(self, 'plc_time_label') and self.plc_time_label is not None:
-                self.plc_time_label.setText(current_time)
-        except RuntimeError:
-            self._is_destroyed = True
-
     def _start_cameras(self):
         if self._is_destroyed:
             return
@@ -1136,7 +1108,35 @@ class CrossingCard(QWidget):
         if self._is_destroyed:
             return
         try:
-            self.update_stats(light_count, heavy_count)
+            # Display: DB offset + tracker kumulyativ soni
+            display_light = self._light_offset + light_count
+            display_heavy = self._heavy_offset + heavy_count
+            self.update_stats(display_light, display_heavy)
+
+            # Bandlik (polygon ichidagi avtomobillar soni)
+            self.bandlik_label.setText(f"Bandlik: {in_poly_count}")
+            if in_poly_count > 0:
+                self.bandlik_label.setStyleSheet(
+                    f"color: {C('accent_red')}; font-size: 10px; font-weight: bold;"
+                    " background: transparent; border: none;")
+            else:
+                self.bandlik_label.setStyleSheet(
+                    f"color: {C('accent_green')}; font-size: 10px; font-weight: bold;"
+                    " background: transparent; border: none;")
+
+            # Polygon vaqt
+            if max_time > 0:
+                color = C('accent_red') if max_time > 10 else C('accent_orange')
+                self.poly_time_label.setText(f"Polygon: {max_time:.1f}s")
+                self.poly_time_label.setStyleSheet(
+                    f"color: {color}; font-size: 10px; font-weight: bold;"
+                    " background: transparent; border: none;")
+            else:
+                self.poly_time_label.setText("Polygon: 0.0s")
+                self.poly_time_label.setStyleSheet(
+                    f"color: {C('text_muted')}; font-size: 10px; font-weight: bold;"
+                    " background: transparent; border: none;")
+
             # DB ga yozish (asosiy kamera uchun)
             if self.stats_db and light_count + heavy_count > 0:
                 main_name = ""
@@ -1194,11 +1194,6 @@ class CrossingCard(QWidget):
 
     def cleanup(self):
         self._is_destroyed = True
-        try:
-            if hasattr(self, 'time_timer') and self.time_timer is not None:
-                self.time_timer.stop()
-        except RuntimeError:
-            pass
         self.stop_cameras()
         # Shared detector - to'xtatmaymiz
         self.car_detector = None

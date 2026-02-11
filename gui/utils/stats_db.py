@@ -32,6 +32,9 @@ class StatsDB:
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._create_tables()
+        # Delta tracking: tracker har safar 0 dan boshlaydi,
+        # shuning uchun oxirgi yuborilgan qiymatni saqlaymiz
+        self._last_counts = {}  # (crossing_id, camera_name) -> (light, heavy)
 
     def _create_tables(self):
         self._conn.execute("""
@@ -54,7 +57,20 @@ class StatsDB:
 
     def record_count(self, crossing_id: int, camera_name: str,
                      light: int, heavy: int):
-        """Joriy soat uchun sanashni yozish/yangilash."""
+        """Joriy soat uchun delta qo'shish.
+
+        light/heavy - tracker kumulyativ soni (har sessiyada 0 dan boshlanadi).
+        Oldingi chaqiruvdagi qiymat bilan farqni (delta) hisoblaydi va DB ga qo'shadi.
+        """
+        key = (crossing_id, camera_name)
+        last_l, last_h = self._last_counts.get(key, (0, 0))
+        delta_l = max(0, light - last_l)
+        delta_h = max(0, heavy - last_h)
+        self._last_counts[key] = (light, heavy)
+
+        if delta_l == 0 and delta_h == 0:
+            return
+
         hour = self._current_hour()
         now = datetime.now().isoformat()
         with self._lock:
@@ -64,10 +80,11 @@ class StatsDB:
                 VALUES (?, ?, ?, ?, ?, ?)
                 ON CONFLICT(crossing_id, camera_name, hour_start)
                 DO UPDATE SET
-                    light_count = excluded.light_count,
-                    heavy_count = excluded.heavy_count,
-                    updated_at = excluded.updated_at
-            """, (crossing_id, camera_name, hour, light, heavy, now))
+                    light_count = hourly_stats.light_count + ?,
+                    heavy_count = hourly_stats.heavy_count + ?,
+                    updated_at = ?
+            """, (crossing_id, camera_name, hour, delta_l, delta_h, now,
+                  delta_l, delta_h, now))
             self._conn.commit()
 
     def get_today_total(self, crossing_id: int) -> Tuple[int, int]:

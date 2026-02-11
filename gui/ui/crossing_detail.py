@@ -338,7 +338,38 @@ class CrossingDetail(QWidget):
             raise ValueError(f"Crossing {crossing_id} not found")
 
         self._setup_ui()
+        self._load_startup_counts()
         QTimer.singleShot(300, self._start_all_cameras)
+
+    def _load_startup_counts(self):
+        """DB dan bugungi sanashni yuklash"""
+        self._light_offset = 0
+        self._heavy_offset = 0
+        if not self.stats_db:
+            return
+        try:
+            # Asosiy kamera nomini topish
+            cameras = self.crossing_data.get("cameras", [])
+            main_cam_name = ""
+            for cam in cameras:
+                if cam.get("type", "additional") == "main":
+                    main_cam_name = cam.get("name", "")
+                    break
+            if not main_cam_name and cameras:
+                main_cam_name = cameras[0].get("name", "")
+
+            if main_cam_name:
+                light, heavy = self.stats_db.get_camera_today(
+                    self.crossing_id, main_cam_name)
+            else:
+                light, heavy = self.stats_db.get_today_total(self.crossing_id)
+
+            self._light_offset = light
+            self._heavy_offset = heavy
+            if light > 0 or heavy > 0:
+                self._update_statistics_panel(light, heavy)
+        except Exception:
+            pass
 
     def _get_camera_grid_cols(self):
         """Calculate camera grid columns based on screen and camera count"""
@@ -769,10 +800,12 @@ class CrossingDetail(QWidget):
                 else:
                     poly_lbl.setText("Polygon: bo'sh")
                     poly_lbl.setStyleSheet(f"color: {C('text_muted')}; font-size: 10px; background: transparent;")
-            # Asosiy kamera bo'lsa → statistika panelni yangilash
+            # Asosiy kamera bo'lsa → statistika panelni yangilash (offset + tracker)
             cam_type = self.camera_types.get(cam_id, "additional")
             if cam_type == "main":
-                self._update_statistics_panel(light_count, heavy_count)
+                display_light = self._light_offset + light_count
+                display_heavy = self._heavy_offset + heavy_count
+                self._update_statistics_panel(display_light, display_heavy)
             # DB ga yozish
             if self.stats_db and light_count + heavy_count > 0:
                 self.stats_db.record_count(

@@ -35,6 +35,41 @@
       "created_at": "2026-02-09T17:46:49.554067",
       "status": "offline",
       "updated_at": "2026-02-09T17:52:15.711518"
+    },
+    {
+      "name": "Pereezd 9",
+      "location": "asd",
+      "description": "as",
+      "plc": {
+        "enabled": false,
+        "ip": "",
+        "port": 102,
+        "type": "Siemens S7-1200"
+      },
+      "cameras": [
+        {
+          "name": "B1",
+          "type": "main",
+          "source": "rtsp://admin:1q2w3e4r5t@192.168.170.160:554/Streaming/Channels/801",
+          "polygon_file": "/home/bahrombek/Desktop/RailSafeAI_v1.1/polygons/aa/labels_my-project-name_2026-01-23-09-20-43.json",
+          "enabled": true,
+          "id": 1,
+          "updated_at": "2026-02-10T14:52:23.097129"
+        },
+        {
+          "name": "B2",
+          "type": "additional",
+          "source": "rtsp://admin:1q2w3e4r5t@192.168.170.160:554/Streaming/Channels/401",
+          "polygon_file": "/home/bahrombek/Desktop/RailSafeGUI/polygons/aa/f1.json",
+          "enabled": true,
+          "id": 2,
+          "updated_at": "2026-02-10T15:00:54.089005"
+        }
+      ],
+      "id": 2,
+      "created_at": "2026-02-10T14:48:20.597492",
+      "status": "offline",
+      "updated_at": "2026-02-10T15:00:54.089027"
     }
   ],
   "settings": {
@@ -45,5 +80,5 @@
     "violation_threshold": 115.0,
     "video_recording_enabled": true
   },
-  "last_updated": "2026-02-10T14:12:07.382519"
+  "last_updated": "2026-02-11T10:48:39.602480"
 }
