@@ -13,6 +13,7 @@ from gui.ui.dashboard import Dashboard
 from gui.ui.crossing_detail import CrossingDetail
 from gui.ui.dialogs import AddCrossingDialog, AddCameraDialog, SettingsDialog
 from gui.ui.about_page import AboutPage
+from gui.ui.analytics_page import AnalyticsPage
 from gui.utils.config_manager import ConfigManager
 from gui.utils.theme_colors import set_theme, C
 
@@ -87,6 +88,12 @@ class MainWindow(QMainWindow):
         a = QAction("Sozlamalar", self)
         a.setShortcut("Ctrl+,")
         a.triggered.connect(self._show_settings)
+        self.toolbar.addAction(a)
+
+        # Analitika
+        a = QAction("Analitika", self)
+        a.setShortcut("Ctrl+A")
+        a.triggered.connect(self._show_analytics)
         self.toolbar.addAction(a)
 
         # Tizim haqida
@@ -199,14 +206,10 @@ class MainWindow(QMainWindow):
     def _show_dashboard(self):
         self._cleanup_detail_views()
         self.stacked_widget.setCurrentWidget(self.dashboard)
-        self.dashboard.refresh()
 
     def _show_crossing_detail(self, crossing_id: int):
         self.current_crossing_id = crossing_id
         self._cleanup_detail_views()
-
-        # Dashboard kameralarini to'xtatish - GPU faqat detail uchun ishlaydi
-        self.dashboard.stop_all_cameras()
 
         try:
             detail = CrossingDetail(
@@ -242,10 +245,12 @@ class MainWindow(QMainWindow):
             QMessageBox.StandardButton.No)
         if reply == QMessageBox.StandardButton.Yes:
             if self.config_manager.delete_crossing(crossing_id):
+                self.dashboard.refresh()
                 self._show_dashboard()
 
     def _add_camera(self, crossing_id: int):
-        dialog = AddCameraDialog(self.config_manager, crossing_id)
+        stats_db = getattr(self.dashboard, 'stats_db', None) if hasattr(self, 'dashboard') else None
+        dialog = AddCameraDialog(self.config_manager, crossing_id, stats_db=stats_db)
         if dialog.exec():
             self._refresh_current_view()
 
@@ -256,6 +261,17 @@ class MainWindow(QMainWindow):
             self._apply_toolbar_style()
             self._apply_statusbar_style()
             self._refresh_current_view()
+
+    def _show_analytics(self):
+        """Show analytics page"""
+        self._cleanup_detail_views()
+        analytics = AnalyticsPage(
+            self.config_manager,
+            stats_db=self.dashboard.stats_db
+        )
+        analytics.back_clicked.connect(self._show_dashboard)
+        self.stacked_widget.addWidget(analytics)
+        self.stacked_widget.setCurrentWidget(analytics)
 
     def _show_about(self):
         """Show about page"""

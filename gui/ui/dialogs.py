@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont, QPainter, QPen, QColor
 
+import json
 from gui.utils.theme_colors import C
 
 
@@ -316,6 +317,14 @@ class AddCrossingDialog(QDialog):
 
         # Buttons
         buttons_layout = QHBoxLayout()
+
+        # JSON import tugmasi (faqat yangi qo'shishda)
+        if not self.is_edit:
+            import_btn = QPushButton("📂 JSON dan yuklash")
+            import_btn.clicked.connect(self._import_json)
+            import_btn.setMinimumWidth(140)
+            buttons_layout.addWidget(import_btn)
+
         buttons_layout.addStretch()
 
         cancel_btn = QPushButton("❌ Bekor Qilish")
@@ -425,6 +434,41 @@ class AddCrossingDialog(QDialog):
             "PLC ulanish testi hozircha mavjud emas.\nTez orada qo'shiladi."
         )
 
+    def _import_json(self):
+        """JSON fayldan pereezd ma'lumotlarini yuklash"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "JSON dan yuklash", "",
+            "JSON Files (*.json);;All Files (*)")
+        if not file_path:
+            return
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            # Ma'lumotlarni formaga to'ldirish
+            if data.get("name"):
+                self.name_input.setText(data["name"])
+            if data.get("location"):
+                self.location_input.setText(data["location"])
+            if data.get("description"):
+                self.description_input.setText(data["description"])
+            # PLC
+            plc = data.get("plc", {})
+            if plc:
+                self.plc_enabled.setChecked(plc.get("enabled", False))
+                self.plc_ip.setText(plc.get("ip", ""))
+                self.plc_port.setValue(plc.get("port", 102))
+                plc_type = plc.get("type", "")
+                idx = self.plc_type.findText(plc_type)
+                if idx >= 0:
+                    self.plc_type.setCurrentIndex(idx)
+            # Kameralarni saqlash (save da ishlatiladi)
+            self._imported_cameras = data.get("cameras", [])
+            cam_count = len(self._imported_cameras)
+            QMessageBox.information(self, "Import",
+                f"Ma'lumotlar yuklandi! ({cam_count} ta kamera)")
+        except Exception as e:
+            QMessageBox.warning(self, "Xatolik", f"JSON o'qishda xatolik: {e}")
+
     def _save(self):
         """Save the crossing data"""
         # Validate required fields
@@ -458,7 +502,8 @@ class AddCrossingDialog(QDialog):
             crossing_data["cameras"] = self.crossing_data.get("cameras", [])
             self.config_manager.update_crossing(self.crossing_id, crossing_data)
         else:
-            crossing_data["cameras"] = []
+            # Import dan kameralar bo'lsa ularni qo'shish
+            crossing_data["cameras"] = getattr(self, '_imported_cameras', [])
             self.config_manager.add_crossing(crossing_data)
 
         self.accept()
@@ -467,11 +512,13 @@ class AddCrossingDialog(QDialog):
 class AddCameraDialog(QDialog):
     """Dialog for adding/editing a camera - auto type assignment"""
 
-    def __init__(self, config_manager, crossing_id: int, camera_id=None, parent=None):
+    def __init__(self, config_manager, crossing_id: int, camera_id=None,
+                 stats_db=None, parent=None):
         super().__init__(parent)
         self.config_manager = config_manager
         self.crossing_id = crossing_id
         self.camera_id = camera_id
+        self.stats_db = stats_db
         self.is_edit = camera_id is not None
 
         self.crossing_data = config_manager.get_crossing(crossing_id)
@@ -479,9 +526,11 @@ class AddCameraDialog(QDialog):
         if self.is_edit:
             cameras = self.crossing_data.get("cameras", [])
             self.camera_data = next((c for c in cameras if c["id"] == camera_id), {})
+            self._old_camera_name = self.camera_data.get("name", "")
             self.setWindowTitle("Kamerani Tahrirlash")
         else:
             self.camera_data = {}
+            self._old_camera_name = ""
             self.setWindowTitle("Yangi Kamera Qo'shish")
 
         # Check if main camera already exists
@@ -648,6 +697,12 @@ class AddCameraDialog(QDialog):
 
         if self.is_edit:
             self.config_manager.update_camera(self.crossing_id, self.camera_id, camera_data)
+            # Kamera nomi o'zgargan bo'lsa — bazadagi statslarni ham ko'chirish
+            new_name = camera_data["name"]
+            if (self.stats_db and self._old_camera_name
+                    and self._old_camera_name != new_name):
+                self.stats_db.rename_camera(
+                    self.crossing_id, self._old_camera_name, new_name)
         else:
             self.config_manager.add_camera(self.crossing_id, camera_data)
 

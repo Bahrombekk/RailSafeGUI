@@ -99,7 +99,7 @@ class DetailCameraWorker(QThread):
 
     def __init__(self, source: str, camera_name: str = "Camera", display_width: int = 1920,
                  car_detector: 'CarDetector' = None, detection_enabled: bool = True,
-                 polygon_file: str = None):
+                 polygon_file: str = None, warning_threshold: float = 10.0):
         super().__init__()
         self.source = source
         self.camera_name = camera_name
@@ -117,6 +117,7 @@ class DetailCameraWorker(QThread):
         self.polygon_file = polygon_file
         self._poly_pts = None
         self._poly_mask = None
+        self.warning_threshold = warning_threshold
 
     def take_frame(self):
         """Eng oxirgi kadrni olish - eski framelar avtomatik tashlanadi"""
@@ -210,10 +211,11 @@ class DetailCameraWorker(QThread):
                         # Car detection - NON-BLOCKING
                         detection_count = 0
                         in_poly_count = 0
+                        max_time = 0.0
                         if self.detection_enabled and self.car_detector is not None:
                             try:
                                 detections, det_frame = self.car_detector.detect_async(
-                                    frame, camera_id=self.camera_name)
+                                    frame, camera_id=f"detail_{self.camera_name}")
                                 detection_count = len(detections)
                                 if detections:
                                     draw_on = det_frame if det_frame is not None else frame
@@ -221,6 +223,7 @@ class DetailCameraWorker(QThread):
                                     if _tracker is not None:
                                         _tracker.process_detections(detections)
                                         in_poly_count = _tracker.get_inside_count()
+                                        max_time = _tracker.get_max_time()
                                     frame = self.car_detector.draw_detections(
                                         draw_on, detections,
                                         thickness=2, font_scale=0.6)
@@ -228,9 +231,14 @@ class DetailCameraWorker(QThread):
                             except Exception as e:
                                 print(f"[{self.camera_name}] Detection error: {e}")
 
-                        # Polygon chizish
+                        # Polygon chizish (yashil=bo'sh, sariq=bor, qizil=buzulish)
                         if self._poly_pts is not None:
-                            color = (0, 255, 0) if in_poly_count == 0 else (0, 0, 255)
+                            if in_poly_count == 0:
+                                color = (0, 255, 0)    # YASHIL
+                            elif max_time < self.warning_threshold:
+                                color = (0, 255, 255)  # SARIQ
+                            else:
+                                color = (0, 0, 255)    # QIZIL
                             cv2.polylines(frame, [self._poly_pts], True, color, 2)
 
                         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -726,6 +734,10 @@ class CrossingDetail(QWidget):
                 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
                 poly_file = os.path.join(project_root, poly_file)
 
+            # Settings dan threshold
+            settings = self.config_manager.get_settings() if self.config_manager else {}
+            warn_t = settings.get("warning_threshold", 10.0)
+
             # Create worker with car detector + polygon
             worker = DetailCameraWorker(
                 src,
@@ -733,6 +745,7 @@ class CrossingDetail(QWidget):
                 car_detector=self.car_detector,
                 detection_enabled=cam.get("detection_enabled", True),
                 polygon_file=poly_file if poly_file and os.path.isfile(poly_file) else None,
+                warning_threshold=warn_t,
             )
             worker.frame_ready.connect(
                 lambda lbl=label, w=worker: self._on_frame(lbl, w)
@@ -806,10 +819,7 @@ class CrossingDetail(QWidget):
                 display_light = self._light_offset + light_count
                 display_heavy = self._heavy_offset + heavy_count
                 self._update_statistics_panel(display_light, display_heavy)
-            # DB ga yozish
-            if self.stats_db and light_count + heavy_count > 0:
-                self.stats_db.record_count(
-                    self.crossing_id, cam_name, light_count, heavy_count)
+            # DB ga dashboard worker yozadi (detail yozsa _last_counts buziladi)
         except RuntimeError:
             self._destroyed = True
 
@@ -841,7 +851,8 @@ class CrossingDetail(QWidget):
 
     def _open_camera_settings(self, camera_id):
         from gui.ui.dialogs import AddCameraDialog
-        dialog = AddCameraDialog(self.config_manager, self.crossing_id, camera_id)
+        dialog = AddCameraDialog(self.config_manager, self.crossing_id, camera_id,
+                                  stats_db=self.stats_db)
         if dialog.exec():
             self.refresh()
 

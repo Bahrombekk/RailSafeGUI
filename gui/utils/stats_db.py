@@ -6,7 +6,7 @@ Thread-safe. Stores per-camera, per-hour counts. Auto-resets at midnight.
 import sqlite3
 import threading
 import os
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from typing import List, Dict, Tuple, Optional
 
 
@@ -143,6 +143,114 @@ class StatsDB:
                 data[hour]["light"] = light or 0
                 data[hour]["heavy"] = heavy or 0
         return data
+
+    def get_weekly_data(self, crossing_id: int) -> List[Dict]:
+        """Oxirgi 7 kun (kunlik jami).
+        Returns: [{"date": "2026-02-11", "day": "Du", "light": 10, "heavy": 3}, ...]"""
+        days_uz = ["Du", "Se", "Cho", "Pa", "Ju", "Sha", "Ya"]
+        today = date.today()
+        data = []
+        with self._lock:
+            for i in range(6, -1, -1):
+                d = today - timedelta(days=i)
+                ds = d.isoformat()
+                row = self._conn.execute("""
+                    SELECT COALESCE(SUM(light_count), 0),
+                           COALESCE(SUM(heavy_count), 0)
+                    FROM hourly_stats
+                    WHERE crossing_id = ? AND date(hour_start) = ?
+                """, (crossing_id, ds)).fetchone()
+                data.append({
+                    "date": ds,
+                    "day": days_uz[d.weekday()],
+                    "light": row[0] if row else 0,
+                    "heavy": row[1] if row else 0,
+                })
+        return data
+
+    def get_monthly_data(self, crossing_id: int) -> List[Dict]:
+        """Oxirgi 30 kun (kunlik jami).
+        Returns: [{"date": "2026-01-13", "light": 10, "heavy": 3}, ...]"""
+        today = date.today()
+        data = []
+        with self._lock:
+            for i in range(29, -1, -1):
+                d = today - timedelta(days=i)
+                ds = d.isoformat()
+                row = self._conn.execute("""
+                    SELECT COALESCE(SUM(light_count), 0),
+                           COALESCE(SUM(heavy_count), 0)
+                    FROM hourly_stats
+                    WHERE crossing_id = ? AND date(hour_start) = ?
+                """, (crossing_id, ds)).fetchone()
+                data.append({
+                    "date": ds,
+                    "day": d.day,
+                    "light": row[0] if row else 0,
+                    "heavy": row[1] if row else 0,
+                })
+        return data
+
+    def get_yearly_data(self, crossing_id: int) -> List[Dict]:
+        """Oxirgi 12 oy (oylik jami).
+        Returns: [{"month": "2025-03", "label": "Mar", "light": 100, "heavy": 30}, ...]"""
+        months_uz = ["Yan", "Fev", "Mar", "Apr", "May", "Iyn",
+                     "Iyl", "Avg", "Sen", "Okt", "Noy", "Dek"]
+        today = date.today()
+        data = []
+        with self._lock:
+            for i in range(11, -1, -1):
+                # i oy oldin
+                m = today.month - i
+                y = today.year
+                while m <= 0:
+                    m += 12
+                    y -= 1
+                ms = f"{y}-{m:02d}"
+                row = self._conn.execute("""
+                    SELECT COALESCE(SUM(light_count), 0),
+                           COALESCE(SUM(heavy_count), 0)
+                    FROM hourly_stats
+                    WHERE crossing_id = ?
+                      AND strftime('%Y-%m', hour_start) = ?
+                """, (crossing_id, ms)).fetchone()
+                data.append({
+                    "month": ms,
+                    "label": months_uz[m - 1],
+                    "light": row[0] if row else 0,
+                    "heavy": row[1] if row else 0,
+                })
+        return data
+
+    def get_all_totals(self) -> Dict[int, Tuple[int, int]]:
+        """Barcha pereezdlar uchun bugungi jami.
+        Returns: {crossing_id: (light, heavy), ...}"""
+        today = date.today().isoformat()
+        with self._lock:
+            rows = self._conn.execute("""
+                SELECT crossing_id,
+                       COALESCE(SUM(light_count), 0),
+                       COALESCE(SUM(heavy_count), 0)
+                FROM hourly_stats
+                WHERE date(hour_start) = ?
+                GROUP BY crossing_id
+            """, (today,)).fetchall()
+        return {r[0]: (r[1], r[2]) for r in rows}
+
+    def rename_camera(self, crossing_id: int, old_name: str, new_name: str):
+        """Kamera nomi o'zgarganda barcha statslarni yangi nomga ko'chirish."""
+        if old_name == new_name:
+            return
+        with self._lock:
+            self._conn.execute("""
+                UPDATE hourly_stats SET camera_name = ?
+                WHERE crossing_id = ? AND camera_name = ?
+            """, (new_name, crossing_id, old_name))
+            self._conn.commit()
+        # Delta tracking cache ni ham yangilash
+        old_key = (crossing_id, old_name)
+        if old_key in self._last_counts:
+            self._last_counts[(crossing_id, new_name)] = self._last_counts.pop(old_key)
 
     def close(self):
         with self._lock:

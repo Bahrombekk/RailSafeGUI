@@ -215,6 +215,7 @@ class CameraWorker(QThread):
                     # Car detection - NON-BLOCKING
                     detection_count = 0
                     in_poly_count = 0
+                    max_time = 0.0
                     if self.detection_enabled and self.car_detector is not None:
                         try:
                             detections, det_frame = self.car_detector.detect_async(
@@ -242,9 +243,14 @@ class CameraWorker(QThread):
                         except Exception as e:
                             print(f"[{self.camera_name}] Detection error: {e}")
 
-                    # Polygon chizish
+                    # Polygon chizish (yashil=bo'sh, sariq=bor, qizil=buzulish)
                     if self._poly_pts is not None:
-                        color = (0, 255, 0) if in_poly_count == 0 else (0, 0, 255)
+                        if in_poly_count == 0:
+                            color = (0, 255, 0)    # YASHIL
+                        elif max_time < self.warning_threshold:
+                            color = (0, 255, 255)  # SARIQ
+                        else:
+                            color = (0, 0, 255)    # QIZIL
                         cv2.polylines(frame, [self._poly_pts], True, color, 2)
 
                     rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -468,13 +474,13 @@ class CameraSettingsDialog(QDialog):
 class CrossingCard(QWidget):
     """
     Crossing card with two layout modes:
-    Wide (1 crossing):
-      ┌─────────────────┬──────────────┐
-      │  Kamera 1       │  Kamera 2    │
-      │  (katta,baland) ├──────────────┤
-      │                 │  PLC + Stats │
-      └─────────────────┴──────────────┘
-    Compact (2+ crossings):
+    Compact (4+ crossings) - horizontal:
+      ┌──────────────┬──────────┬─────────┐
+      │   Kamera 1   │ Kamera 2 │  PLC    │
+      │   (katta)    │          ├─────────┤
+      │              │          │  Stats  │
+      └──────────────┴──────────┴─────────┘
+    Default (1-3 crossings) - vertical:
       ┌────────────────────────────────┐
       │       Kamera 1 (keng)          │
       ├────────────────┬───────────────┤
@@ -707,48 +713,81 @@ class CrossingCard(QWidget):
 
 
         # ── COMPOSE LAYOUT ──
-        # Top: main camera, Bottom: camera2 (65%) | PLC+stats (35%)
         content_widget = QWidget()
         content_widget.setStyleSheet("background: transparent;")
-        content_layout = QVBoxLayout(content_widget)
-        content_layout.setContentsMargins(8, 6, 8, 6)
-        content_layout.setSpacing(4)
 
-        # Main camera (full width, top)
-        content_layout.addWidget(self.main_camera_label, stretch=3)
+        if self.compact:
+            # ── 4+ pereezd: Kamera1 (chap) | Kamera2+PLC+Stats (o'ng) ──
+            content_layout = QHBoxLayout(content_widget)
+            content_layout.setContentsMargins(8, 6, 8, 6)
+            content_layout.setSpacing(4)
 
-        # Bottom row: camera2 (left 65%) | PLC+stats (right 35%)
-        bottom_row = QWidget()
-        bottom_row.setStyleSheet("background: transparent;")
-        bottom_row_layout = QHBoxLayout(bottom_row)
-        bottom_row_layout.setContentsMargins(0, 0, 0, 0)
-        bottom_row_layout.setSpacing(4)
+            # Asosiy kamera (chap, 65%)
+            content_layout.addWidget(self.main_camera_label, stretch=65)
 
-        # Camera 2 + name bar
-        cam2_widget = QWidget()
-        cam2_widget.setStyleSheet("background: transparent;")
-        cam2_layout = QVBoxLayout(cam2_widget)
-        cam2_layout.setContentsMargins(0, 0, 0, 0)
-        cam2_layout.setSpacing(0)
-        cam2_layout.addWidget(self.additional_camera_label, stretch=1)
-        cam2_layout.addWidget(add_bottom)
-        bottom_row_layout.addWidget(cam2_widget, stretch=65)
+            # O'ng ustun: Kamera2 (tepa) + PLC + Stats (pastda)
+            right_col = QWidget()
+            right_col.setStyleSheet("background: transparent;")
+            right_col_layout = QVBoxLayout(right_col)
+            right_col_layout.setContentsMargins(0, 0, 0, 0)
+            right_col_layout.setSpacing(4)
 
-        # PLC + Stats stacked
-        right_panel = QWidget()
-        right_panel.setStyleSheet("background: transparent;")
-        right_panel_layout = QVBoxLayout(right_panel)
-        right_panel_layout.setContentsMargins(0, 0, 0, 0)
-        right_panel_layout.setSpacing(4)
-        right_panel_layout.addWidget(plc_frame, stretch=1)
-        right_panel_layout.addWidget(stats_frame, stretch=2)
-        bottom_row_layout.addWidget(right_panel, stretch=35)
+            # Qo'shimcha kamera + nomi
+            cam2_widget = QWidget()
+            cam2_widget.setStyleSheet("background: transparent;")
+            cam2_layout = QVBoxLayout(cam2_widget)
+            cam2_layout.setContentsMargins(0, 0, 0, 0)
+            cam2_layout.setSpacing(0)
+            cam2_layout.addWidget(self.additional_camera_label, stretch=1)
+            cam2_layout.addWidget(add_bottom)
+            right_col_layout.addWidget(cam2_widget, stretch=3)
 
-        content_layout.addWidget(bottom_row, stretch=2)
+            # PLC + Stats
+            right_col_layout.addWidget(plc_frame, stretch=1)
+            right_col_layout.addWidget(stats_frame, stretch=2)
+
+            content_layout.addWidget(right_col, stretch=35)
+        else:
+            # ── 1-3 pereezd: vertikal (Kamera1 ustida, Kamera2+PLC pastda) ──
+            content_layout = QVBoxLayout(content_widget)
+            content_layout.setContentsMargins(8, 6, 8, 6)
+            content_layout.setSpacing(4)
+
+            # Main camera (full width, top)
+            content_layout.addWidget(self.main_camera_label, stretch=3)
+
+            # Bottom row: camera2 (left 65%) | PLC+stats (right 35%)
+            bottom_row = QWidget()
+            bottom_row.setStyleSheet("background: transparent;")
+            bottom_row_layout = QHBoxLayout(bottom_row)
+            bottom_row_layout.setContentsMargins(0, 0, 0, 0)
+            bottom_row_layout.setSpacing(4)
+
+            # Camera 2 + name bar
+            cam2_widget = QWidget()
+            cam2_widget.setStyleSheet("background: transparent;")
+            cam2_layout = QVBoxLayout(cam2_widget)
+            cam2_layout.setContentsMargins(0, 0, 0, 0)
+            cam2_layout.setSpacing(0)
+            cam2_layout.addWidget(self.additional_camera_label, stretch=1)
+            cam2_layout.addWidget(add_bottom)
+            bottom_row_layout.addWidget(cam2_widget, stretch=65)
+
+            # PLC + Stats stacked
+            right_panel = QWidget()
+            right_panel.setStyleSheet("background: transparent;")
+            right_panel_layout = QVBoxLayout(right_panel)
+            right_panel_layout.setContentsMargins(0, 0, 0, 0)
+            right_panel_layout.setSpacing(4)
+            right_panel_layout.addWidget(plc_frame, stretch=1)
+            right_panel_layout.addWidget(stats_frame, stretch=2)
+            bottom_row_layout.addWidget(right_panel, stretch=35)
+
+            content_layout.addWidget(bottom_row, stretch=2)
 
         frame_layout.addWidget(content_widget, stretch=1)
 
-        # Bottom bar: kamera nomi + bandlik + polygon vaqt + soat
+        # Bottom bar: kamera nomi + bandlik + polygon vaqt
         frame_layout.addWidget(main_bottom)
 
         main_layout.addWidget(self.frame)
@@ -953,8 +992,30 @@ class CrossingCard(QWidget):
         info_action = menu.addAction("ℹ️ Pereezd Ma'lumotlari")
         info_action.triggered.connect(lambda: self.clicked.emit(self.crossing_id))
 
+        export_action = menu.addAction("💾 JSON Eksport")
+        export_action.triggered.connect(self._export_json)
+
         btn_pos = self.menu_btn.mapToGlobal(QPoint(0, self.menu_btn.height()))
         menu.exec(btn_pos)
+
+    def _export_json(self):
+        """Pereezd ma'lumotlarini JSON faylga eksport qilish"""
+        crossing = self.config_manager.get_crossing(self.crossing_id)
+        if not crossing:
+            return
+        name = crossing.get("name", "pereezd").replace(" ", "_")
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "JSON Eksport", f"{name}.json",
+            "JSON Files (*.json);;All Files (*)")
+        if not file_path:
+            return
+        try:
+            with open(file_path, 'w', encoding='utf-8') as f:
+                json.dump(crossing, f, indent=2, ensure_ascii=False)
+            QMessageBox.information(self, "Eksport",
+                f"Ma'lumotlar saqlandi:\n{file_path}")
+        except Exception as e:
+            QMessageBox.warning(self, "Xatolik", f"Eksport xatosi: {e}")
 
     def _open_camera_settings(self):
         dialog = CameraSettingsDialog(self.crossing_data, self.config_manager, self)

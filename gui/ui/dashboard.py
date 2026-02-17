@@ -151,7 +151,7 @@ class Dashboard(QWidget):
 
         self._last_col_count = cols
         rows = (count + cols - 1) // cols
-        fill_screen = (count <= 4)
+        fill_screen = True  # Har doim ekranga moslash
 
         for idx, crossing in enumerate(crossings):
             row = idx // cols
@@ -159,21 +159,17 @@ class Dashboard(QWidget):
             card = CrossingCard(
                 crossing,
                 config_manager=self.config_manager,
-                compact=(count in (2, 3) or count >= 5),
+                compact=(count >= 4),
                 car_detector=self.car_detector,
                 stats_db=self.stats_db
             )
             card.clicked.connect(self.crossing_selected.emit)
-            if fill_screen:
-                card.setMaximumHeight(16777215)
-                card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-                self.grid.addWidget(card, row, col)
-            else:
-                card.setMaximumHeight(420)
-                self.grid.addWidget(card, row, col, Qt.AlignmentFlag.AlignTop)
+            card.setMaximumHeight(16777215)
+            card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+            self.grid.addWidget(card, row, col)
             self.crossing_cards.append(card)
 
-        self._apply_stretch(cols, rows, fill_screen=fill_screen)
+        self._apply_stretch(cols, rows, fill_screen=True)
 
     def _relayout_cards(self):
         cols = self._get_column_count()
@@ -197,21 +193,15 @@ class Dashboard(QWidget):
             cols = 2
 
         rows = (count + cols - 1) // cols
-        fill_screen = (count <= 4)
 
         for idx, card in enumerate(self.crossing_cards):
             row = idx // cols
             col = idx % cols
-            if fill_screen:
-                card.setMaximumHeight(16777215)
-                card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-                self.grid.addWidget(card, row, col)
-            else:
-                card.setMaximumHeight(420)
-                card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-                self.grid.addWidget(card, row, col, Qt.AlignmentFlag.AlignTop)
+            card.setMaximumHeight(16777215)
+            card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+            self.grid.addWidget(card, row, col)
 
-        self._apply_stretch(cols, rows, fill_screen=fill_screen)
+        self._apply_stretch(cols, rows, fill_screen=True)
 
     def _clear_crossings(self):
         for card in self.crossing_cards:

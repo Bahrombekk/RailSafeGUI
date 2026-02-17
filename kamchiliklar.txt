@@ -5,13 +5,16 @@ gui ga moslab joylashtirish
 
 pereezd ni malumotlarini json qilib yuklab olish barcha malumotlarini
 pereezd qo'shayotganda json orqaliy ham qo'shaydigan qilish 
-perez nomi o'zgarganda bazadagi malumotlarini ham o'zgaran nomga ko'chirish
+perez nomi o'zgarganda bazadagi malumotlarini ham o'zgargan nomga ko'chirish
 ----------------------------------------------------
 Paligo ranglarini to'g'ri tartibda o'zgartirish 
 1) paligon bo'sh bo'lsa yashil
 2) paligon ichida aftomabil bo'lsa sariq
 3) agar buzulish sodir bo'lsa paligon qizil
 
+
+Vaqtlarni yaniq aftomabil paligondan o'tish vatqlari borku 10 15 sekund berilgan adashmasam 
+uni sozlanmalardagi manitoringdan olish
 
 -----------------------------------------------------
 
