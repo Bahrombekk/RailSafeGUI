@@ -5,15 +5,190 @@ Donut, Line, Bar chartlar bilan barcha pereezdlar statistikasi.
 
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                               QFrame, QScrollArea, QSizePolicy, QPushButton,
-                              QGridLayout, QGraphicsDropShadowEffect)
-from PyQt6.QtCore import Qt, pyqtSignal, QTimer
+                              QGridLayout, QGraphicsDropShadowEffect,
+                              QDialog, QDateEdit, QFileDialog, QMessageBox)
+from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QDate
 from PyQt6.QtGui import QColor
-from datetime import datetime
+from datetime import datetime, date, timedelta
 
 from gui.utils.theme_colors import C
 from gui.widgets.hourly_chart import HourlyBarChart
 from gui.widgets.charts import DonutChart, LineChart, BarChart, SparkLine, TrainBarChart
 from gui.widgets.heatmap import HeatmapChart
+from gui.utils.report_generator import generate_report
+
+
+class ReportDialog(QDialog):
+    """Hisobot yuklash dialogi — sana tanlash va Word eksport"""
+
+    def __init__(self, config_manager, stats_db, parent=None):
+        super().__init__(parent)
+        self.config_manager = config_manager
+        self.stats_db = stats_db
+        self.setWindowTitle("Hisobot yuklash")
+        self.setMinimumWidth(420)
+        self._setup_ui()
+
+    def _setup_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setSpacing(12)
+        layout.setContentsMargins(20, 16, 20, 16)
+
+        self.setStyleSheet(f"""
+            QDialog {{
+                background-color: {C('bg_card')};
+            }}
+            QLabel {{
+                color: {C('text_primary')};
+                background: transparent;
+            }}
+            QDateEdit {{
+                background-color: {C('bg_input')};
+                color: {C('text_primary')};
+                border: 1px solid {C('border_light')};
+                border-radius: 4px;
+                padding: 6px 10px;
+                font-size: 12px;
+            }}
+            QDateEdit::drop-down {{
+                border: none;
+                width: 20px;
+            }}
+        """)
+
+        # Sarlavha
+        title = QLabel("Hisobot yuklash")
+        title.setStyleSheet(f"color: {C('accent_brand')}; font-size: 16px; font-weight: bold;")
+        layout.addWidget(title)
+
+        desc = QLabel("Sana oralig'ini tanlang va Word formatida hisobot yuklang.")
+        desc.setStyleSheet(f"color: {C('text_muted')}; font-size: 11px;")
+        desc.setWordWrap(True)
+        layout.addWidget(desc)
+
+        # Tez tanlash tugmalari
+        quick_row = QHBoxLayout()
+        quick_row.setSpacing(6)
+        for text, days in [("Bugun", 0), ("7 kun", 7), ("30 kun", 30), ("1 yil", 365)]:
+            btn = QPushButton(text)
+            btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {C('bg_input')};
+                    color: {C('text_secondary')};
+                    border: 1px solid {C('border_light')};
+                    border-radius: 4px;
+                    padding: 5px 12px;
+                    font-size: 11px;
+                }}
+                QPushButton:hover {{
+                    background-color: {C('bg_hover')};
+                    color: {C('text_primary')};
+                }}
+            """)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.clicked.connect(lambda _, d=days: self._quick_select(d))
+            quick_row.addWidget(btn)
+        layout.addLayout(quick_row)
+
+        # Sana oralig'i
+        date_row = QHBoxLayout()
+        date_row.setSpacing(8)
+
+        from_lbl = QLabel("Dan:")
+        from_lbl.setStyleSheet(f"font-size: 11px; color: {C('text_muted')};")
+        date_row.addWidget(from_lbl)
+
+        self.date_from = QDateEdit()
+        self.date_from.setCalendarPopup(True)
+        self.date_from.setDate(QDate.currentDate().addDays(-30))
+        self.date_from.setDisplayFormat("dd.MM.yyyy")
+        date_row.addWidget(self.date_from)
+
+        to_lbl = QLabel("Gacha:")
+        to_lbl.setStyleSheet(f"font-size: 11px; color: {C('text_muted')};")
+        date_row.addWidget(to_lbl)
+
+        self.date_to = QDateEdit()
+        self.date_to.setCalendarPopup(True)
+        self.date_to.setDate(QDate.currentDate())
+        self.date_to.setDisplayFormat("dd.MM.yyyy")
+        date_row.addWidget(self.date_to)
+
+        layout.addLayout(date_row)
+
+        # Tugmalar
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+
+        cancel_btn = QPushButton("Bekor")
+        cancel_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {C('bg_input')};
+                color: {C('text_secondary')};
+                border: 1px solid {C('border_light')};
+                border-radius: 6px;
+                padding: 8px 20px;
+                font-size: 12px;
+            }}
+            QPushButton:hover {{ background-color: {C('bg_hover')}; }}
+        """)
+        cancel_btn.clicked.connect(self.reject)
+        btn_row.addWidget(cancel_btn)
+
+        export_btn = QPushButton("Yuklash (.docx)")
+        export_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {C('accent_brand')};
+                color: #ffffff;
+                border: none;
+                border-radius: 6px;
+                padding: 8px 24px;
+                font-size: 12px;
+                font-weight: bold;
+            }}
+            QPushButton:hover {{ opacity: 0.9; }}
+        """)
+        export_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        export_btn.clicked.connect(self._export)
+        btn_row.addWidget(export_btn)
+
+        layout.addLayout(btn_row)
+
+    def _quick_select(self, days):
+        today = QDate.currentDate()
+        if days == 0:
+            self.date_from.setDate(today)
+        else:
+            self.date_from.setDate(today.addDays(-days))
+        self.date_to.setDate(today)
+
+    def _export(self):
+        d_from = self.date_from.date().toString("yyyy-MM-dd")
+        d_to = self.date_to.date().toString("yyyy-MM-dd")
+
+        # Sana tekshirish
+        if d_from > d_to:
+            QMessageBox.warning(self, "Xatolik", "Boshlanish sanasi tugash sanasidan keyin bo'lishi mumkin emas.")
+            return
+
+        # Fayl nomi
+        default_name = f"hisobot_{d_from}_{d_to}.docx"
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "Hisobotni saqlash", default_name,
+            "Word Documents (*.docx);;All Files (*)")
+
+        if not file_path:
+            return
+
+        ok = generate_report(self.config_manager, self.stats_db, d_from, d_to, file_path)
+
+        if ok:
+            QMessageBox.information(self, "Tayyor",
+                f"Hisobot saqlandi:\n{file_path}")
+            self.accept()
+        else:
+            QMessageBox.warning(self, "Xatolik",
+                "Hisobotni yaratishda xatolik yuz berdi.")
 
 
 class AnalyticsPage(QWidget):
@@ -89,7 +264,29 @@ class AnalyticsPage(QWidget):
         layout.addWidget(self._time_label)
 
         layout.addStretch()
+
+        report_btn = QPushButton("Hisobot yuklash")
+        report_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {C('accent_brand')};
+                color: #ffffff;
+                border: none;
+                border-radius: 6px;
+                padding: 6px 16px;
+                font-size: 12px;
+                font-weight: bold;
+            }}
+            QPushButton:hover {{ opacity: 0.9; }}
+        """)
+        report_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        report_btn.clicked.connect(self._open_report_dialog)
+        layout.addWidget(report_btn)
+
         return header
+
+    def _open_report_dialog(self):
+        dialog = ReportDialog(self.config_manager, self.stats_db, self)
+        dialog.exec()
 
     # ─── DATA LOADING ─────────────────────────────────────────
 
@@ -354,8 +551,9 @@ class AnalyticsPage(QWidget):
                 border: 1px solid {C('border_light')};
                 border-radius: 12px;
             }}
-            #{obj} > QLabel {{
+            #{obj} QLabel {{
                 border: none;
+                background: transparent;
             }}
         """)
 

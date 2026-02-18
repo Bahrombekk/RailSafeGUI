@@ -155,7 +155,7 @@ class StatsDB:
         return data
 
     def get_weekly_data(self, crossing_id: int) -> List[Dict]:
-        """Oxirgi 7 kun (kunlik jami).
+        """Oxirgi 7 kun (kunlik jami), hafta kuni tartibi bilan (Du→Ya).
         Returns: [{"date": "2026-02-11", "day": "Du", "light": 10, "heavy": 3}, ...]"""
         days_uz = ["Du", "Se", "Cho", "Pa", "Ju", "Sha", "Ya"]
         today = date.today()
@@ -176,6 +176,7 @@ class StatsDB:
                     "light": row[0] if row else 0,
                     "heavy": row[1] if row else 0,
                 })
+        data.sort(key=lambda x: days_uz.index(x["day"]))
         return data
 
     def get_monthly_data(self, crossing_id: int) -> List[Dict]:
@@ -233,7 +234,7 @@ class StatsDB:
         return data
 
     def get_heatmap_data(self, crossing_id: int) -> List[Dict]:
-        """Oxirgi 7 kun heatmap: har kun uchun 24 soatlik ma'lumot.
+        """Oxirgi 7 kun heatmap: har kun uchun 24 soatlik ma'lumot, hafta kuni tartibi (Du→Ya).
         Returns: [{"date": "...", "day": "Du", "hours": [0]*24}, ...] (7 ta)
         """
         days_uz = ["Du", "Se", "Cho", "Pa", "Ju", "Sha", "Ya"]
@@ -259,7 +260,56 @@ class StatsDB:
                     "day": days_uz[d.weekday()],
                     "hours": row
                 })
+        data.sort(key=lambda x: days_uz.index(x["day"]))
         return data
+
+    def get_date_range_daily(self, crossing_id: int,
+                             date_from: str, date_to: str) -> List[Dict]:
+        """Belgilangan sana oralig'ida kunlik statistika.
+        date_from, date_to: "2026-02-01" format.
+        Returns: [{"date": "2026-02-01", "light": 10, "heavy": 3}, ...]"""
+        with self._lock:
+            rows = self._conn.execute("""
+                SELECT date(hour_start) as d,
+                       COALESCE(SUM(light_count), 0),
+                       COALESCE(SUM(heavy_count), 0)
+                FROM hourly_stats
+                WHERE crossing_id = ?
+                  AND date(hour_start) >= ?
+                  AND date(hour_start) <= ?
+                GROUP BY d
+                ORDER BY d
+            """, (crossing_id, date_from, date_to)).fetchall()
+        return [{"date": r[0], "light": r[1], "heavy": r[2]} for r in rows]
+
+    def get_date_range_total(self, crossing_id: int,
+                             date_from: str, date_to: str) -> Tuple[int, int]:
+        """Belgilangan sana oralig'ida jami (light, heavy)."""
+        with self._lock:
+            row = self._conn.execute("""
+                SELECT COALESCE(SUM(light_count), 0),
+                       COALESCE(SUM(heavy_count), 0)
+                FROM hourly_stats
+                WHERE crossing_id = ?
+                  AND date(hour_start) >= ?
+                  AND date(hour_start) <= ?
+            """, (crossing_id, date_from, date_to)).fetchone()
+        return (row[0], row[1]) if row else (0, 0)
+
+    def get_date_range_camera(self, crossing_id: int, camera_name: str,
+                              date_from: str, date_to: str) -> Tuple[int, int]:
+        """Bitta kamera uchun sana oralig'ida jami."""
+        with self._lock:
+            row = self._conn.execute("""
+                SELECT COALESCE(SUM(light_count), 0),
+                       COALESCE(SUM(heavy_count), 0)
+                FROM hourly_stats
+                WHERE crossing_id = ?
+                  AND camera_name = ?
+                  AND date(hour_start) >= ?
+                  AND date(hour_start) <= ?
+            """, (crossing_id, camera_name, date_from, date_to)).fetchone()
+        return (row[0], row[1]) if row else (0, 0)
 
     def get_all_totals(self) -> Dict[int, Tuple[int, int]]:
         """Barcha pereezdlar uchun bugungi jami.
@@ -329,7 +379,7 @@ class StatsDB:
         }
 
     def get_train_weekly(self, crossing_id: int) -> List[Dict]:
-        """Oxirgi 7 kun poyezd soni + o'rtacha vaqt.
+        """Oxirgi 7 kun poyezd soni + o'rtacha vaqt, hafta kuni tartibi (Du→Ya).
         Returns: [{"date": "...", "day": "Du", "count": 3, "avg": 65.0}, ...]"""
         days_uz = ["Du", "Se", "Cho", "Pa", "Ju", "Sha", "Ya"]
         today = date.today()
@@ -350,6 +400,7 @@ class StatsDB:
                     "count": row[0] if row else 0,
                     "avg": row[1] if row else 0,
                 })
+        data.sort(key=lambda x: days_uz.index(x["day"]))
         return data
 
     def get_train_monthly(self, crossing_id: int) -> List[Dict]:

@@ -28,13 +28,13 @@
           "polygon_file": "/home/bahrombek/Desktop/RailSafeAI_v1.1/polygons/aa/labels_my-project-name_2026-01-12-06-32-27.json",
           "enabled": true,
           "id": 2,
-          "updated_at": "2026-02-09T17:52:15.711512"
+          "updated_at": "2026-02-18T09:27:02.957070"
         }
       ],
       "id": 1,
       "created_at": "2026-02-09T17:46:49.554067",
       "status": "offline",
-      "updated_at": "2026-02-09T17:52:15.711518"
+      "updated_at": "2026-02-18T09:27:02.957092"
     },
     {
       "name": "Pereezd 9",
@@ -80,5 +80,5 @@
     "violation_threshold": 40.0,
     "video_recording_enabled": true
   },
-  "last_updated": "2026-02-18T09:18:58.015240"
+  "last_updated": "2026-02-18T11:34:27.947372"
 }
