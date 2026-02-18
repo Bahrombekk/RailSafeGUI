@@ -12,7 +12,8 @@ from datetime import datetime
 
 from gui.utils.theme_colors import C
 from gui.widgets.hourly_chart import HourlyBarChart
-from gui.widgets.charts import DonutChart, LineChart, BarChart, SparkLine
+from gui.widgets.charts import DonutChart, LineChart, BarChart, SparkLine, TrainBarChart
+from gui.widgets.heatmap import HeatmapChart
 
 
 class AnalyticsPage(QWidget):
@@ -107,6 +108,7 @@ class AnalyticsPage(QWidget):
 
         self._add(self._build_summary(crossings))
         self._add(self._build_global_charts(crossings))
+        self._add(self._build_global_heatmap(crossings))
 
         for crossing in crossings:
             self._add(self._build_crossing_section(crossing))
@@ -134,10 +136,13 @@ class AnalyticsPage(QWidget):
 
         total_light = 0
         total_heavy = 0
+        total_trains = 0
         for cr in crossings:
             l, h = self.stats_db.get_today_total(cr["id"])
             total_light += l
             total_heavy += h
+            ts = self.stats_db.get_train_today_stats(cr["id"])
+            total_trains += ts["count"]
         total = total_light + total_heavy
         total_cams = sum(len(cr.get("cameras", [])) for cr in crossings)
 
@@ -145,7 +150,8 @@ class AnalyticsPage(QWidget):
             ("Jami transport", str(total), C('accent_brand'), "bugungi"),
             ("Yengil", str(total_light), C('accent_blue'), "bugungi"),
             ("Og'ir", str(total_heavy), C('accent_orange'), "bugungi"),
-            ("Pereezdlar", str(len(crossings)), C('accent_teal'), "faol"),
+            ("Poyezdlar", str(total_trains), C('accent_teal'), "bugungi"),
+            ("Pereezdlar", str(len(crossings)), C('accent_green'), "faol"),
             ("Kameralar", str(total_cams), C('accent_purple'), "ulangan"),
         ]
 
@@ -252,6 +258,19 @@ class AnalyticsPage(QWidget):
         year_card.layout().addWidget(year_chart)
         layout.addWidget(year_card, stretch=35)
 
+        # Poyezd haftalik (global)
+        train_card = self._chart_card("Poyezdlar (7 kun)", "gc_train")
+        tl = QHBoxLayout()
+        tl.addWidget(self._legend_dot(C('accent_teal'), "Poyezd soni"))
+        tl.addStretch()
+        train_card.layout().addLayout(tl)
+        gtrain_chart = TrainBarChart()
+        gtrain_chart.setMinimumHeight(180)
+        gtrain_data = self._aggregate_train_weekly(crossings)
+        gtrain_chart.set_data(gtrain_data, label_key="day")
+        train_card.layout().addWidget(gtrain_chart)
+        layout.addWidget(train_card, stretch=30)
+
         return container
 
     def _aggregate_weekly(self, crossings):
@@ -276,6 +295,47 @@ class AnalyticsPage(QWidget):
                 for i, d in enumerate(data):
                     merged[i]["light"] += d["light"]
                     merged[i]["heavy"] += d["heavy"]
+        return merged or []
+
+    def _build_global_heatmap(self, crossings):
+        """Barcha pereezdlar uchun umumiy heatmap (7 kun x 24 soat)"""
+        card = self._chart_card("Haftalik bandlik xaritasi (7 kun x 24 soat)", "gc_heatmap")
+        legend = QHBoxLayout()
+        legend.addWidget(self._legend_dot(C('accent_green'), "Kam"))
+        legend.addWidget(self._legend_dot(C('accent_yellow'), "O'rtacha"))
+        legend.addWidget(self._legend_dot(C('accent_red'), "Ko'p"))
+        legend.addStretch()
+        card.layout().addLayout(legend)
+
+        heatmap = HeatmapChart()
+        heatmap.setMinimumHeight(200)
+        heatmap_data = self._aggregate_heatmap(crossings)
+        heatmap.set_data(heatmap_data)
+        card.layout().addWidget(heatmap)
+        return card
+
+    def _aggregate_heatmap(self, crossings):
+        merged = None
+        for cr in crossings:
+            data = self.stats_db.get_heatmap_data(cr["id"])
+            if merged is None:
+                merged = [{"day": d["day"], "date": d["date"],
+                           "hours": list(d["hours"])} for d in data]
+            else:
+                for i, d in enumerate(data):
+                    for h in range(24):
+                        merged[i]["hours"][h] += d["hours"][h]
+        return merged or []
+
+    def _aggregate_train_weekly(self, crossings):
+        merged = None
+        for cr in crossings:
+            data = self.stats_db.get_train_weekly(cr["id"])
+            if merged is None:
+                merged = [dict(d) for d in data]
+            else:
+                for i, d in enumerate(data):
+                    merged[i]["count"] += d["count"]
         return merged or []
 
     # ─── CROSSING SECTION ─────────────────────────────────────
@@ -377,7 +437,7 @@ class AnalyticsPage(QWidget):
 
         main_layout.addLayout(row1)
 
-        # Qator 2: Haftalik + Oylik
+        # Qator 2: Haftalik + Oylik (transport)
         row2 = QHBoxLayout()
         row2.setSpacing(12)
 
@@ -400,6 +460,86 @@ class AnalyticsPage(QWidget):
         row2.addWidget(m_card, stretch=50)
 
         main_layout.addLayout(row2)
+
+        # ─── Poyezd statistikasi ──────────────────────────────
+        main_layout.addWidget(self._hdiv())
+        train_stats = self.stats_db.get_train_today_stats(cid)
+        train_header = QHBoxLayout()
+        train_title = QLabel("Poyezd harakati")
+        train_title.setStyleSheet(
+            f"color: {C('accent_teal')}; font-size: 14px; font-weight: bold;")
+        tg = QGraphicsDropShadowEffect()
+        tg.setColor(QColor(C('accent_teal')))
+        tg.setBlurRadius(5)
+        tg.setOffset(0, 0)
+        train_title.setGraphicsEffect(tg)
+        train_header.addWidget(train_title)
+        train_header.addStretch()
+
+        for txt, clr in [
+            (f"Bugun: {train_stats['count']} ta", C('accent_teal')),
+            (f"Min: {train_stats['min']:.0f}s", C('accent_green')),
+            (f"Max: {train_stats['max']:.0f}s", C('accent_red')),
+            (f"O'rt: {train_stats['avg']:.0f}s", C('accent_yellow')),
+        ]:
+            lbl = QLabel(txt)
+            lbl.setStyleSheet(f"color: {clr}; font-size: 12px; font-weight: bold;")
+            sg = QGraphicsDropShadowEffect()
+            sg.setColor(QColor(clr))
+            sg.setBlurRadius(4)
+            sg.setOffset(0, 0)
+            lbl.setGraphicsEffect(sg)
+            train_header.addWidget(lbl)
+            train_header.addSpacing(8)
+
+        main_layout.addLayout(train_header)
+
+        # Qator 3: Poyezd haftalik + oylik
+        row3 = QHBoxLayout()
+        row3.setSpacing(12)
+
+        tw_card = self._mini_card("Poyezdlar (7 kun)", f"mc_tw_{cid}")
+        tw_legend = QHBoxLayout()
+        tw_legend.addWidget(self._legend_dot(C('accent_teal'), "Poyezd soni"))
+        tw_legend.addStretch()
+        tw_card.layout().addLayout(tw_legend)
+        tw_chart = TrainBarChart()
+        tw_chart.setMinimumHeight(120)
+        train_weekly = self.stats_db.get_train_weekly(cid)
+        tw_chart.set_data(train_weekly, label_key="day")
+        tw_card.layout().addWidget(tw_chart)
+        row3.addWidget(tw_card, stretch=50)
+
+        tm_card = self._mini_card("Poyezdlar (30 kun)", f"mc_tm_{cid}")
+        tm_legend = QHBoxLayout()
+        tm_legend.addWidget(self._legend_dot(C('accent_teal'), "Poyezd soni"))
+        tm_legend.addStretch()
+        tm_card.layout().addLayout(tm_legend)
+        tm_chart = TrainBarChart()
+        tm_chart.setMinimumHeight(120)
+        train_monthly = self.stats_db.get_train_monthly(cid)
+        tm_chart.set_data(train_monthly, label_key="day")
+        tm_card.layout().addWidget(tm_chart)
+        row3.addWidget(tm_card, stretch=50)
+
+        main_layout.addLayout(row3)
+
+        # ─── Heatmap (7 kun x 24 soat) ───────────────────────
+        main_layout.addWidget(self._hdiv())
+        hm_card = self._mini_card("Bandlik xaritasi (7 kun x 24 soat)", f"mc_hm_{cid}")
+        hm_legend = QHBoxLayout()
+        hm_legend.addWidget(self._legend_dot(C('accent_green'), "Kam"))
+        hm_legend.addWidget(self._legend_dot(C('accent_yellow'), "O'rtacha"))
+        hm_legend.addWidget(self._legend_dot(C('accent_red'), "Ko'p"))
+        hm_legend.addStretch()
+        hm_card.layout().addLayout(hm_legend)
+
+        heatmap = HeatmapChart()
+        heatmap.setMinimumHeight(170)
+        heatmap_data = self.stats_db.get_heatmap_data(cid)
+        heatmap.set_data(heatmap_data)
+        hm_card.layout().addWidget(heatmap)
+        main_layout.addWidget(hm_card)
 
         return section
 

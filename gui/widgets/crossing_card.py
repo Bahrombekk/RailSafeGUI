@@ -16,6 +16,7 @@ import os
 import time
 import json
 import threading
+from datetime import date
 from gui.utils.theme_colors import C
 from gui.utils.polygon_tracker import PolygonTracker
 
@@ -243,14 +244,16 @@ class CameraWorker(QThread):
                         except Exception as e:
                             print(f"[{self.camera_name}] Detection error: {e}")
 
-                    # Polygon chizish (yashil=bo'sh, sariq=bor, qizil=buzulish)
+                    # Polygon chizish (yashil→sariq→apelsin→qizil)
                     if self._poly_pts is not None:
                         if in_poly_count == 0:
-                            color = (0, 255, 0)    # YASHIL
+                            color = (0, 255, 0)    # YASHIL — bo'sh
                         elif max_time < self.warning_threshold:
-                            color = (0, 255, 255)  # SARIQ
+                            color = (0, 255, 255)  # SARIQ — mashina bor
+                        elif max_time < self.violation_threshold:
+                            color = (0, 165, 255)  # APELSIN — ogohlantirish
                         else:
-                            color = (0, 0, 255)    # QIZIL
+                            color = (0, 0, 255)    # QIZIL — buzilish!
                         cv2.polylines(frame, [self._poly_pts], True, color, 2)
 
                     rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -508,10 +511,37 @@ class CrossingCard(QWidget):
         self.car_detector = car_detector
         self._owns_detector = False  # Biz yaratmadik, biz to'xtatmaymiz
 
+        # Midnight reset uchun
+        self._current_date = date.today()
+        self._tracker_base_light = 0
+        self._tracker_base_heavy = 0
+        self._last_tracker_light = 0
+        self._last_tracker_heavy = 0
+
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self._setup_ui()
         self._load_startup_counts()
+
+        # Midnight check timer (har 30 sekundda)
+        self._midnight_timer = QTimer(self)
+        self._midnight_timer.timeout.connect(self._check_midnight)
+        self._midnight_timer.start(30000)
+
         QTimer.singleShot(100, self._start_cameras)
+
+    def _check_midnight(self):
+        """Yarim tunda hisoblagichlarni nolga qaytarish"""
+        today = date.today()
+        if today != self._current_date:
+            self._current_date = today
+            # Tracker bazasini yangilash (hozirgi kumulyativ qiymatni ayirish uchun)
+            self._tracker_base_light = self._last_tracker_light
+            self._tracker_base_heavy = self._last_tracker_heavy
+            # DB offset 0 (yangi kun — bazada hali hech narsa yo'q)
+            self._light_offset = 0
+            self._heavy_offset = 0
+            # Displayni darhol yangilash
+            self.update_stats(0, 0)
 
     def _load_startup_counts(self):
         """DB dan bugungi sanashni yuklash (dastur qayta ishga tushganda davom etadi)"""
@@ -1169,9 +1199,13 @@ class CrossingCard(QWidget):
         if self._is_destroyed:
             return
         try:
-            # Display: DB offset + tracker kumulyativ soni
-            display_light = self._light_offset + light_count
-            display_heavy = self._heavy_offset + heavy_count
+            # Oxirgi tracker qiymatlarini saqlash (midnight reset uchun)
+            self._last_tracker_light = light_count
+            self._last_tracker_heavy = heavy_count
+            # Display: DB offset + (tracker - base)
+            # Midnight dan keyin base = midnight dagi qiymat, shuning uchun 0 dan boshlanadi
+            display_light = self._light_offset + (light_count - self._tracker_base_light)
+            display_heavy = self._heavy_offset + (heavy_count - self._tracker_base_heavy)
             self.update_stats(display_light, display_heavy)
 
             # Bandlik (polygon ichidagi avtomobillar soni)
@@ -1255,6 +1289,8 @@ class CrossingCard(QWidget):
 
     def cleanup(self):
         self._is_destroyed = True
+        if hasattr(self, '_midnight_timer'):
+            self._midnight_timer.stop()
         self.stop_cameras()
         # Shared detector - to'xtatmaymiz
         self.car_detector = None

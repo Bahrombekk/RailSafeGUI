@@ -48,6 +48,16 @@ class StatsDB:
                 UNIQUE(crossing_id, camera_name, hour_start)
             )
         """)
+        self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS train_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                crossing_id INTEGER NOT NULL,
+                start_time TEXT NOT NULL,
+                end_time TEXT,
+                duration_seconds REAL,
+                event_date TEXT NOT NULL
+            )
+        """)
         self._conn.commit()
 
     def _current_hour(self) -> str:
@@ -222,6 +232,35 @@ class StatsDB:
                 })
         return data
 
+    def get_heatmap_data(self, crossing_id: int) -> List[Dict]:
+        """Oxirgi 7 kun heatmap: har kun uchun 24 soatlik ma'lumot.
+        Returns: [{"date": "...", "day": "Du", "hours": [0]*24}, ...] (7 ta)
+        """
+        days_uz = ["Du", "Se", "Cho", "Pa", "Ju", "Sha", "Ya"]
+        today = date.today()
+        data = []
+        with self._lock:
+            for i in range(6, -1, -1):
+                d = today - timedelta(days=i)
+                ds = d.isoformat()
+                row = [0] * 24
+                rows = self._conn.execute("""
+                    SELECT CAST(strftime('%H', hour_start) AS INTEGER) as hour,
+                           COALESCE(SUM(light_count), 0) + COALESCE(SUM(heavy_count), 0)
+                    FROM hourly_stats
+                    WHERE crossing_id = ? AND date(hour_start) = ?
+                    GROUP BY hour
+                """, (crossing_id, ds)).fetchall()
+                for hour, total in rows:
+                    if 0 <= hour < 24:
+                        row[hour] = total or 0
+                data.append({
+                    "date": ds,
+                    "day": days_uz[d.weekday()],
+                    "hours": row
+                })
+        return data
+
     def get_all_totals(self) -> Dict[int, Tuple[int, int]]:
         """Barcha pereezdlar uchun bugungi jami.
         Returns: {crossing_id: (light, heavy), ...}"""
@@ -236,6 +275,118 @@ class StatsDB:
                 GROUP BY crossing_id
             """, (today,)).fetchall()
         return {r[0]: (r[1], r[2]) for r in rows}
+
+    # ─── TRAIN EVENTS ────────────────────────────────────────
+
+    def record_train_start(self, crossing_id: int):
+        """PLC ON bo'lganda — poyezd kelmoqda."""
+        now = datetime.now()
+        with self._lock:
+            self._conn.execute("""
+                INSERT INTO train_events (crossing_id, start_time, event_date)
+                VALUES (?, ?, ?)
+            """, (crossing_id, now.isoformat(), now.date().isoformat()))
+            self._conn.commit()
+
+    def record_train_end(self, crossing_id: int):
+        """PLC OFF bo'lganda — poyezd o'tdi. Oxirgi ochiq eventni yopish."""
+        now = datetime.now()
+        with self._lock:
+            row = self._conn.execute("""
+                SELECT id, start_time FROM train_events
+                WHERE crossing_id = ? AND end_time IS NULL
+                ORDER BY id DESC LIMIT 1
+            """, (crossing_id,)).fetchone()
+            if row:
+                start = datetime.fromisoformat(row[1])
+                duration = (now - start).total_seconds()
+                self._conn.execute("""
+                    UPDATE train_events
+                    SET end_time = ?, duration_seconds = ?
+                    WHERE id = ?
+                """, (now.isoformat(), duration, row[0]))
+                self._conn.commit()
+
+    def get_train_today_stats(self, crossing_id: int) -> Dict:
+        """Bugungi poyezd statistikasi.
+        Returns: {"count": 5, "min": 45.2, "max": 120.5, "avg": 78.3}"""
+        today = date.today().isoformat()
+        with self._lock:
+            row = self._conn.execute("""
+                SELECT COUNT(*),
+                       COALESCE(MIN(duration_seconds), 0),
+                       COALESCE(MAX(duration_seconds), 0),
+                       COALESCE(AVG(duration_seconds), 0)
+                FROM train_events
+                WHERE crossing_id = ? AND event_date = ?
+                  AND duration_seconds IS NOT NULL
+            """, (crossing_id, today)).fetchone()
+        return {
+            "count": row[0] if row else 0,
+            "min": row[1] if row else 0,
+            "max": row[2] if row else 0,
+            "avg": row[3] if row else 0,
+        }
+
+    def get_train_weekly(self, crossing_id: int) -> List[Dict]:
+        """Oxirgi 7 kun poyezd soni + o'rtacha vaqt.
+        Returns: [{"date": "...", "day": "Du", "count": 3, "avg": 65.0}, ...]"""
+        days_uz = ["Du", "Se", "Cho", "Pa", "Ju", "Sha", "Ya"]
+        today = date.today()
+        data = []
+        with self._lock:
+            for i in range(6, -1, -1):
+                d = today - timedelta(days=i)
+                ds = d.isoformat()
+                row = self._conn.execute("""
+                    SELECT COUNT(*), COALESCE(AVG(duration_seconds), 0)
+                    FROM train_events
+                    WHERE crossing_id = ? AND event_date = ?
+                      AND duration_seconds IS NOT NULL
+                """, (crossing_id, ds)).fetchone()
+                data.append({
+                    "date": ds,
+                    "day": days_uz[d.weekday()],
+                    "count": row[0] if row else 0,
+                    "avg": row[1] if row else 0,
+                })
+        return data
+
+    def get_train_monthly(self, crossing_id: int) -> List[Dict]:
+        """Oxirgi 30 kun poyezd soni.
+        Returns: [{"date": "...", "day": 13, "count": 3, "avg": 65.0}, ...]"""
+        today = date.today()
+        data = []
+        with self._lock:
+            for i in range(29, -1, -1):
+                d = today - timedelta(days=i)
+                ds = d.isoformat()
+                row = self._conn.execute("""
+                    SELECT COUNT(*), COALESCE(AVG(duration_seconds), 0)
+                    FROM train_events
+                    WHERE crossing_id = ? AND event_date = ?
+                      AND duration_seconds IS NOT NULL
+                """, (crossing_id, ds)).fetchone()
+                data.append({
+                    "date": ds,
+                    "day": d.day,
+                    "count": row[0] if row else 0,
+                    "avg": row[1] if row else 0,
+                })
+        return data
+
+    def get_all_train_today(self) -> Dict[int, int]:
+        """Barcha pereezdlar bugungi poyezd soni.
+        Returns: {crossing_id: count, ...}"""
+        today = date.today().isoformat()
+        with self._lock:
+            rows = self._conn.execute("""
+                SELECT crossing_id, COUNT(*)
+                FROM train_events
+                WHERE event_date = ? AND duration_seconds IS NOT NULL
+                GROUP BY crossing_id
+            """, (today,)).fetchall()
+        return {r[0]: r[1] for r in rows}
 
     def rename_camera(self, crossing_id: int, old_name: str, new_name: str):
         """Kamera nomi o'zgarganda barcha statslarni yangi nomga ko'chirish."""

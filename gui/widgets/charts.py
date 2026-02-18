@@ -392,6 +392,133 @@ class BarChart(QWidget):
 #  MINI SPARKLINE — kichik inline grafik
 # ═══════════════════════════════════════════════════════════════
 
+# ═══════════════════════════════════════════════════════════════
+#  TRAIN BAR CHART — poyezd soni bar chart (bitta qiymat)
+# ═══════════════════════════════════════════════════════════════
+
+class TrainBarChart(QWidget):
+    """Poyezd soni uchun bar chart (bitta "count" qiymat)"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._data = []  # [{"label": "Du", "count": 3, "avg": 65.0}, ...]
+        self._label_key = "label"
+        self.setMinimumHeight(120)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+
+    def set_data(self, data: List[Dict], label_key: str = "label"):
+        self._data = data
+        self._label_key = label_key
+        self.update()
+
+    def paintEvent(self, event):
+        if not self._data:
+            return
+
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        w = self.width()
+        h = self.height()
+
+        left_m = 30
+        right_m = 10
+        top_m = 18
+        bottom_m = 28
+
+        cw = w - left_m - right_m
+        ch = h - top_m - bottom_m
+
+        if cw <= 0 or ch <= 0:
+            painter.end()
+            return
+
+        n = len(self._data)
+        max_val = max(d.get("count", 0) for d in self._data)
+        if max_val == 0:
+            max_val = 1
+
+        text_color = QColor(C('text_muted'))
+        grid_color = QColor(C('bg_input'))
+        bar_color = QColor(C('accent_teal'))
+        bg_color = QColor(C('bg_panel_dark'))
+
+        # Background
+        painter.fillRect(QRectF(left_m, top_m, cw, ch), QBrush(bg_color))
+
+        # Grid
+        painter.setPen(QPen(grid_color, 1))
+        font = QFont()
+        font.setPixelSize(9)
+        painter.setFont(font)
+        for i in range(1, 4):
+            y = top_m + ch - (ch * i / 3)
+            painter.drawLine(int(left_m), int(y), int(left_m + cw), int(y))
+            val = int(max_val * i / 3)
+            painter.setPen(QPen(text_color))
+            painter.drawText(QRectF(0, y - 6, left_m - 4, 12),
+                             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+                             str(val))
+            painter.setPen(QPen(grid_color, 1))
+
+        painter.drawLine(int(left_m), int(top_m + ch), int(left_m + cw), int(top_m + ch))
+
+        bar_w = cw / n
+        gap = max(2, bar_w * 0.25)
+        radius = min(4, (bar_w - gap) / 4)
+
+        for i, d in enumerate(self._data):
+            x = left_m + i * bar_w
+            count = d.get("count", 0)
+
+            if count > 0:
+                bar_h = (count / max_val) * ch
+                bar_x = x + gap / 2
+                actual_w = bar_w - gap
+                y_start = top_m + ch - bar_h
+
+                # Gradient effect
+                grad = QLinearGradient(bar_x, y_start, bar_x, top_m + ch)
+                c1 = QColor(bar_color)
+                c1.setAlpha(220)
+                grad.setColorAt(0, c1)
+                c2 = QColor(bar_color)
+                c2.setAlpha(140)
+                grad.setColorAt(1, c2)
+
+                painter.setBrush(QBrush(grad))
+                painter.setPen(Qt.PenStyle.NoPen)
+                path = QPainterPath()
+                path.addRoundedRect(QRectF(bar_x, y_start, actual_w, bar_h), radius, radius)
+                painter.drawPath(path)
+
+                # Value on top
+                if n <= 12:
+                    font.setPixelSize(9)
+                    font.setBold(True)
+                    painter.setFont(font)
+                    painter.setPen(QPen(bar_color))
+                    painter.drawText(
+                        QRectF(bar_x, y_start - 16, actual_w, 14),
+                        Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignBottom,
+                        str(count)
+                    )
+                    font.setBold(False)
+
+            # Label
+            painter.setPen(QPen(text_color))
+            font.setPixelSize(9)
+            painter.setFont(font)
+            lbl = str(d.get(self._label_key, ""))
+            painter.drawText(
+                QRectF(x, top_m + ch + 3, bar_w, bottom_m - 3),
+                Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop,
+                lbl
+            )
+
+        painter.end()
+
+
 class SparkLine(QWidget):
     """Kichik inline trend chiziq"""
 

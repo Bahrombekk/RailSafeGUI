@@ -99,7 +99,8 @@ class DetailCameraWorker(QThread):
 
     def __init__(self, source: str, camera_name: str = "Camera", display_width: int = 1920,
                  car_detector: 'CarDetector' = None, detection_enabled: bool = True,
-                 polygon_file: str = None, warning_threshold: float = 10.0):
+                 polygon_file: str = None, warning_threshold: float = 10.0,
+                 violation_threshold: float = 15.0):
         super().__init__()
         self.source = source
         self.camera_name = camera_name
@@ -118,6 +119,7 @@ class DetailCameraWorker(QThread):
         self._poly_pts = None
         self._poly_mask = None
         self.warning_threshold = warning_threshold
+        self.violation_threshold = violation_threshold
 
     def take_frame(self):
         """Eng oxirgi kadrni olish - eski framelar avtomatik tashlanadi"""
@@ -231,14 +233,16 @@ class DetailCameraWorker(QThread):
                             except Exception as e:
                                 print(f"[{self.camera_name}] Detection error: {e}")
 
-                        # Polygon chizish (yashil=bo'sh, sariq=bor, qizil=buzulish)
+                        # Polygon chizish (yashil→sariq→apelsin→qizil)
                         if self._poly_pts is not None:
                             if in_poly_count == 0:
-                                color = (0, 255, 0)    # YASHIL
+                                color = (0, 255, 0)    # YASHIL — bo'sh
                             elif max_time < self.warning_threshold:
-                                color = (0, 255, 255)  # SARIQ
+                                color = (0, 255, 255)  # SARIQ — mashina bor
+                            elif max_time < self.violation_threshold:
+                                color = (0, 165, 255)  # APELSIN — ogohlantirish
                             else:
-                                color = (0, 0, 255)    # QIZIL
+                                color = (0, 0, 255)    # QIZIL — buzilish!
                             cv2.polylines(frame, [self._poly_pts], True, color, 2)
 
                         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -734,9 +738,10 @@ class CrossingDetail(QWidget):
                 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
                 poly_file = os.path.join(project_root, poly_file)
 
-            # Settings dan threshold
+            # Settings dan thresholdlar
             settings = self.config_manager.get_settings() if self.config_manager else {}
             warn_t = settings.get("warning_threshold", 10.0)
+            viol_t = settings.get("violation_threshold", 15.0)
 
             # Create worker with car detector + polygon
             worker = DetailCameraWorker(
@@ -746,6 +751,7 @@ class CrossingDetail(QWidget):
                 detection_enabled=cam.get("detection_enabled", True),
                 polygon_file=poly_file if poly_file and os.path.isfile(poly_file) else None,
                 warning_threshold=warn_t,
+                violation_threshold=viol_t,
             )
             worker.frame_ready.connect(
                 lambda lbl=label, w=worker: self._on_frame(lbl, w)
