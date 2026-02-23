@@ -33,12 +33,17 @@ class Dashboard(QWidget):
 
         # BITTA detector - barcha kameralar uchun (GPU maksimal)
         self.car_detector = None
-        self._init_shared_detector()
+        self.is_custom_model = False
 
         # Statistika bazasi (barcha pereezdlar uchun bitta)
         self.stats_db = StatsDB()
 
         self._setup_ui()
+        # Detektor va kameralar KEYINROQ ishga tushadi (engine tayyor bo'lgandan keyin)
+
+    def start_detection(self):
+        """Engine eksport tugagandan keyin chaqiriladi — detektor yuklash + kameralar boshlash"""
+        self._init_shared_detector()
         self._load_crossings()
 
     def _init_shared_detector(self):
@@ -69,9 +74,14 @@ class Dashboard(QWidget):
                 batch_interval_ms=15.0,
             )
 
+            self.is_custom_model = car_config.get("is_custom_model", False)
+
             if self.car_detector.load():
                 stats = self.car_detector.get_stats()
-                print(f"[Dashboard] Detector yuklandi! Mode: {stats['model_type'].upper()}")
+                model_label = "MAXSUS" if self.is_custom_model else stats['model_type'].upper()
+                print(f"[Dashboard] Detector yuklandi! Mode: {model_label}")
+
+                print(f"[Dashboard] Model type: {stats['model_type'].upper()}")
             else:
                 self.car_detector = None
 
@@ -161,7 +171,8 @@ class Dashboard(QWidget):
                 config_manager=self.config_manager,
                 compact=(count >= 4),
                 car_detector=self.car_detector,
-                stats_db=self.stats_db
+                stats_db=self.stats_db,
+                is_custom_model=self.is_custom_model,
             )
             card.clicked.connect(self.crossing_selected.emit)
             card.setMaximumHeight(16777215)

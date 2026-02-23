@@ -109,7 +109,7 @@ class CameraWorker(QThread):
     def __init__(self, source: str, camera_name: str = "Camera", display_width: int = 1280,
                  car_detector=None, detection_enabled: bool = True,
                  polygon_file: str = None, warning_threshold: float = 10.0,
-                 violation_threshold: float = 15.0):
+                 violation_threshold: float = 15.0, is_custom_model: bool = False):
         super().__init__()
         self.source = source
         self.camera_name = camera_name
@@ -124,6 +124,7 @@ class CameraWorker(QThread):
         self.polygon_file = polygon_file
         self.warning_threshold = warning_threshold
         self.violation_threshold = violation_threshold
+        self.is_custom_model = is_custom_model
         self._poly_pts = None
         self._poly_mask = None
 
@@ -205,12 +206,16 @@ class CameraWorker(QThread):
                                 self.polygon_file, w, h)
                         # Tracker yaratish (polygon mavjud bo'lsa)
                         if self._poly_mask is not None:
+                            light_cls = PolygonTracker.CUSTOM_LIGHT if self.is_custom_model else None
+                            heavy_cls = PolygonTracker.CUSTOM_HEAVY if self.is_custom_model else None
                             _tracker = PolygonTracker(
                                 poly_mask=self._poly_mask,
                                 iou_threshold=0.3,
                                 max_age=2.0,
                                 frame_width=w,
-                                frame_height=h
+                                frame_height=h,
+                                light_classes=light_cls,
+                                heavy_classes=heavy_cls,
                             )
 
                     # Car detection - NON-BLOCKING
@@ -225,10 +230,12 @@ class CameraWorker(QThread):
                             if detections:
                                 draw_on = det_frame if det_frame is not None else frame
                                 # Tracking + counting
+                                in_poly_bboxes = None
                                 if _tracker is not None:
                                     _tracker.process_detections(detections)
                                     in_poly_count = _tracker.get_inside_count()
                                     max_time = _tracker.get_max_time()
+                                    in_poly_bboxes = _tracker.get_in_polygon_bboxes()
                                     self.stats_updated.emit(
                                         _tracker.light_count,
                                         _tracker.heavy_count,
@@ -239,7 +246,8 @@ class CameraWorker(QThread):
                                     self.stats_updated.emit(0, 0, detection_count, 0.0)
                                 frame = self.car_detector.draw_detections(
                                     draw_on, detections,
-                                    thickness=2, font_scale=0.5)
+                                    thickness=2, font_scale=0.5,
+                                    in_polygon_bboxes=in_poly_bboxes)
                                 h, w = frame.shape[:2]
                         except Exception as e:
                             print(f"[{self.camera_name}] Detection error: {e}")
@@ -279,17 +287,22 @@ class CameraWorker(QThread):
                 cap.release()
 
     def _is_running(self):
-        self._mutex.lock()
-        r = self._running
-        self._mutex.unlock()
-        return r
-
-    def stop(self):
-        # Signal thread to stop - grab() will return and loop exits
         try:
             self._mutex.lock()
-            self._running = False
+            r = self._running
             self._mutex.unlock()
+            return r
+        except Exception:
+            return False
+
+    def stop(self):
+        # Signal thread to stop — tryLock deadlock dan himoya
+        try:
+            if self._mutex.tryLock(1000):
+                self._running = False
+                self._mutex.unlock()
+            else:
+                self._running = False
         except Exception:
             self._running = False
 
@@ -297,7 +310,8 @@ class CameraWorker(QThread):
         try:
             if self.isRunning():
                 self.quit()
-                self.wait(5000)
+                if not self.wait(5000):
+                    print(f"[{self.camera_name}] Worker thread did not stop in 5s")
         except (RuntimeError, Exception):
             pass
 
@@ -494,13 +508,14 @@ class CrossingCard(QWidget):
     clicked = pyqtSignal(int)
 
     def __init__(self, crossing_data: dict, config_manager=None, compact=False,
-                 car_detector=None, stats_db=None, parent=None):
+                 car_detector=None, stats_db=None, is_custom_model=False, parent=None):
         super().__init__(parent)
         self.crossing_data = crossing_data
         self.crossing_id = crossing_data.get("id", 0)
         self.config_manager = config_manager
         self.compact = compact
         self.stats_db = stats_db
+        self.is_custom_model = is_custom_model
         self.camera_workers = []
         self.main_camera_label = None
         self.additional_camera_label = None
@@ -1125,6 +1140,7 @@ class CrossingCard(QWidget):
                     polygon_file=poly_file if poly_file and os.path.isfile(poly_file) else None,
                     warning_threshold=warn_t,
                     violation_threshold=viol_t,
+                    is_custom_model=self.is_custom_model,
                 )
 
                 # cam_type bo'yicha aniqlash, fallback: birinchi=main
@@ -1238,8 +1254,11 @@ class CrossingCard(QWidget):
                 if self.main_camera_data:
                     main_name = self.main_camera_data.get("name", "Camera")
                 if main_name:
-                    self.stats_db.record_count(
-                        self.crossing_id, main_name, light_count, heavy_count)
+                    try:
+                        self.stats_db.record_count(
+                            self.crossing_id, main_name, light_count, heavy_count)
+                    except Exception as e:
+                        print(f"[StatsDB] Record error: {e}")
         except RuntimeError:
             self._is_destroyed = True
 
@@ -1280,6 +1299,14 @@ class CrossingCard(QWidget):
         menu.exec(self.frame.mapToGlobal(pos))
 
     def stop_cameras(self):
+        # Avval signallarni uzib, keyin to'xtatish (crash prevention)
+        for worker in self.camera_workers:
+            try:
+                worker.frame_ready.disconnect()
+                worker.status_changed.disconnect()
+                worker.stats_updated.disconnect()
+            except (TypeError, RuntimeError):
+                pass
         for worker in self.camera_workers:
             try:
                 worker.stop()
@@ -1288,9 +1315,14 @@ class CrossingCard(QWidget):
         self.camera_workers.clear()
 
     def cleanup(self):
+        if self._is_destroyed:
+            return
         self._is_destroyed = True
-        if hasattr(self, '_midnight_timer'):
-            self._midnight_timer.stop()
+        try:
+            if hasattr(self, '_midnight_timer'):
+                self._midnight_timer.stop()
+        except RuntimeError:
+            pass
         self.stop_cameras()
         # Shared detector - to'xtatmaymiz
         self.car_detector = None

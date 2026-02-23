@@ -244,6 +244,7 @@ class ConfigManager:
     def get_car_detector_config(self, config_yaml_path: str = "config.yaml") -> Dict:
         """
         Get car detector configuration from main config.yaml
+        GUI settings dan model_type va custom_model_path tekshiriladi.
 
         Args:
             config_yaml_path: Path to config.yaml
@@ -280,6 +281,25 @@ class ConfigManager:
                         model_path = Path(car_config["model_path"])
                         if not model_path.is_absolute():
                             car_config["model_path"] = str(project_root / model_path)
+
+                    # GUI settings dan maxsus model tekshirish
+                    gui_settings = self.get_settings()
+                    if gui_settings.get("model_type") == "custom":
+                        # models/ dan avtomatik topish (har doim birinchi tekshiriladi)
+                        default_custom = project_root / "models" / "pereezd_yolo26n.pt"
+                        if default_custom.is_file():
+                            custom_path = str(default_custom)
+                        else:
+                            custom_path = gui_settings.get("custom_model_path", "")
+                        if custom_path and Path(custom_path).is_file():
+                            car_config["model_path"] = custom_path
+                            car_config["imgsz"] = 1088
+                            car_config["filter_classes"] = None
+                            car_config["is_custom_model"] = True
+                            print(f"[ConfigManager] Maxsus model: {custom_path}")
+                    else:
+                        car_config["is_custom_model"] = False
+
                     return car_config
 
         except Exception as e:

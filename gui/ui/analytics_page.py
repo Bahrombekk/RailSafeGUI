@@ -291,32 +291,35 @@ class AnalyticsPage(QWidget):
     # ─── DATA LOADING ─────────────────────────────────────────
 
     def _load_data(self):
-        self._time_label.setText(f"Yangilangan: {datetime.now().strftime('%H:%M:%S')}")
+        try:
+            self._time_label.setText(f"Yangilangan: {datetime.now().strftime('%H:%M:%S')}")
 
-        crossings = self.config_manager.get_crossings()
+            crossings = self.config_manager.get_crossings()
 
-        for w in self._widgets:
-            try:
-                w.setParent(None)
-                w.deleteLater()
-            except RuntimeError:
-                pass
-        self._widgets.clear()
+            for w in self._widgets:
+                try:
+                    w.setParent(None)
+                    w.deleteLater()
+                except RuntimeError:
+                    pass
+            self._widgets.clear()
 
-        self._add(self._build_summary(crossings))
-        self._add(self._build_global_charts(crossings))
-        self._add(self._build_global_heatmap(crossings))
+            self._add(self._build_summary(crossings))
+            self._add(self._build_global_charts(crossings))
+            self._add(self._build_global_heatmap(crossings))
 
-        for crossing in crossings:
-            self._add(self._build_crossing_section(crossing))
+            for crossing in crossings:
+                self._add(self._build_crossing_section(crossing))
 
-        if not crossings:
-            lbl = QLabel("Pereezdlar yo'q. Dashboard ga qaytib pereezd qo'shing.")
-            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            lbl.setStyleSheet(f"color: {C('text_muted')}; font-size: 15px; padding: 50px;")
-            self._add(lbl)
+            if not crossings:
+                lbl = QLabel("Pereezdlar yo'q. Dashboard ga qaytib pereezd qo'shing.")
+                lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                lbl.setStyleSheet(f"color: {C('text_muted')}; font-size: 15px; padding: 50px;")
+                self._add(lbl)
 
-        self.content_layout.addStretch()
+            self.content_layout.addStretch()
+        except (RuntimeError, Exception) as e:
+            print(f"[Analytics] _load_data error: {e}")
 
     def _add(self, widget):
         self.content_layout.addWidget(widget)

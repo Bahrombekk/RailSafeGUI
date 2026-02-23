@@ -95,7 +95,20 @@ class TensorRTBackend:
         runtime = trt.Runtime(logger)
 
         with open(engine_path, "rb") as f:
-            self.engine = runtime.deserialize_cuda_engine(f.read())
+            raw = f.read()
+
+        # Ultralytics engine format: [4-byte meta_len][JSON meta][TRT binary]
+        import struct as _struct
+        engine_data = raw
+        if len(raw) > 4:
+            try:
+                meta_len = _struct.unpack('<I', raw[:4])[0]
+                if meta_len < len(raw) - 4 and raw[4:5] == b'{':
+                    engine_data = raw[4 + meta_len:]
+            except Exception:
+                pass
+
+        self.engine = runtime.deserialize_cuda_engine(engine_data)
 
         if not self.engine:
             raise RuntimeError(f"Engine yuklanmadi: {engine_path}")
@@ -251,9 +264,9 @@ class RealtimeMultiCameraDetector:
 
     COLORS = {
         2: (0, 255, 0),    # car - Yashil
-        3: (255, 165, 0),  # motorcycle - Apelsin
-        5: (255, 255, 0),  # bus - Sariq
-        7: (0, 0, 255),    # truck - Qizil
+        3: (0, 255, 0),  # motorcycle - Apelsin
+        5: (0, 255, 0),  # bus - Sariq
+        7: (0, 255, 0),    # truck - Qizil
     }
     DEFAULT_COLOR = (0, 255, 0)
 
@@ -415,24 +428,31 @@ class RealtimeMultiCameraDetector:
                     event.set()
 
     def _infer_tensorrt(self, frames: List[np.ndarray]) -> List[List[Detection]]:
-        """TensorRT native inference + NMS"""
+        """TensorRT native inference + NMS (sub-batch agar frames > max_batch)"""
         batch_size = len(frames)
+        max_b = self._trt.max_batch
         orig_sizes = [(f.shape[0], f.shape[1]) for f in frames]
-
-        # Pad to max_batch if needed (engine has fixed batch)
-        if batch_size < self._trt.max_batch:
-            padded = frames + [np.zeros((self._trt.imgsz, self._trt.imgsz, 3), dtype=np.uint8)] * (self._trt.max_batch - batch_size)
-        else:
-            padded = frames[:self._trt.max_batch]
-
-        self._trt.preprocess(padded)
-        raw_output = self._trt.infer()  # (max_batch, 300, 6)
-
-        # Parse output for each real frame
         results = []
-        for i in range(batch_size):
-            dets = self._parse_trt_output(raw_output[i], orig_sizes[i])
-            results.append(dets)
+
+        # Sub-batch qilish: agar kameralar soni max_batch dan katta bo'lsa
+        for start in range(0, batch_size, max_b):
+            end = min(start + max_b, batch_size)
+            chunk = frames[start:end]
+            chunk_sizes = orig_sizes[start:end]
+            chunk_len = len(chunk)
+
+            # Pad to max_batch (engine fixed batch talab qiladi)
+            if chunk_len < max_b:
+                padded = chunk + [np.zeros((self._trt.imgsz, self._trt.imgsz, 3), dtype=np.uint8)] * (max_b - chunk_len)
+            else:
+                padded = chunk
+
+            self._trt.preprocess(padded)
+            raw_output = self._trt.infer()  # (max_batch, 300, 6)
+
+            for i in range(chunk_len):
+                dets = self._parse_trt_output(raw_output[i], chunk_sizes[i])
+                results.append(dets)
 
         return results
 
@@ -593,15 +613,21 @@ class RealtimeMultiCameraDetector:
         frame: np.ndarray,
         detections: List[Detection],
         thickness: int = 2,
-        font_scale: float = 0.5
+        font_scale: float = 0.5,
+        in_polygon_bboxes: set = None
     ) -> np.ndarray:
-        """Detection boxlarni chizish"""
+        """Detection boxlarni chizish. Polygon ichidagi objectlar ko'k rangda."""
         result = frame.copy()
         h, w = result.shape[:2]
 
+        IN_POLY_COLOR = (255, 80, 0)   # Ko'k (BGR)
+
         for det in detections:
             x1, y1, x2, y2 = det.bbox
-            color = self.COLORS.get(det.class_id, self.DEFAULT_COLOR)
+            if in_polygon_bboxes and det.bbox in in_polygon_bboxes:
+                color = IN_POLY_COLOR
+            else:
+                color = self.COLORS.get(det.class_id, self.DEFAULT_COLOR)
 
             cv2.rectangle(result, (x1, y1), (x2, y2), color, thickness)
 
@@ -620,8 +646,8 @@ class RealtimeMultiCameraDetector:
             bg_x2 = min(x1 + tw + pad * 2 + 2, w)
             bg_y2 = ly + pad
 
-            cv2.rectangle(result, (bg_x1, bg_y1), (bg_x2, bg_y2), color, -1)
-            cv2.putText(result, label, (lx, ly), font, font_scale, (255, 255, 255), 1, cv2.LINE_AA)
+            #cv2.rectangle(result, (bg_x1, bg_y1), (bg_x2, bg_y2), color, -1)
+            #cv2.putText(result, label, (lx, ly), font, font_scale, (255, 255, 255), 1, cv2.LINE_AA)
 
         return result
 

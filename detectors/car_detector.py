@@ -45,9 +45,9 @@ class CarDetector:
     # Default rang palitralari
     COLORS = {
         0: (0, 255, 0),    # Yashil - avtomobil
-        1: (255, 165, 0),  # Apelsin - yuk mashinasi
-        2: (0, 0, 255),    # Qizil - avtobus
-        3: (255, 255, 0),  # Sariq - mototsikl
+        1: (0, 255, 0),  # Apelsin - yuk mashinasi
+        2: (0, 255, 0),    # Qizil - avtobus
+        3: (0, 255, 0),  # Sariq - mototsikl
     }
 
     DEFAULT_COLOR = (128, 128, 128)  # Kulrang - noma'lum
@@ -295,23 +295,23 @@ class CarDetector:
                 # Label joylashuvi
                 label_y = y1 - 10 if y1 > 30 else y2 + text_h + 10
 
-                cv2.rectangle(
-                    result,
-                    (x1, label_y - text_h - 5),
-                    (x1 + text_w + 5, label_y + 5),
-                    color,
-                    -1
-                )
+                #cv2.rectangle(
+                #    result,
+                #    (x1, label_y - text_h - 5),
+                #    (x1 + text_w + 5, label_y + 5),
+                #    color,
+                #    -1
+                #)
 
-                cv2.putText(
-                    result,
-                    label,
-                    (x1 + 2, label_y),
-                    font,
-                    font_scale,
-                    (255, 255, 255),
-                    thickness
-                )
+                #cv2.putText(
+                #    result,
+                #    label,
+                #    (x1 + 2, label_y),
+                #    font,
+                #    font_scale,
+                #    (255, 255, 255),
+                #    thickness
+                #)
 
         return result
 

@@ -2,14 +2,17 @@
 Dialogs for adding/editing crossings, cameras, and PLCs
 """
 
+import os
+import json
+
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                               QLineEdit, QPushButton, QGroupBox, QFormLayout,
                               QSpinBox, QCheckBox, QFileDialog, QComboBox,
-                              QMessageBox, QTabWidget, QWidget)
-from PyQt6.QtCore import Qt, pyqtSignal
+                              QMessageBox, QTabWidget, QWidget, QRadioButton,
+                              QButtonGroup, QProgressBar, QFrame)
+from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QThread
 from PyQt6.QtGui import QFont, QPainter, QPen, QColor
 
-import json
 from gui.utils.theme_colors import C
 
 
@@ -717,99 +720,614 @@ class SettingsDialog(QDialog):
         self.config_manager = config_manager
         self.settings = config_manager.get_settings()
         self.setWindowTitle("Sozlamalar")
-        self.setFixedSize(500, 520)
-        self.setStyleSheet(_dialog_style())
+        self.setFixedSize(480, 600)
+        self.setStyleSheet(_dialog_style() + f"""
+            QSpinBox {{
+                background: {C('bg_input')};
+                color: {C('text_primary')};
+                border: 1px solid {C('border_light')};
+                border-radius: 6px;
+                padding: 4px 8px;
+                font-size: 13px;
+                min-width: 120px;
+            }}
+            QSpinBox:focus {{ border-color: {C('accent_brand')}; }}
+            QSpinBox::up-button, QSpinBox::down-button {{
+                width: 20px;
+                border: none;
+                background: {C('bg_input')};
+            }}
+            QSpinBox::up-arrow {{ width: 10px; height: 10px; }}
+            QSpinBox::down-arrow {{ width: 10px; height: 10px; }}
+            QRadioButton {{
+                color: {C('text_primary')};
+                font-size: 12px;
+                background: transparent;
+            }}
+            QRadioButton::indicator {{
+                width: 16px;
+                height: 16px;
+                border-radius: 8px;
+                border: 2px solid {C('text_muted')};
+                background: {C('bg_input')};
+            }}
+            QRadioButton::indicator:checked {{
+                background: {C('accent_brand')};
+                border-color: {C('accent_brand')};
+            }}
+            QRadioButton::indicator:hover {{
+                border-color: {C('accent_brand')};
+            }}
+        """)
         self._setup_ui()
 
     def _setup_ui(self):
-        """Setup the user interface"""
         layout = QVBoxLayout(self)
-        layout.setSpacing(16)
+        layout.setSpacing(12)
         layout.setContentsMargins(24, 20, 24, 20)
 
-        # Title
+        # ── Sarlavha ──
         title_label = QLabel("Sozlamalar")
         title_label.setObjectName("titleLabel")
         title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title_label)
 
-        # ── Interfeys section ──
-        iface_group = QGroupBox("Interfeys")
-        iface_form = QFormLayout(iface_group)
-        iface_form.setSpacing(12)
-        iface_form.setContentsMargins(16, 20, 16, 12)
-        iface_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        # ── Interfeys ──
+        layout.addWidget(self._section("Interfeys"))
+        iface_box = QFrame()
+        iface_box.setStyleSheet(f"""
+            QFrame {{ background: {C('bg_card')}; border: 1px solid {C('border_light')};
+                      border-radius: 8px; }}
+        """)
+        iface_v = QVBoxLayout(iface_box)
+        iface_v.setContentsMargins(16, 12, 16, 12)
+        iface_v.setSpacing(10)
+        iface_v.addLayout(self._row("Til:", self._make_combo(
+            ["O'zbekcha (uz)", "Русский (ru)", "English (en)"],
+            {"uz": 0, "ru": 1, "en": 2}.get(self.settings.get("language", "uz"), 0)
+        ), attr="lang_combo"))
+        iface_v.addLayout(self._row("Mavzu:", self._make_combo(
+            ["Qora (Dark)", "Harbiy (Military)", "Oq (Light)"],
+            {"dark": 0, "military": 1, "light": 2}.get(self.settings.get("theme", "dark"), 0)
+        ), attr="theme_combo"))
+        layout.addWidget(iface_box)
 
-        self.lang_combo = QComboBox()
-        self.lang_combo.addItems(["O'zbekcha (uz)", "Русский (ru)", "English (en)"])
-        current_lang = self.settings.get("language", "uz")
-        lang_map = {"uz": 0, "ru": 1, "en": 2}
-        self.lang_combo.setCurrentIndex(lang_map.get(current_lang, 0))
-        iface_form.addRow("Til:", self.lang_combo)
+        # ── Monitoring ──
+        layout.addWidget(self._section("Monitoring"))
+        mon_box = QFrame()
+        mon_box.setStyleSheet(f"""
+            QFrame {{ background: {C('bg_card')}; border: 1px solid {C('border_light')};
+                      border-radius: 8px; }}
+        """)
+        mon_v = QVBoxLayout(mon_box)
+        mon_v.setContentsMargins(16, 12, 16, 12)
+        mon_v.setSpacing(10)
 
-        self.theme_combo = QComboBox()
-        self.theme_combo.addItems(["Qora (Dark)", "Harbiy (Military)", "Oq (Light)"])
-        theme_map = {"dark": 0, "military": 1, "light": 2}
-        self.theme_combo.setCurrentIndex(theme_map.get(self.settings.get("theme", "dark"), 0))
-        iface_form.addRow("Mavzu:", self.theme_combo)
-
-        layout.addWidget(iface_group)
-
-        # ── Monitoring section ──
-        monitor_group = QGroupBox("Monitoring")
-        monitor_form = QFormLayout(monitor_group)
-        monitor_form.setSpacing(12)
-        monitor_form.setVerticalSpacing(16)
-        monitor_form.setContentsMargins(16, 24, 16, 16)
-        monitor_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
-
-        self.warning_threshold = StyledSpinBox(0, 9999, " s")
+        self.warning_threshold = QSpinBox()
+        self.warning_threshold.setRange(0, 9999)
+        self.warning_threshold.setSuffix(" s")
         self.warning_threshold.setValue(int(self.settings.get("warning_threshold", 10)))
-        monitor_form.addRow("Ogohlantirish:", self.warning_threshold)
+        self.warning_threshold.setFixedHeight(36)
+        mon_v.addLayout(self._row("Ogohlantirish:", self.warning_threshold))
 
-        self.violation_threshold = StyledSpinBox(0, 9999, " s")
+        self.violation_threshold = QSpinBox()
+        self.violation_threshold.setRange(0, 9999)
+        self.violation_threshold.setSuffix(" s")
         self.violation_threshold.setValue(int(self.settings.get("violation_threshold", 15)))
-        monitor_form.addRow("Buzilish:", self.violation_threshold)
+        self.violation_threshold.setFixedHeight(36)
+        mon_v.addLayout(self._row("Buzilish:", self.violation_threshold))
 
-        self.auto_save = StyledCheckBox("Avtomatik saqlash")
+        self.auto_save = QCheckBox("Avtomatik saqlash")
         self.auto_save.setChecked(self.settings.get("auto_save", True))
-        monitor_form.addRow("", self.auto_save)
+        mon_v.addWidget(self.auto_save)
 
-        layout.addWidget(monitor_group)
+        layout.addWidget(mon_box)
+
+        # ── AI Model ──
+        layout.addWidget(self._section("AI Model"))
+        self._model_btn_group = QButtonGroup(self)
+        current_model_type = self.settings.get("model_type", "default")
+
+        self._default_radio = QRadioButton()
+        self._model_btn_group.addButton(self._default_radio, 0)
+        layout.addWidget(self._model_card(
+            self._default_radio,
+            "Default model (yolo26m.pt — COCO)",
+            "80 klass, imgsz=640",
+            current_model_type == "default"
+        ))
+
+        self._custom_radio = QRadioButton()
+        self._model_btn_group.addButton(self._custom_radio, 1)
+        layout.addWidget(self._model_card(
+            self._custom_radio,
+            "Maxsus model (pereezd_yolo26n.pt)",
+            "2 klass (yengil/og'ir), imgsz=1088",
+            current_model_type == "custom"
+        ))
 
         layout.addStretch()
 
-        # ── Buttons ──
-        buttons_layout = QHBoxLayout()
-        buttons_layout.setSpacing(12)
-        buttons_layout.addStretch()
+        # ── Tugmalar ──
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(10)
+        btn_row.addStretch()
 
         cancel_btn = QPushButton("Bekor Qilish")
         cancel_btn.clicked.connect(self.reject)
-        cancel_btn.setMinimumWidth(130)
-        cancel_btn.setMinimumHeight(36)
-        buttons_layout.addWidget(cancel_btn)
+        cancel_btn.setMinimumWidth(120)
+        cancel_btn.setFixedHeight(38)
+        btn_row.addWidget(cancel_btn)
 
         save_btn = QPushButton("Saqlash")
         save_btn.setObjectName("successButton")
         save_btn.clicked.connect(self._save)
-        save_btn.setMinimumWidth(130)
-        save_btn.setMinimumHeight(36)
-        buttons_layout.addWidget(save_btn)
+        save_btn.setMinimumWidth(120)
+        save_btn.setFixedHeight(38)
+        btn_row.addWidget(save_btn)
 
-        layout.addLayout(buttons_layout)
+        layout.addLayout(btn_row)
+
+    def _section(self, text: str) -> QLabel:
+        lbl = QLabel(text)
+        lbl.setStyleSheet(f"""
+            color: {C('text_muted')}; font-size: 10px; font-weight: bold;
+            letter-spacing: 1px; text-transform: uppercase;
+            padding: 2px 0; background: transparent;
+        """)
+        return lbl
+
+    def _make_combo(self, items: list, current: int):
+        cb = QComboBox()
+        cb.addItems(items)
+        cb.setCurrentIndex(current)
+        cb.setFixedHeight(36)
+        return cb
+
+    def _row(self, label_text: str, widget, attr: str = None):
+        row = QHBoxLayout()
+        row.setSpacing(12)
+        lbl = QLabel(label_text)
+        lbl.setStyleSheet(f"color: {C('text_muted')}; font-size: 12px; background: transparent;")
+        lbl.setFixedWidth(110)
+        row.addWidget(lbl)
+        row.addWidget(widget)
+        if attr:
+            setattr(self, attr, widget)
+        return row
+
+    def _model_card(self, radio: "QRadioButton", title: str, desc: str, checked: bool) -> QFrame:
+        radio.setChecked(checked)
+        card = QFrame()
+        color = C('accent_brand') if checked else C('border_light')
+        card.setStyleSheet(f"""
+            QFrame {{
+                background: {C('bg_card')};
+                border: 2px solid {color};
+                border-radius: 8px;
+            }}
+        """)
+
+        def _update_border(state):
+            c = C('accent_brand') if state else C('border_light')
+            card.setStyleSheet(f"""
+                QFrame {{
+                    background: {C('bg_card')};
+                    border: 2px solid {c};
+                    border-radius: 8px;
+                }}
+            """)
+
+        radio.toggled.connect(_update_border)
+
+        row = QHBoxLayout(card)
+        row.setContentsMargins(14, 10, 14, 10)
+        row.setSpacing(12)
+        row.addWidget(radio)
+
+        texts = QVBoxLayout()
+        texts.setSpacing(2)
+        t = QLabel(title)
+        t.setStyleSheet(f"color: {C('text_primary')}; font-size: 12px; font-weight: bold; background: transparent; border: none;")
+        d = QLabel(desc)
+        d.setStyleSheet(f"color: {C('text_muted')}; font-size: 10px; background: transparent; border: none;")
+        texts.addWidget(t)
+        texts.addWidget(d)
+        row.addLayout(texts)
+        row.addStretch()
+        return card
 
     def _save(self):
         """Save settings"""
         lang_map = {0: "uz", 1: "ru", 2: "en"}
+        model_type = "custom" if self._custom_radio.isChecked() else "default"
 
         settings = {
             "language": lang_map[self.lang_combo.currentIndex()],
             "theme": ["dark", "military", "light"][self.theme_combo.currentIndex()],
             "warning_threshold": float(self.warning_threshold.value()),
             "violation_threshold": float(self.violation_threshold.value()),
-            "auto_save": self.auto_save.isChecked()
+            "auto_save": self.auto_save.isChecked(),
+            "model_type": model_type,
         }
 
         self.config_manager.update_settings(settings)
         self.accept()
+
+
+# ─── TensorRT Engine Export Dialog ──────────────────────────────────
+
+
+# Modellar ro'yxati — engine yo'q bo'lsa eksport qilinadi
+ENGINE_MODELS = [
+    {
+        "name": "pereezd_yolo26n.pt",
+        "path": "models/pereezd_yolo26n.pt",
+        "imgsz": 1088,
+        "desc": "Maxsus model (yengil/og'ir)",
+    },
+    {
+        "name": "yolo26m.pt",
+        "path": "models/yolo26m.pt",
+        "imgsz": 640,
+        "desc": "Default model (COCO 80 klass)",
+    },
+]
+
+
+def _strip_ultralytics_metadata(data: bytes) -> bytes:
+    """Ultralytics engine faylidan JSON metadata ni olib tashlash.
+    Format: [4-byte uint32 meta_len] [meta_len bytes JSON] [TRT engine binary]
+    Agar bunday format bo'lmasa — asl ma'lumotni qaytaradi."""
+    import struct
+    if len(data) < 4:
+        return data
+    try:
+        meta_len = struct.unpack('<I', data[:4])[0]
+        if meta_len < len(data) - 4 and data[4:5] == b'{':
+            return data[4 + meta_len:]
+    except Exception:
+        pass
+    return data
+
+
+def _is_engine_valid(engine_path: str) -> bool:
+    """TensorRT engine faylini tezkor tekshirish — deserialize qila oladimi?
+    Ultralytics engine formatini (JSON metadata + TRT binary) ham qo'llab-quvvatlaydi."""
+    try:
+        import tensorrt as trt
+        logger = trt.Logger(trt.Logger.ERROR)
+        runtime = trt.Runtime(logger)
+        with open(engine_path, "rb") as f:
+            data = f.read()
+        engine_data = _strip_ultralytics_metadata(data)
+        engine = runtime.deserialize_cuda_engine(engine_data)
+        valid = engine is not None
+        del engine
+        return valid
+    except Exception:
+        return False
+
+
+def _calculate_export_batch() -> int:
+    """Konfiguratsiyadan kameralar sonini hisoblash → engine batch size.
+    Minimum 4, 4 ga yaxlitlash, maksimum 16. Sub-batch detektor overflow ni hal qiladi."""
+    try:
+        from gui.utils.config_manager import ConfigManager
+        cm = ConfigManager()
+        crossings = cm.get_crossings()
+        total_cameras = sum(len(c.get("cameras", [])) for c in crossings)
+        batch = max(4, ((total_cameras + 3) // 4) * 4)
+        return min(batch, 16)
+    except Exception:
+        return 8
+
+
+def get_models_needing_export() -> list:
+    """models/ papkadagi .pt fayllar uchun .engine mavjudligini tekshirish.
+    Agar engine fayl bor lekin TRT versiyasiga mos kelmasa — qayta eksport."""
+    from pathlib import Path
+    project_root = Path(__file__).parent.parent.parent
+    batch = _calculate_export_batch()
+    needed = []
+    for m in ENGINE_MODELS:
+        pt_path = project_root / m["path"]
+        engine_path = pt_path.with_suffix(".engine")
+        if not pt_path.is_file():
+            continue
+        if not engine_path.is_file():
+            needed.append({**m, "abs_path": str(pt_path), "batch": batch})
+        elif not _is_engine_valid(str(engine_path)):
+            print(f"[EngineCheck] {engine_path.name} eski/mos emas — qayta eksport qilinadi")
+            try:
+                engine_path.unlink()
+            except OSError:
+                pass
+            needed.append({**m, "abs_path": str(pt_path), "batch": batch})
+    print(f"[EngineCheck] Batch size: {batch} (kameralar soniga qarab)")
+    return needed
+
+
+class EngineExportWorker(QThread):
+    """Background worker — bir nechta modelni ketma-ket eksport qiladi"""
+    stage_changed = pyqtSignal(str)           # status text
+    model_started = pyqtSignal(int, str)      # index, model_name
+    model_finished = pyqtSignal(int, bool)    # index, success
+    all_finished = pyqtSignal(int, int)       # success_count, total
+
+    def __init__(self, models: list):
+        super().__init__()
+        self.models = models  # [{"abs_path": ..., "imgsz": ..., "name": ...}, ...]
+
+    def run(self):
+        success_count = 0
+        total = len(self.models)
+
+        for i, m in enumerate(self.models):
+            model_name = m["name"]
+            model_path = m["abs_path"]
+            imgsz = m["imgsz"]
+
+            try:
+                self.model_started.emit(i, model_name)
+                self.stage_changed.emit(f"{model_name} yuklanmoqda...")
+
+                from ultralytics import YOLO
+                model = YOLO(model_path)
+
+                batch = m.get("batch", 8)
+                self.stage_changed.emit(
+                    f"{model_name} — TensorRT engine yaratilmoqda (batch={batch})...\n"
+                    f"Bu 2-5 daqiqa davom etishi mumkin"
+                )
+                model.export(format="engine", imgsz=imgsz, half=True, batch=batch)
+
+                engine_path = os.path.splitext(model_path)[0] + ".engine"
+                if os.path.exists(engine_path):
+                    success_count += 1
+                    self.model_finished.emit(i, True)
+                else:
+                    self.model_finished.emit(i, False)
+
+            except Exception as e:
+                print(f"[EngineExport] {model_name} xatolik: {e}")
+                self.model_finished.emit(i, False)
+
+        self.all_finished.emit(success_count, total)
+
+
+class EngineExportDialog(QDialog):
+    """
+    Startup engine export dialog.
+    Avtomatik ravishda barcha .pt modellarni TensorRT engine ga eksport qiladi.
+    Savol so'ramaydi — darhol boshlaydi.
+    """
+
+    def __init__(self, models: list, parent=None):
+        super().__init__(parent)
+        self.models = models  # get_models_needing_export() dan
+        self.worker = None
+        self._elapsed = 0
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._tick)
+        self._success_count = 0
+
+        self.setWindowTitle("TensorRT Engine Eksport")
+        self.setFixedSize(520, 400)
+        self.setStyleSheet(_dialog_style())
+        self._setup_ui()
+
+        # Avtomatik boshlash (dialog ko'ringandan keyin)
+        QTimer.singleShot(300, self._start_export)
+
+    def _setup_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setSpacing(12)
+        layout.setContentsMargins(32, 28, 32, 24)
+
+        # Title
+        title = QLabel("TensorRT Engine Eksport")
+        title.setObjectName("titleLabel")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(title)
+
+        # Separator
+        line = QFrame()
+        line.setFrameShape(QFrame.Shape.HLine)
+        line.setStyleSheet(f"background: {C('border_light')}; max-height: 1px;")
+        layout.addWidget(line)
+
+        # Description
+        count = len(self.models)
+        names = ", ".join(m["name"] for m in self.models)
+        self.desc_label = QLabel(
+            f"{count} ta model uchun TensorRT engine yaratilmoqda.\n"
+            f"Bu bir martalik jarayon — keyingi ishga tushirishda\n"
+            f"AI aniqlash 3-4x tezroq ishlaydi."
+        )
+        self.desc_label.setWordWrap(True)
+        self.desc_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.desc_label.setStyleSheet(
+            f"color: {C('text_secondary')}; font-size: 13px;"
+        )
+        layout.addWidget(self.desc_label)
+
+        # Model cards
+        for i, m in enumerate(self.models):
+            card = QFrame()
+            card.setStyleSheet(
+                f"QFrame {{ background: {C('bg_input')}; "
+                f"border: 1px solid {C('border_light')}; "
+                f"border-radius: 8px; }}"
+            )
+            card_layout = QHBoxLayout(card)
+            card_layout.setContentsMargins(14, 10, 14, 10)
+
+            info = QLabel(f"{m['name']}   (imgsz={m['imgsz']}, FP16, batch={m.get('batch', 8)})")
+            info.setStyleSheet(
+                f"color: {C('text_primary')}; font-size: 12px; border: none;"
+            )
+            card_layout.addWidget(info, 1)
+
+            status = QLabel("kutilmoqda...")
+            status.setStyleSheet(
+                f"color: {C('text_dim')}; font-size: 11px; border: none;"
+            )
+            status.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            card_layout.addWidget(status)
+
+            # Saqlash - keyinroq yangilash uchun
+            setattr(self, f'_card_{i}', card)
+            setattr(self, f'_status_{i}', status)
+
+            layout.addWidget(card)
+
+        # Progress bar
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 0)  # Indeterminate
+        self.progress_bar.setFixedHeight(6)
+        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setStyleSheet(f"""
+            QProgressBar {{
+                background: {C('bg_input')};
+                border: none;
+                border-radius: 3px;
+            }}
+            QProgressBar::chunk {{
+                background: qlineargradient(
+                    x1:0, y1:0, x2:1, y2:0,
+                    stop:0 {C('accent_brand')},
+                    stop:0.5 {C('accent_teal')},
+                    stop:1 {C('accent_brand')}
+                );
+                border-radius: 3px;
+            }}
+        """)
+        layout.addWidget(self.progress_bar)
+
+        # Status label
+        self.status_label = QLabel("Tayyorlanmoqda...")
+        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.status_label.setWordWrap(True)
+        self.status_label.setStyleSheet(
+            f"color: {C('text_muted')}; font-size: 12px;"
+        )
+        layout.addWidget(self.status_label)
+
+        # Elapsed time
+        self.time_label = QLabel("Vaqt: 00:00")
+        self.time_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.time_label.setStyleSheet(
+            f"color: {C('text_dim')}; font-size: 11px;"
+        )
+        layout.addWidget(self.time_label)
+
+        layout.addStretch()
+
+    def _start_export(self):
+        """Eksportni boshlash"""
+        self._elapsed = 0
+        self._timer.start(1000)
+
+        self.worker = EngineExportWorker(self.models)
+        self.worker.stage_changed.connect(self._on_stage)
+        self.worker.model_started.connect(self._on_model_started)
+        self.worker.model_finished.connect(self._on_model_finished)
+        self.worker.all_finished.connect(self._on_all_finished)
+        self.worker.start()
+
+    def _on_stage(self, text: str):
+        self.status_label.setText(text)
+
+    def _on_model_started(self, idx: int, name: str):
+        status = getattr(self, f'_status_{idx}', None)
+        card = getattr(self, f'_card_{idx}', None)
+        if status:
+            status.setText("eksport qilinmoqda...")
+            status.setStyleSheet(
+                f"color: {C('accent_brand')}; font-size: 11px; "
+                f"font-weight: bold; border: none;"
+            )
+        if card:
+            card.setStyleSheet(
+                f"QFrame {{ background: {C('bg_input')}; "
+                f"border: 1px solid {C('accent_brand')}; "
+                f"border-radius: 8px; }}"
+            )
+
+    def _on_model_finished(self, idx: int, success: bool):
+        status = getattr(self, f'_status_{idx}', None)
+        card = getattr(self, f'_card_{idx}', None)
+        if success:
+            if status:
+                status.setText("tayyor!")
+                status.setStyleSheet(
+                    f"color: {C('accent_green')}; font-size: 11px; "
+                    f"font-weight: bold; border: none;"
+                )
+            if card:
+                card.setStyleSheet(
+                    f"QFrame {{ background: {C('bg_input')}; "
+                    f"border: 1px solid {C('accent_green')}; "
+                    f"border-radius: 8px; }}"
+                )
+        else:
+            if status:
+                status.setText("xatolik")
+                status.setStyleSheet(
+                    f"color: {C('accent_red')}; font-size: 11px; border: none;"
+                )
+            if card:
+                card.setStyleSheet(
+                    f"QFrame {{ background: {C('bg_input')}; "
+                    f"border: 1px solid {C('accent_red')}; "
+                    f"border-radius: 8px; }}"
+                )
+
+    def _tick(self):
+        self._elapsed += 1
+        mins = self._elapsed // 60
+        secs = self._elapsed % 60
+        self.time_label.setText(f"Vaqt: {mins:02d}:{secs:02d}")
+
+    def _on_all_finished(self, success_count: int, total: int):
+        self._timer.stop()
+        self._success_count = success_count
+        self.progress_bar.hide()
+
+        mins = self._elapsed // 60
+        secs = self._elapsed % 60
+
+        if success_count == total:
+            self.status_label.setText("Barcha modellar tayyor!")
+            self.status_label.setStyleSheet(
+                f"color: {C('accent_green')}; font-size: 16px; font-weight: bold;"
+            )
+        elif success_count > 0:
+            self.status_label.setText(
+                f"{success_count}/{total} model eksport qilindi"
+            )
+            self.status_label.setStyleSheet(
+                f"color: {C('accent_yellow')}; font-size: 14px; font-weight: bold;"
+            )
+        else:
+            self.status_label.setText("Eksport qilinmadi — PyTorch da davom etiladi")
+            self.status_label.setStyleSheet(
+                f"color: {C('accent_red')}; font-size: 13px; font-weight: bold;"
+            )
+
+        self.time_label.setText(f"Jami vaqt: {mins:02d}:{secs:02d}")
+        self.time_label.setStyleSheet(
+            f"color: {C('accent_teal')}; font-size: 12px;"
+        )
+
+        QTimer.singleShot(2500, self.accept)
+
+    def was_exported(self) -> bool:
+        return self._success_count > 0
+
+    def closeEvent(self, event):
+        if self.worker and self.worker.isRunning():
+            event.ignore()
+        else:
+            event.accept()

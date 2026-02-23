@@ -11,7 +11,8 @@ from pathlib import Path
 
 from gui.ui.dashboard import Dashboard
 from gui.ui.crossing_detail import CrossingDetail
-from gui.ui.dialogs import AddCrossingDialog, AddCameraDialog, SettingsDialog
+from gui.ui.dialogs import (AddCrossingDialog, AddCameraDialog, SettingsDialog,
+                             EngineExportDialog, get_models_needing_export)
 from gui.ui.about_page import AboutPage
 from gui.ui.analytics_page import AnalyticsPage
 from gui.utils.config_manager import ConfigManager
@@ -36,6 +37,9 @@ class MainWindow(QMainWindow):
         self._setup_ui()
         self._setup_statusbar()
         self.showMaximized()
+
+        # Startup: avval engine tayyorlansin, keyin detektor ishga tushsin
+        QTimer.singleShot(300, self._startup_sequence)
 
     def _setup_ui(self):
         """Setup the user interface"""
@@ -167,14 +171,17 @@ class MainWindow(QMainWindow):
         )
 
     def _update_stats(self):
-        import time as _time
-        crossings = self.config_manager.get_crossings()
-        total = len(crossings)
-        total_cams = sum(len(c.get("cameras", [])) for c in crossings)
-        now = _time.strftime("%H:%M:%S")
-        self.toolbar_stats.setText(f"Pereezdlar: {total} | Kameralar: {total_cams}")
-        self.statusbar.showMessage(f"Jami: {total} pereezd, {total_cams} kamera")
-        self.clock_label.setText(now)
+        try:
+            import time as _time
+            crossings = self.config_manager.get_crossings()
+            total = len(crossings)
+            total_cams = sum(len(c.get("cameras", [])) for c in crossings)
+            now = _time.strftime("%H:%M:%S")
+            self.toolbar_stats.setText(f"Pereezdlar: {total} | Kameralar: {total_cams}")
+            self.statusbar.showMessage(f"Jami: {total} pereezd, {total_cams} kamera")
+            self.clock_label.setText(now)
+        except (RuntimeError, Exception):
+            pass
 
     def _load_stylesheet(self):
         theme = self.config_manager.get_settings().get("theme", "dark")
@@ -203,6 +210,23 @@ class MainWindow(QMainWindow):
             except (RuntimeError, Exception):
                 pass
 
+    def _startup_sequence(self):
+        """Startup: 1) engine eksport 2) detektor yuklash 3) kameralar boshlash"""
+        # 1. Engine fayllar tekshirish va eksport qilish
+        try:
+            models = get_models_needing_export()
+            if models:
+                dialog = EngineExportDialog(models, parent=self)
+                dialog.exec()
+        except Exception as e:
+            print(f"[Startup] Engine check error: {e}")
+
+        # 2. Detektor yuklash + kameralar boshlash (engine tayyor)
+        try:
+            self.dashboard.start_detection()
+        except Exception as e:
+            print(f"[Startup] Detection start error: {e}")
+
     def _show_dashboard(self):
         self._cleanup_detail_views()
         self.stacked_widget.setCurrentWidget(self.dashboard)
@@ -215,7 +239,8 @@ class MainWindow(QMainWindow):
             detail = CrossingDetail(
                 self.config_manager, crossing_id,
                 car_detector=self.dashboard.car_detector,
-                stats_db=self.dashboard.stats_db
+                stats_db=self.dashboard.stats_db,
+                is_custom_model=self.dashboard.is_custom_model,
             )
             detail.back_clicked.connect(self._show_dashboard)
             detail.add_camera_clicked.connect(self._add_camera)
@@ -255,31 +280,57 @@ class MainWindow(QMainWindow):
             self._refresh_current_view()
 
     def _show_settings(self):
+        old_settings = self.config_manager.get_settings().copy()
         dialog = SettingsDialog(self.config_manager)
         if dialog.exec():
             self._load_stylesheet()
             self._apply_toolbar_style()
             self._apply_statusbar_style()
-            self._refresh_current_view()
+
+            # Model o'zgargan bo'lsa detektorni qayta yuklash
+            new_settings = self.config_manager.get_settings()
+            model_changed = (
+                old_settings.get("model_type") != new_settings.get("model_type")
+                or old_settings.get("custom_model_path") != new_settings.get("custom_model_path")
+            )
+            if model_changed and hasattr(self, 'dashboard'):
+                try:
+                    self.dashboard.stop_all_cameras()
+                    self.dashboard._clear_crossings()
+                    self.dashboard.car_detector = None
+                except Exception:
+                    pass
+                self._show_dashboard()
+                self.dashboard.start_detection()
+            else:
+                self._refresh_current_view()
 
     def _show_analytics(self):
         """Show analytics page"""
         self._cleanup_detail_views()
-        analytics = AnalyticsPage(
-            self.config_manager,
-            stats_db=self.dashboard.stats_db
-        )
-        analytics.back_clicked.connect(self._show_dashboard)
-        self.stacked_widget.addWidget(analytics)
-        self.stacked_widget.setCurrentWidget(analytics)
+        try:
+            analytics = AnalyticsPage(
+                self.config_manager,
+                stats_db=self.dashboard.stats_db
+            )
+            analytics.back_clicked.connect(self._show_dashboard)
+            self.stacked_widget.addWidget(analytics)
+            self.stacked_widget.setCurrentWidget(analytics)
+        except Exception as e:
+            QMessageBox.critical(self, "Xatolik", f"Analitikani ochishda xatolik: {e}")
+            self._show_dashboard()
 
     def _show_about(self):
         """Show about page"""
         self._cleanup_detail_views()
-        about_page = AboutPage()
-        about_page.back_clicked.connect(self._show_dashboard)
-        self.stacked_widget.addWidget(about_page)
-        self.stacked_widget.setCurrentWidget(about_page)
+        try:
+            about_page = AboutPage()
+            about_page.back_clicked.connect(self._show_dashboard)
+            self.stacked_widget.addWidget(about_page)
+            self.stacked_widget.setCurrentWidget(about_page)
+        except Exception as e:
+            QMessageBox.critical(self, "Xatolik", f"Sahifani ochishda xatolik: {e}")
+            self._show_dashboard()
 
     def _refresh_current_view(self):
         current = self.stacked_widget.currentWidget()
@@ -293,14 +344,31 @@ class MainWindow(QMainWindow):
         if reply == QMessageBox.StandardButton.Yes:
             try:
                 self.status_timer.stop()
+            except (RuntimeError, Exception):
+                pass
+            try:
                 self._cleanup_detail_views()
+            except (RuntimeError, Exception) as e:
+                print(f"[CloseEvent] Detail cleanup error: {e}")
+            try:
                 if hasattr(self, 'dashboard'):
                     self.dashboard._clear_crossings()
+            except (RuntimeError, Exception) as e:
+                print(f"[CloseEvent] Dashboard cleanup error: {e}")
+            # StatsDB ni yopish (WAL flush)
+            try:
+                if hasattr(self, 'dashboard') and hasattr(self.dashboard, 'stats_db'):
+                    db = self.dashboard.stats_db
+                    if db is not None:
+                        db.close()
+            except (RuntimeError, Exception) as e:
+                print(f"[CloseEvent] StatsDB close error: {e}")
+            try:
                 settings = self.config_manager.get_settings()
                 if settings.get("auto_save", True):
                     self.config_manager.save_config()
             except (RuntimeError, Exception) as e:
-                print(f"[CloseEvent] Cleanup error: {e}")
+                print(f"[CloseEvent] Config save error: {e}")
             event.accept()
         else:
             event.ignore()

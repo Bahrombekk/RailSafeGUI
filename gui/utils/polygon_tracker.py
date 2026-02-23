@@ -48,19 +48,29 @@ class PolygonTracker:
         print(tracker.light_count, tracker.heavy_count)
     """
 
-    LIGHT_CLASSES = {2, 3}    # car, motorcycle
-    HEAVY_CLASSES = {5, 7}    # bus, truck
+    # Default: COCO class IDs
+    DEFAULT_LIGHT = {2, 3}    # car, motorcycle
+    DEFAULT_HEAVY = {5, 7}    # bus, truck
+
+    # Maxsus model: pereezd_yolo26n.pt (0=yengil, 1=ogir)
+    CUSTOM_LIGHT = {0}
+    CUSTOM_HEAVY = {1}
 
     def __init__(self, poly_mask: np.ndarray,
                  iou_threshold: float = 0.3,
                  max_age: float = 2.0,
                  frame_width: int = 1920,
-                 frame_height: int = 1080):
+                 frame_height: int = 1080,
+                 light_classes=None,
+                 heavy_classes=None):
         self._poly_mask = poly_mask
         self._iou_threshold = iou_threshold
         self._max_age = max_age
         self._frame_w = frame_width
         self._frame_h = frame_height
+
+        self.LIGHT_CLASSES = light_classes if light_classes is not None else self.DEFAULT_LIGHT
+        self.HEAVY_CLASSES = heavy_classes if heavy_classes is not None else self.DEFAULT_HEAVY
 
         self._tracks: Dict[int, Track] = {}
         self._next_id: int = 1
@@ -179,6 +189,10 @@ class PolygonTracker:
     def get_max_time(self) -> float:
         times = [tr.time_in_polygon for tr in self._tracks.values() if tr.in_polygon]
         return max(times) if times else 0.0
+
+    def get_in_polygon_bboxes(self) -> set:
+        """Polygon ichidagi tracklar bbox to'plami (drawing uchun rang o'zgartirish)."""
+        return {tr.bbox for tr in self._tracks.values() if tr.in_polygon}
 
     def reset_counts(self):
         self.light_count = 0

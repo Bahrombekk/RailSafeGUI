@@ -71,31 +71,35 @@ class StatsDB:
 
         light/heavy - tracker kumulyativ soni (har sessiyada 0 dan boshlanadi).
         Oldingi chaqiruvdagi qiymat bilan farqni (delta) hisoblaydi va DB ga qo'shadi.
+        Thread-safe: barcha operatsiyalar _lock ichida.
         """
-        key = (crossing_id, camera_name)
-        last_l, last_h = self._last_counts.get(key, (0, 0))
-        delta_l = max(0, light - last_l)
-        delta_h = max(0, heavy - last_h)
-        self._last_counts[key] = (light, heavy)
-
-        if delta_l == 0 and delta_h == 0:
-            return
-
-        hour = self._current_hour()
-        now = datetime.now().isoformat()
         with self._lock:
-            self._conn.execute("""
-                INSERT INTO hourly_stats
-                    (crossing_id, camera_name, hour_start, light_count, heavy_count, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?)
-                ON CONFLICT(crossing_id, camera_name, hour_start)
-                DO UPDATE SET
-                    light_count = hourly_stats.light_count + ?,
-                    heavy_count = hourly_stats.heavy_count + ?,
-                    updated_at = ?
-            """, (crossing_id, camera_name, hour, delta_l, delta_h, now,
-                  delta_l, delta_h, now))
-            self._conn.commit()
+            key = (crossing_id, camera_name)
+            last_l, last_h = self._last_counts.get(key, (0, 0))
+            delta_l = max(0, light - last_l)
+            delta_h = max(0, heavy - last_h)
+            self._last_counts[key] = (light, heavy)
+
+            if delta_l == 0 and delta_h == 0:
+                return
+
+            hour = self._current_hour()
+            now = datetime.now().isoformat()
+            try:
+                self._conn.execute("""
+                    INSERT INTO hourly_stats
+                        (crossing_id, camera_name, hour_start, light_count, heavy_count, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(crossing_id, camera_name, hour_start)
+                    DO UPDATE SET
+                        light_count = hourly_stats.light_count + ?,
+                        heavy_count = hourly_stats.heavy_count + ?,
+                        updated_at = ?
+                """, (crossing_id, camera_name, hour, delta_l, delta_h, now,
+                      delta_l, delta_h, now))
+                self._conn.commit()
+            except Exception as e:
+                print(f"[StatsDB] record_count error: {e}")
 
     def get_today_total(self, crossing_id: int) -> Tuple[int, int]:
         """Bugungi kun uchun jami (barcha kameralar, 00:00 dan hozirga).
@@ -449,10 +453,10 @@ class StatsDB:
                 WHERE crossing_id = ? AND camera_name = ?
             """, (new_name, crossing_id, old_name))
             self._conn.commit()
-        # Delta tracking cache ni ham yangilash
-        old_key = (crossing_id, old_name)
-        if old_key in self._last_counts:
-            self._last_counts[(crossing_id, new_name)] = self._last_counts.pop(old_key)
+            # Delta tracking cache ni ham yangilash (lock ichida)
+            old_key = (crossing_id, old_name)
+            if old_key in self._last_counts:
+                self._last_counts[(crossing_id, new_name)] = self._last_counts.pop(old_key)
 
     def close(self):
         with self._lock:
