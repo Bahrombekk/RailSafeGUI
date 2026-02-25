@@ -311,6 +311,7 @@ class RealtimeMultiCameraDetector:
         # Worker
         self._running = False
         self._worker_thread = None
+        self._urgent_event = threading.Event()  # Darhol batch ishlatish uchun
 
         # Stats
         self._inference_times = []
@@ -375,7 +376,9 @@ class RealtimeMultiCameraDetector:
     def _batch_worker(self):
         """ASOSIY WORKER - GPU 100% ishlatish"""
         while self._running:
-            time.sleep(self.batch_interval)
+            # Urgent event kelsa darhol ishlaydi, aks holda batch_interval kutadi
+            self._urgent_event.wait(timeout=self.batch_interval)
+            self._urgent_event.clear()
 
             with self._frames_lock:
                 if not self._pending_frames:
@@ -570,8 +573,8 @@ class RealtimeMultiCameraDetector:
 
         return detections
 
-    def detect(self, frame: np.ndarray, camera_id: str, timeout: float = 0.05) -> List[Detection]:
-        """BLOCKING detection - frame submit qiladi, natijani kutadi"""
+    def detect(self, frame: np.ndarray, camera_id: str, timeout: float = 0.1) -> List[Detection]:
+        """LOW-LATENCY blocking detection - darhol batch worker ni uyg'otadi."""
         if not self._is_loaded:
             return []
 
@@ -579,6 +582,9 @@ class RealtimeMultiCameraDetector:
 
         with self._frames_lock:
             self._pending_frames[camera_id] = (frame, time.time(), event)
+
+        # Batch worker ni DARHOL uyg'otish (15ms kutmasdan)
+        self._urgent_event.set()
 
         event.wait(timeout=timeout)
         with self._results_lock:

@@ -14,6 +14,7 @@ from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QThread
 from PyQt6.QtGui import QFont, QPainter, QPen, QColor
 
 from gui.utils.theme_colors import C
+from gui.utils.language import t, LM
 
 
 class StyledCheckBox(QWidget):
@@ -286,10 +287,10 @@ class AddCrossingDialog(QDialog):
 
         if self.is_edit:
             self.crossing_data = config_manager.get_crossing(crossing_id)
-            self.setWindowTitle("Pereezdni Tahrirlash")
+            self.setWindowTitle(t("dlg.add_crossing.title_edit"))
         else:
             self.crossing_data = {}
-            self.setWindowTitle("Yangi Pereezd Qo'shish")
+            self.setWindowTitle(t("dlg.add_crossing.title_add"))
 
         self.setMinimumWidth(600)
         self.setStyleSheet(_dialog_style())
@@ -301,7 +302,7 @@ class AddCrossingDialog(QDialog):
         layout.setSpacing(20)
 
         # Title
-        title_label = QLabel("Pereezd Tahrirlash" if self.is_edit else "Yangi Pereezd")
+        title_label = QLabel(t("dlg.add_crossing.title_edit") if self.is_edit else t("dlg.add_crossing.title_add"))
         title_label.setObjectName("titleLabel")
         layout.addWidget(title_label)
 
@@ -310,11 +311,11 @@ class AddCrossingDialog(QDialog):
 
         # Basic Info Tab
         basic_tab = self._create_basic_info_tab()
-        tabs.addTab(basic_tab, "📋 Asosiy Ma'lumotlar")
+        tabs.addTab(basic_tab, f"📋 {t('dlg.add_crossing.tab_main')}")
 
         # PLC Tab
         plc_tab = self._create_plc_tab()
-        tabs.addTab(plc_tab, "🔌 PLC Sozlamalari")
+        tabs.addTab(plc_tab, f"🔌 {t('dlg.add_crossing.tab_plc')}")
 
         layout.addWidget(tabs)
 
@@ -323,19 +324,19 @@ class AddCrossingDialog(QDialog):
 
         # JSON import tugmasi (faqat yangi qo'shishda)
         if not self.is_edit:
-            import_btn = QPushButton("📂 JSON dan yuklash")
+            import_btn = QPushButton(f"📂 {t('dlg.add_crossing.import_json')}")
             import_btn.clicked.connect(self._import_json)
             import_btn.setMinimumWidth(140)
             buttons_layout.addWidget(import_btn)
 
         buttons_layout.addStretch()
 
-        cancel_btn = QPushButton("❌ Bekor Qilish")
+        cancel_btn = QPushButton(f"❌ {t('dlg.add_crossing.cancel')}")
         cancel_btn.clicked.connect(self.reject)
         cancel_btn.setMinimumWidth(120)
         buttons_layout.addWidget(cancel_btn)
 
-        save_btn = QPushButton("💾 Saqlash")
+        save_btn = QPushButton(f"💾 {t('dlg.add_crossing.save')}")
         save_btn.setObjectName("successButton")
         save_btn.clicked.connect(self._save)
         save_btn.setMinimumWidth(120)
@@ -352,21 +353,21 @@ class AddCrossingDialog(QDialog):
 
         # Name
         self.name_input = QLineEdit()
-        self.name_input.setPlaceholderText("Masalan: Pereezd 1")
+        self.name_input.setPlaceholderText(t("dlg.add_crossing.placeholder_name"))
         self.name_input.setText(self.crossing_data.get("name", ""))
-        layout.addRow("Nomi:*", self.name_input)
+        layout.addRow(t("dlg.add_crossing.name"), self.name_input)
 
         # Location
         self.location_input = QLineEdit()
-        self.location_input.setPlaceholderText("Masalan: Toshkent, Chilonzor tumani")
+        self.location_input.setPlaceholderText(t("dlg.add_crossing.placeholder_loc"))
         self.location_input.setText(self.crossing_data.get("location", ""))
-        layout.addRow("Manzil:*", self.location_input)
+        layout.addRow(t("dlg.add_crossing.location"), self.location_input)
 
         # Description
         self.description_input = QLineEdit()
-        self.description_input.setPlaceholderText("Qo'shimcha ma'lumot")
+        self.description_input.setPlaceholderText(t("dlg.add_crossing.placeholder_desc"))
         self.description_input.setText(self.crossing_data.get("description", ""))
-        layout.addRow("Tavsif:", self.description_input)
+        layout.addRow(t("dlg.add_crossing.desc"), self.description_input)
 
         return widget
 
@@ -380,13 +381,13 @@ class AddCrossingDialog(QDialog):
         plc = self.crossing_data.get("plc", {})
 
         # Enable checkbox
-        self.plc_enabled = QCheckBox("PLC ni yoqish")
+        self.plc_enabled = QCheckBox(t("dlg.add_crossing.plc_enable"))
         self.plc_enabled.setChecked(plc.get("enabled", False))
         self.plc_enabled.toggled.connect(self._toggle_plc_fields)
         layout.addWidget(self.plc_enabled)
 
         # PLC settings group
-        plc_group = QGroupBox("PLC Sozlamalari")
+        plc_group = QGroupBox(t("dlg.add_crossing.plc_group"))
         plc_layout = QFormLayout(plc_group)
         plc_layout.setSpacing(15)
 
@@ -394,24 +395,24 @@ class AddCrossingDialog(QDialog):
         self.plc_ip = QLineEdit()
         self.plc_ip.setPlaceholderText("192.168.1.100")
         self.plc_ip.setText(plc.get("ip", ""))
-        plc_layout.addRow("IP Manzil:*", self.plc_ip)
+        plc_layout.addRow(t("dlg.add_crossing.ip"), self.plc_ip)
 
         # Device Port
         self.plc_port = QSpinBox()
         self.plc_port.setRange(1, 65535)
         self.plc_port.setValue(plc.get("port", 102))
-        plc_layout.addRow("Port:*", self.plc_port)
+        plc_layout.addRow(t("dlg.add_crossing.port"), self.plc_port)
 
         # Device Type
         self.plc_type = QComboBox()
         self.plc_type.addItems(["Siemens S7-1200", "Siemens S7-1500", "Modbus TCP", "Boshqa"])
         self.plc_type.setCurrentText(plc.get("type", "Siemens S7-1200"))
-        plc_layout.addRow("PLC Turi:", self.plc_type)
+        plc_layout.addRow(t("dlg.add_crossing.plc_type"), self.plc_type)
 
         layout.addWidget(plc_group)
 
         # Test connection button
-        test_btn = QPushButton("🔍 Ulanishni Tekshirish")
+        test_btn = QPushButton(f"🔍 {t('dlg.add_crossing.test_btn')}")
         test_btn.clicked.connect(self._test_plc_connection)
         layout.addWidget(test_btn)
 
@@ -467,24 +468,24 @@ class AddCrossingDialog(QDialog):
             # Kameralarni saqlash (save da ishlatiladi)
             self._imported_cameras = data.get("cameras", [])
             cam_count = len(self._imported_cameras)
-            QMessageBox.information(self, "Import",
-                f"Ma'lumotlar yuklandi! ({cam_count} ta kamera)")
+            QMessageBox.information(self, t("dlg.add_crossing.import_json"),
+                t("dlg.add_crossing.import_ok", count=cam_count))
         except Exception as e:
-            QMessageBox.warning(self, "Xatolik", f"JSON o'qishda xatolik: {e}")
+            QMessageBox.warning(self, t("error.title"), t("dlg.add_crossing.import_err", e=e))
 
     def _save(self):
         """Save the crossing data"""
         # Validate required fields
         if not self.name_input.text().strip():
-            QMessageBox.warning(self, "Xatolik", "Pereezd nomini kiriting!")
+            QMessageBox.warning(self, t("error.title"), t("dlg.add_crossing.err_name"))
             return
 
         if not self.location_input.text().strip():
-            QMessageBox.warning(self, "Xatolik", "Pereezd manzilini kiriting!")
+            QMessageBox.warning(self, t("error.title"), t("dlg.add_crossing.err_loc"))
             return
 
         if self.plc_enabled.isChecked() and not self.plc_ip.text().strip():
-            QMessageBox.warning(self, "Xatolik", "PLC IP manzilini kiriting!")
+            QMessageBox.warning(self, t("error.title"), t("dlg.add_crossing.err_ip"))
             return
 
         # Prepare data
@@ -530,11 +531,11 @@ class AddCameraDialog(QDialog):
             cameras = self.crossing_data.get("cameras", [])
             self.camera_data = next((c for c in cameras if c["id"] == camera_id), {})
             self._old_camera_name = self.camera_data.get("name", "")
-            self.setWindowTitle("Kamerani Tahrirlash")
+            self.setWindowTitle(t("dlg.add_camera.title_edit"))
         else:
             self.camera_data = {}
             self._old_camera_name = ""
-            self.setWindowTitle("Yangi Kamera Qo'shish")
+            self.setWindowTitle(t("dlg.add_camera.title_add"))
 
         # Check if main camera already exists
         self._has_main = any(
@@ -551,7 +552,7 @@ class AddCameraDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.setSpacing(20)
 
-        title_label = QLabel("Kamera Tahrirlash" if self.is_edit else "Yangi Kamera")
+        title_label = QLabel(t("dlg.add_camera.title_edit") if self.is_edit else t("dlg.add_camera.title_add"))
         title_label.setObjectName("titleLabel")
         layout.addWidget(title_label)
 
@@ -560,13 +561,13 @@ class AddCameraDialog(QDialog):
 
         # Camera name
         self.name_input = QLineEdit()
-        self.name_input.setPlaceholderText("Masalan: Shimoliy yo'nalish")
+        self.name_input.setPlaceholderText(t("dlg.add_camera.placeholder_name"))
         self.name_input.setText(self.camera_data.get("name", ""))
-        form_layout.addRow("Nomi:*", self.name_input)
+        form_layout.addRow(t("dlg.add_camera.name"), self.name_input)
 
         # Camera type with labels
         self.type_combo = QComboBox()
-        self.type_combo.addItems(["Asosiy (main)", "Qo'shimcha (additional)"])
+        self.type_combo.addItems([t("dlg.add_camera.type_main"), t("dlg.add_camera.type_additional")])
 
         if self.is_edit:
             # Show current type
@@ -587,12 +588,12 @@ class AddCameraDialog(QDialog):
         self._update_type_info()
         self.type_combo.currentIndexChanged.connect(self._update_type_info)
         type_layout.addWidget(self.type_info)
-        form_layout.addRow("Turi:*", type_layout)
+        form_layout.addRow(t("dlg.add_camera.type"), type_layout)
 
         # Source
         source_layout = QHBoxLayout()
         self.source_input = QLineEdit()
-        self.source_input.setPlaceholderText("rtsp://... yoki /path/to/video.mp4")
+        self.source_input.setPlaceholderText(t("dlg.add_camera.placeholder_source"))
         self.source_input.setText(self.camera_data.get("source", ""))
         source_layout.addWidget(self.source_input)
 
@@ -601,7 +602,7 @@ class AddCameraDialog(QDialog):
         browse_btn.clicked.connect(self._browse_source)
         source_layout.addWidget(browse_btn)
 
-        form_layout.addRow("Manba:*", source_layout)
+        form_layout.addRow(t("dlg.add_camera.source"), source_layout)
 
         # Polygon file
         polygon_layout = QHBoxLayout()
@@ -615,10 +616,10 @@ class AddCameraDialog(QDialog):
         browse_polygon_btn.clicked.connect(self._browse_polygon)
         polygon_layout.addWidget(browse_polygon_btn)
 
-        form_layout.addRow("Polygon Fayli:", polygon_layout)
+        form_layout.addRow(t("dlg.add_camera.polygon"), polygon_layout)
 
         # Enabled
-        self.enabled_checkbox = QCheckBox("Kamerani yoqish")
+        self.enabled_checkbox = QCheckBox(t("dlg.add_camera.enable"))
         self.enabled_checkbox.setChecked(self.camera_data.get("enabled", True))
         form_layout.addRow("", self.enabled_checkbox)
 
@@ -628,12 +629,12 @@ class AddCameraDialog(QDialog):
         buttons_layout = QHBoxLayout()
         buttons_layout.addStretch()
 
-        cancel_btn = QPushButton("Bekor Qilish")
+        cancel_btn = QPushButton(f"❌ {t('dlg.add_camera.cancel')}")
         cancel_btn.clicked.connect(self.reject)
         cancel_btn.setMinimumWidth(120)
         buttons_layout.addWidget(cancel_btn)
 
-        save_btn = QPushButton("Saqlash")
+        save_btn = QPushButton(f"💾 {t('dlg.add_camera.save')}")
         save_btn.setObjectName("successButton")
         save_btn.clicked.connect(self._save)
         save_btn.setMinimumWidth(120)
@@ -644,36 +645,36 @@ class AddCameraDialog(QDialog):
     def _update_type_info(self):
         is_main_selected = self.type_combo.currentIndex() == 0
         if is_main_selected and self._has_main:
-            self.type_info.setText("Diqqat: Avvalgi asosiy kamera qo'shimchaga o'zgaradi")
+            self.type_info.setText(t("dlg.add_camera.type_main_warn"))
             self.type_info.setStyleSheet(f"color: {C('accent_yellow')}; font-size: 10px;")
         elif is_main_selected:
-            self.type_info.setText("Bu kamera asosiy (katta) sifatida ko'rsatiladi")
+            self.type_info.setText(t("dlg.add_camera.type_main_info"))
             self.type_info.setStyleSheet(f"color: {C('accent_green')}; font-size: 10px;")
         else:
-            self.type_info.setText("Bu kamera qo'shimcha (kichik) sifatida ko'rsatiladi")
+            self.type_info.setText(t("dlg.add_camera.type_additional_info"))
             self.type_info.setStyleSheet(f"color: {C('text_muted')}; font-size: 10px;")
 
     def _browse_source(self):
         file_path, _ = QFileDialog.getOpenFileName(
-            self, "Video Faylni Tanlang", "",
+            self, t("dlg.add_camera.browse_video"), "",
             "Video Files (*.mp4 *.avi *.mkv *.mov);;All Files (*)")
         if file_path:
             self.source_input.setText(file_path)
 
     def _browse_polygon(self):
         file_path, _ = QFileDialog.getOpenFileName(
-            self, "Polygon JSON Faylni Tanlang", "",
+            self, t("dlg.add_camera.browse_poly"), "",
             "JSON Files (*.json);;All Files (*)")
         if file_path:
             self.polygon_input.setText(file_path)
 
     def _save(self):
         if not self.name_input.text().strip():
-            QMessageBox.warning(self, "Xatolik", "Kamera nomini kiriting!")
+            QMessageBox.warning(self, t("error.title"), t("dlg.add_camera.err_name"))
             return
 
         if not self.source_input.text().strip():
-            QMessageBox.warning(self, "Xatolik", "Kamera manbasini kiriting!")
+            QMessageBox.warning(self, t("error.title"), t("dlg.add_camera.err_source"))
             return
 
         # Determine type
@@ -719,7 +720,7 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.config_manager = config_manager
         self.settings = config_manager.get_settings()
-        self.setWindowTitle("Sozlamalar")
+        self.setWindowTitle(t("settings.title"))
         self.setFixedSize(480, 600)
         self.setStyleSheet(_dialog_style() + f"""
             QSpinBox {{
@@ -767,13 +768,13 @@ class SettingsDialog(QDialog):
         layout.setContentsMargins(24, 20, 24, 20)
 
         # ── Sarlavha ──
-        title_label = QLabel("Sozlamalar")
+        title_label = QLabel(t("settings.title"))
         title_label.setObjectName("titleLabel")
         title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title_label)
 
         # ── Interfeys ──
-        layout.addWidget(self._section("Interfeys"))
+        layout.addWidget(self._section(t("settings.interface")))
         iface_box = QFrame()
         iface_box.setStyleSheet(f"""
             QFrame {{ background: {C('bg_card')}; border: 1px solid {C('border_light')};
@@ -782,18 +783,18 @@ class SettingsDialog(QDialog):
         iface_v = QVBoxLayout(iface_box)
         iface_v.setContentsMargins(16, 12, 16, 12)
         iface_v.setSpacing(10)
-        iface_v.addLayout(self._row("Til:", self._make_combo(
-            ["O'zbekcha (uz)", "Русский (ru)", "English (en)"],
+        iface_v.addLayout(self._row(t("settings.language"), self._make_combo(
+            [t("settings.lang.uz"), t("settings.lang.ru"), t("settings.lang.en")],
             {"uz": 0, "ru": 1, "en": 2}.get(self.settings.get("language", "uz"), 0)
         ), attr="lang_combo"))
-        iface_v.addLayout(self._row("Mavzu:", self._make_combo(
-            ["Qora (Dark)", "Harbiy (Military)", "Oq (Light)"],
+        iface_v.addLayout(self._row(t("settings.theme"), self._make_combo(
+            [t("settings.theme.dark"), t("settings.theme.military"), t("settings.theme.light")],
             {"dark": 0, "military": 1, "light": 2}.get(self.settings.get("theme", "dark"), 0)
         ), attr="theme_combo"))
         layout.addWidget(iface_box)
 
         # ── Monitoring ──
-        layout.addWidget(self._section("Monitoring"))
+        layout.addWidget(self._section(t("settings.monitoring")))
         mon_box = QFrame()
         mon_box.setStyleSheet(f"""
             QFrame {{ background: {C('bg_card')}; border: 1px solid {C('border_light')};
@@ -805,26 +806,26 @@ class SettingsDialog(QDialog):
 
         self.warning_threshold = QSpinBox()
         self.warning_threshold.setRange(0, 9999)
-        self.warning_threshold.setSuffix(" s")
+        self.warning_threshold.setSuffix(t("settings.sec"))
         self.warning_threshold.setValue(int(self.settings.get("warning_threshold", 10)))
         self.warning_threshold.setFixedHeight(36)
-        mon_v.addLayout(self._row("Ogohlantirish:", self.warning_threshold))
+        mon_v.addLayout(self._row(t("settings.warning"), self.warning_threshold))
 
         self.violation_threshold = QSpinBox()
         self.violation_threshold.setRange(0, 9999)
-        self.violation_threshold.setSuffix(" s")
+        self.violation_threshold.setSuffix(t("settings.sec"))
         self.violation_threshold.setValue(int(self.settings.get("violation_threshold", 15)))
         self.violation_threshold.setFixedHeight(36)
-        mon_v.addLayout(self._row("Buzilish:", self.violation_threshold))
+        mon_v.addLayout(self._row(t("settings.violation"), self.violation_threshold))
 
-        self.auto_save = QCheckBox("Avtomatik saqlash")
+        self.auto_save = QCheckBox(t("settings.autosave"))
         self.auto_save.setChecked(self.settings.get("auto_save", True))
         mon_v.addWidget(self.auto_save)
 
         layout.addWidget(mon_box)
 
         # ── AI Model ──
-        layout.addWidget(self._section("AI Model"))
+        layout.addWidget(self._section(t("settings.ai_model")))
         self._model_btn_group = QButtonGroup(self)
         current_model_type = self.settings.get("model_type", "default")
 
@@ -832,8 +833,8 @@ class SettingsDialog(QDialog):
         self._model_btn_group.addButton(self._default_radio, 0)
         layout.addWidget(self._model_card(
             self._default_radio,
-            "Default model (yolo26m.pt — COCO)",
-            "80 klass, imgsz=640",
+            t("settings.model.default"),
+            t("settings.model.default_sub"),
             current_model_type == "default"
         ))
 
@@ -841,8 +842,8 @@ class SettingsDialog(QDialog):
         self._model_btn_group.addButton(self._custom_radio, 1)
         layout.addWidget(self._model_card(
             self._custom_radio,
-            "Maxsus model (pereezd_yolo26n.pt)",
-            "2 klass (yengil/og'ir), imgsz=1088",
+            t("settings.model.custom"),
+            t("settings.model.custom_sub"),
             current_model_type == "custom"
         ))
 
@@ -853,13 +854,13 @@ class SettingsDialog(QDialog):
         btn_row.setSpacing(10)
         btn_row.addStretch()
 
-        cancel_btn = QPushButton("Bekor Qilish")
+        cancel_btn = QPushButton(f"❌ {t('settings.cancel')}")
         cancel_btn.clicked.connect(self.reject)
         cancel_btn.setMinimumWidth(120)
         cancel_btn.setFixedHeight(38)
         btn_row.addWidget(cancel_btn)
 
-        save_btn = QPushButton("Saqlash")
+        save_btn = QPushButton(f"💾 {t('settings.save')}")
         save_btn.setObjectName("successButton")
         save_btn.clicked.connect(self._save)
         save_btn.setMinimumWidth(120)
@@ -927,11 +928,11 @@ class SettingsDialog(QDialog):
 
         texts = QVBoxLayout()
         texts.setSpacing(2)
-        t = QLabel(title)
-        t.setStyleSheet(f"color: {C('text_primary')}; font-size: 12px; font-weight: bold; background: transparent; border: none;")
+        title_lbl = QLabel(title)
+        title_lbl.setStyleSheet(f"color: {C('text_primary')}; font-size: 12px; font-weight: bold; background: transparent; border: none;")
         d = QLabel(desc)
         d.setStyleSheet(f"color: {C('text_muted')}; font-size: 10px; background: transparent; border: none;")
-        texts.addWidget(t)
+        texts.addWidget(title_lbl)
         texts.addWidget(d)
         row.addLayout(texts)
         row.addStretch()
@@ -940,10 +941,11 @@ class SettingsDialog(QDialog):
     def _save(self):
         """Save settings"""
         lang_map = {0: "uz", 1: "ru", 2: "en"}
+        new_lang = lang_map[self.lang_combo.currentIndex()]
         model_type = "custom" if self._custom_radio.isChecked() else "default"
 
         settings = {
-            "language": lang_map[self.lang_combo.currentIndex()],
+            "language": new_lang,
             "theme": ["dark", "military", "light"][self.theme_combo.currentIndex()],
             "warning_threshold": float(self.warning_threshold.value()),
             "violation_threshold": float(self.violation_threshold.value()),
@@ -952,6 +954,8 @@ class SettingsDialog(QDialog):
         }
 
         self.config_manager.update_settings(settings)
+        # Trigger dynamic language switch (emits language_changed signal)
+        LM.set_language(new_lang)
         self.accept()
 
 
@@ -1112,7 +1116,7 @@ class EngineExportDialog(QDialog):
         self._timer.timeout.connect(self._tick)
         self._success_count = 0
 
-        self.setWindowTitle("TensorRT Engine Eksport")
+        self.setWindowTitle(t("export.title"))
         self.setFixedSize(520, 400)
         self.setStyleSheet(_dialog_style())
         self._setup_ui()
@@ -1126,7 +1130,7 @@ class EngineExportDialog(QDialog):
         layout.setContentsMargins(32, 28, 32, 24)
 
         # Title
-        title = QLabel("TensorRT Engine Eksport")
+        title = QLabel(t("export.title"))
         title.setObjectName("titleLabel")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
@@ -1169,7 +1173,7 @@ class EngineExportDialog(QDialog):
             )
             card_layout.addWidget(info, 1)
 
-            status = QLabel("kutilmoqda...")
+            status = QLabel(t("export.waiting"))
             status.setStyleSheet(
                 f"color: {C('text_dim')}; font-size: 11px; border: none;"
             )
@@ -1206,7 +1210,7 @@ class EngineExportDialog(QDialog):
         layout.addWidget(self.progress_bar)
 
         # Status label
-        self.status_label = QLabel("Tayyorlanmoqda...")
+        self.status_label = QLabel(t("export.preparing"))
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.status_label.setWordWrap(True)
         self.status_label.setStyleSheet(
@@ -1215,7 +1219,7 @@ class EngineExportDialog(QDialog):
         layout.addWidget(self.status_label)
 
         # Elapsed time
-        self.time_label = QLabel("Vaqt: 00:00")
+        self.time_label = QLabel(t("export.time", mins=0, secs=0))
         self.time_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.time_label.setStyleSheet(
             f"color: {C('text_dim')}; font-size: 11px;"
@@ -1243,7 +1247,7 @@ class EngineExportDialog(QDialog):
         status = getattr(self, f'_status_{idx}', None)
         card = getattr(self, f'_card_{idx}', None)
         if status:
-            status.setText("eksport qilinmoqda...")
+            status.setText(t("export.running"))
             status.setStyleSheet(
                 f"color: {C('accent_brand')}; font-size: 11px; "
                 f"font-weight: bold; border: none;"
@@ -1260,7 +1264,7 @@ class EngineExportDialog(QDialog):
         card = getattr(self, f'_card_{idx}', None)
         if success:
             if status:
-                status.setText("tayyor!")
+                status.setText(t("export.done"))
                 status.setStyleSheet(
                     f"color: {C('accent_green')}; font-size: 11px; "
                     f"font-weight: bold; border: none;"
@@ -1273,7 +1277,7 @@ class EngineExportDialog(QDialog):
                 )
         else:
             if status:
-                status.setText("xatolik")
+                status.setText(t("export.error"))
                 status.setStyleSheet(
                     f"color: {C('accent_red')}; font-size: 11px; border: none;"
                 )
@@ -1288,7 +1292,7 @@ class EngineExportDialog(QDialog):
         self._elapsed += 1
         mins = self._elapsed // 60
         secs = self._elapsed % 60
-        self.time_label.setText(f"Vaqt: {mins:02d}:{secs:02d}")
+        self.time_label.setText(t("export.time", mins=mins, secs=secs))
 
     def _on_all_finished(self, success_count: int, total: int):
         self._timer.stop()
@@ -1299,24 +1303,24 @@ class EngineExportDialog(QDialog):
         secs = self._elapsed % 60
 
         if success_count == total:
-            self.status_label.setText("Barcha modellar tayyor!")
+            self.status_label.setText(t("export.done").upper())
             self.status_label.setStyleSheet(
                 f"color: {C('accent_green')}; font-size: 16px; font-weight: bold;"
             )
         elif success_count > 0:
             self.status_label.setText(
-                f"{success_count}/{total} model eksport qilindi"
+                f"{success_count}/{total} — {t('export.done')}"
             )
             self.status_label.setStyleSheet(
                 f"color: {C('accent_yellow')}; font-size: 14px; font-weight: bold;"
             )
         else:
-            self.status_label.setText("Eksport qilinmadi — PyTorch da davom etiladi")
+            self.status_label.setText(t("export.error"))
             self.status_label.setStyleSheet(
                 f"color: {C('accent_red')}; font-size: 13px; font-weight: bold;"
             )
 
-        self.time_label.setText(f"Jami vaqt: {mins:02d}:{secs:02d}")
+        self.time_label.setText(t("export.time", mins=mins, secs=secs))
         self.time_label.setStyleSheet(
             f"color: {C('accent_teal')}; font-size: 12px;"
         )

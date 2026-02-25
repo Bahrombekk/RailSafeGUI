@@ -16,6 +16,7 @@ from gui.widgets.hourly_chart import HourlyBarChart
 from gui.widgets.charts import DonutChart, LineChart, BarChart, SparkLine, TrainBarChart
 from gui.widgets.heatmap import HeatmapChart
 from gui.utils.report_generator import generate_report
+from gui.utils.language import t, LM
 
 
 class ReportDialog(QDialog):
@@ -25,7 +26,7 @@ class ReportDialog(QDialog):
         super().__init__(parent)
         self.config_manager = config_manager
         self.stats_db = stats_db
-        self.setWindowTitle("Hisobot yuklash")
+        self.setWindowTitle(t("report.title"))
         self.setMinimumWidth(420)
         self._setup_ui()
 
@@ -57,11 +58,11 @@ class ReportDialog(QDialog):
         """)
 
         # Sarlavha
-        title = QLabel("Hisobot yuklash")
+        title = QLabel(t("report.title"))
         title.setStyleSheet(f"color: {C('accent_brand')}; font-size: 16px; font-weight: bold;")
         layout.addWidget(title)
 
-        desc = QLabel("Sana oralig'ini tanlang va Word formatida hisobot yuklang.")
+        desc = QLabel(t("report.hint"))
         desc.setStyleSheet(f"color: {C('text_muted')}; font-size: 11px;")
         desc.setWordWrap(True)
         layout.addWidget(desc)
@@ -69,7 +70,7 @@ class ReportDialog(QDialog):
         # Tez tanlash tugmalari
         quick_row = QHBoxLayout()
         quick_row.setSpacing(6)
-        for text, days in [("Bugun", 0), ("7 kun", 7), ("30 kun", 30), ("1 yil", 365)]:
+        for text, days in [(t("report.today"), 0), (t("report.7d"), 7), (t("report.30d"), 30), (t("report.1y"), 365)]:
             btn = QPushButton(text)
             btn.setStyleSheet(f"""
                 QPushButton {{
@@ -94,7 +95,7 @@ class ReportDialog(QDialog):
         date_row = QHBoxLayout()
         date_row.setSpacing(8)
 
-        from_lbl = QLabel("Dan:")
+        from_lbl = QLabel(t("report.from"))
         from_lbl.setStyleSheet(f"font-size: 11px; color: {C('text_muted')};")
         date_row.addWidget(from_lbl)
 
@@ -104,7 +105,7 @@ class ReportDialog(QDialog):
         self.date_from.setDisplayFormat("dd.MM.yyyy")
         date_row.addWidget(self.date_from)
 
-        to_lbl = QLabel("Gacha:")
+        to_lbl = QLabel(t("report.to"))
         to_lbl.setStyleSheet(f"font-size: 11px; color: {C('text_muted')};")
         date_row.addWidget(to_lbl)
 
@@ -120,7 +121,7 @@ class ReportDialog(QDialog):
         btn_row = QHBoxLayout()
         btn_row.addStretch()
 
-        cancel_btn = QPushButton("Bekor")
+        cancel_btn = QPushButton(t("report.cancel"))
         cancel_btn.setStyleSheet(f"""
             QPushButton {{
                 background-color: {C('bg_input')};
@@ -135,7 +136,7 @@ class ReportDialog(QDialog):
         cancel_btn.clicked.connect(self.reject)
         btn_row.addWidget(cancel_btn)
 
-        export_btn = QPushButton("Yuklash (.docx)")
+        export_btn = QPushButton(t("report.download"))
         export_btn.setStyleSheet(f"""
             QPushButton {{
                 background-color: {C('accent_brand')};
@@ -168,13 +169,13 @@ class ReportDialog(QDialog):
 
         # Sana tekshirish
         if d_from > d_to:
-            QMessageBox.warning(self, "Xatolik", "Boshlanish sanasi tugash sanasidan keyin bo'lishi mumkin emas.")
+            QMessageBox.warning(self, t("error.title"), t("report.err_date"))
             return
 
         # Fayl nomi
         default_name = f"hisobot_{d_from}_{d_to}.docx"
         file_path, _ = QFileDialog.getSaveFileName(
-            self, "Hisobotni saqlash", default_name,
+            self, t("report.save_dialog"), default_name,
             "Word Documents (*.docx);;All Files (*)")
 
         if not file_path:
@@ -183,12 +184,11 @@ class ReportDialog(QDialog):
         ok = generate_report(self.config_manager, self.stats_db, d_from, d_to, file_path)
 
         if ok:
-            QMessageBox.information(self, "Tayyor",
-                f"Hisobot saqlandi:\n{file_path}")
+            QMessageBox.information(self, t("cam_dlg.toggle_title"),
+                t("report.success", path=file_path))
             self.accept()
         else:
-            QMessageBox.warning(self, "Xatolik",
-                "Hisobotni yaratishda xatolik yuz berdi.")
+            QMessageBox.warning(self, t("error.title"), t("error.report"))
 
 
 class AnalyticsPage(QWidget):
@@ -207,6 +207,7 @@ class AnalyticsPage(QWidget):
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._load_data)
         self._timer.start(30000)
+        LM.language_changed.connect(self._retranslate)
 
     # ─── UI SETUP ─────────────────────────────────────────────
 
@@ -253,7 +254,7 @@ class AnalyticsPage(QWidget):
         layout = QHBoxLayout(header)
         layout.setContentsMargins(20, 0, 20, 0)
 
-        title = QLabel("Analitika")
+        title = QLabel(t("analytics.title"))
         title.setStyleSheet(f"color: {C('accent_brand')}; font-size: 18px; font-weight: bold;")
         layout.addWidget(title)
 
@@ -265,7 +266,7 @@ class AnalyticsPage(QWidget):
 
         layout.addStretch()
 
-        report_btn = QPushButton("Hisobot yuklash")
+        report_btn = QPushButton(t("analytics.report_btn"))
         report_btn.setStyleSheet(f"""
             QPushButton {{
                 background-color: {C('accent_brand')};
@@ -292,7 +293,7 @@ class AnalyticsPage(QWidget):
 
     def _load_data(self):
         try:
-            self._time_label.setText(f"Yangilangan: {datetime.now().strftime('%H:%M:%S')}")
+            self._time_label.setText(t("analytics.updated", dt=datetime.now().strftime('%H:%M:%S')))
 
             crossings = self.config_manager.get_crossings()
 
@@ -312,7 +313,7 @@ class AnalyticsPage(QWidget):
                 self._add(self._build_crossing_section(crossing))
 
             if not crossings:
-                lbl = QLabel("Pereezdlar yo'q. Dashboard ga qaytib pereezd qo'shing.")
+                lbl = QLabel(t("analytics.no_crossings"))
                 lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
                 lbl.setStyleSheet(f"color: {C('text_muted')}; font-size: 15px; padding: 50px;")
                 self._add(lbl)
@@ -347,12 +348,12 @@ class AnalyticsPage(QWidget):
         total_cams = sum(len(cr.get("cameras", [])) for cr in crossings)
 
         cards_data = [
-            ("Jami transport", str(total), C('accent_brand'), "bugungi"),
-            ("Yengil", str(total_light), C('accent_blue'), "bugungi"),
-            ("Og'ir", str(total_heavy), C('accent_orange'), "bugungi"),
-            ("Poyezdlar", str(total_trains), C('accent_teal'), "bugungi"),
-            ("Pereezdlar", str(len(crossings)), C('accent_green'), "faol"),
-            ("Kameralar", str(total_cams), C('accent_purple'), "ulangan"),
+            (t("summary.total_transport"), str(total), C('accent_brand'), t("summary.today")),
+            (t("summary.light"), str(total_light), C('accent_blue'), t("summary.today")),
+            (t("summary.heavy"), str(total_heavy), C('accent_orange'), t("summary.today")),
+            (t("summary.trains"), str(total_trains), C('accent_teal'), t("summary.today")),
+            (t("summary.crossings"), str(len(crossings)), C('accent_green'), t("summary.active")),
+            (t("summary.cameras"), str(total_cams), C('accent_purple'), t("summary.connected")),
         ]
 
         for i, (label, value, color, sub) in enumerate(cards_data):
@@ -417,29 +418,29 @@ class AnalyticsPage(QWidget):
         total = total_light + total_heavy
 
         # Donut
-        donut_card = self._chart_card("Bugungi taqsimot", "gc_donut")
+        donut_card = self._chart_card(t("chart.today_dist"), "gc_donut")
         donut = DonutChart()
         donut.setMinimumHeight(180)
         donut.set_data(
             [
-                {"value": total_light, "color": C('accent_blue'), "label": "Yengil"},
-                {"value": total_heavy, "color": C('accent_orange'), "label": "Og'ir"},
+                {"value": total_light, "color": C('accent_blue'), "label": t("legend.light")},
+                {"value": total_heavy, "color": C('accent_orange'), "label": t("legend.heavy")},
             ],
-            center_text=str(total), center_sub="Jami"
+            center_text=str(total), center_sub=t("chart.total")
         )
         donut_card.layout().addWidget(donut)
 
         legend = QHBoxLayout()
         legend.setSpacing(16)
         legend.addStretch()
-        legend.addWidget(self._legend_dot(C('accent_blue'), f"Yengil: {total_light}"))
-        legend.addWidget(self._legend_dot(C('accent_orange'), f"Og'ir: {total_heavy}"))
+        legend.addWidget(self._legend_dot(C('accent_blue'), t("stats.light_fmt", light=total_light)))
+        legend.addWidget(self._legend_dot(C('accent_orange'), t("stats.heavy_fmt", heavy=total_heavy)))
         legend.addStretch()
         donut_card.layout().addLayout(legend)
         layout.addWidget(donut_card, stretch=30)
 
         # Haftalik bar
-        week_card = self._chart_card("Haftalik statistika (7 kun)", "gc_week")
+        week_card = self._chart_card(t("chart.weekly"), "gc_week")
         week_card.layout().addLayout(self._chart_legend())
         week_chart = BarChart()
         week_chart.setMinimumHeight(180)
@@ -449,7 +450,7 @@ class AnalyticsPage(QWidget):
         layout.addWidget(week_card, stretch=35)
 
         # Yillik line
-        year_card = self._chart_card("Yillik trend (12 oy)", "gc_year")
+        year_card = self._chart_card(t("chart.yearly"), "gc_year")
         year_card.layout().addLayout(self._chart_legend())
         year_chart = LineChart()
         year_chart.setMinimumHeight(180)
@@ -459,9 +460,9 @@ class AnalyticsPage(QWidget):
         layout.addWidget(year_card, stretch=35)
 
         # Poyezd haftalik (global)
-        train_card = self._chart_card("Poyezdlar (7 kun)", "gc_train")
+        train_card = self._chart_card(t("chart.trains_7d"), "gc_train")
         tl = QHBoxLayout()
-        tl.addWidget(self._legend_dot(C('accent_teal'), "Poyezd soni"))
+        tl.addWidget(self._legend_dot(C('accent_teal'), t("legend.trains")))
         tl.addStretch()
         train_card.layout().addLayout(tl)
         gtrain_chart = TrainBarChart()
@@ -499,11 +500,11 @@ class AnalyticsPage(QWidget):
 
     def _build_global_heatmap(self, crossings):
         """Barcha pereezdlar uchun umumiy heatmap (7 kun x 24 soat)"""
-        card = self._chart_card("Haftalik bandlik xaritasi (7 kun x 24 soat)", "gc_heatmap")
+        card = self._chart_card(t("chart.heatmap_7d"), "gc_heatmap")
         legend = QHBoxLayout()
-        legend.addWidget(self._legend_dot(C('accent_green'), "Kam"))
-        legend.addWidget(self._legend_dot(C('accent_yellow'), "O'rtacha"))
-        legend.addWidget(self._legend_dot(C('accent_red'), "Ko'p"))
+        legend.addWidget(self._legend_dot(C('accent_green'), t("legend.low")))
+        legend.addWidget(self._legend_dot(C('accent_yellow'), t("legend.medium")))
+        legend.addWidget(self._legend_dot(C('accent_red'), t("legend.high")))
         legend.addStretch()
         card.layout().addLayout(legend)
 
@@ -580,9 +581,9 @@ class AnalyticsPage(QWidget):
         total = light + heavy
 
         for txt, clr in [
-            (f"Jami: {total}", C('accent_brand')),
-            (f"Yengil: {light}", C('accent_blue')),
-            (f"Og'ir: {heavy}", C('accent_orange'))
+            (t("stats.total_fmt", total=total), C('accent_brand')),
+            (t("stats.light_fmt", light=light), C('accent_blue')),
+            (t("stats.heavy_fmt", heavy=heavy), C('accent_orange'))
         ]:
             lbl = QLabel(txt)
             lbl.setStyleSheet(f"color: {clr}; font-size: 13px; font-weight: bold;")
@@ -601,20 +602,20 @@ class AnalyticsPage(QWidget):
         row1 = QHBoxLayout()
         row1.setSpacing(12)
 
-        d_card = self._mini_card("Taqsimot", f"mc_d_{cid}")
+        d_card = self._mini_card(t("chart.distribution"), f"mc_d_{cid}")
         donut = DonutChart()
         donut.setMinimumHeight(130)
         donut.set_data(
             [
-                {"value": light, "color": C('accent_blue'), "label": "Y"},
-                {"value": heavy, "color": C('accent_orange'), "label": "O"},
+                {"value": light, "color": C('accent_blue'), "label": t("legend.light")[0]},
+                {"value": heavy, "color": C('accent_orange'), "label": t("legend.heavy")[0]},
             ],
-            center_text=str(total), center_sub="bugun"
+            center_text=str(total), center_sub=t("summary.today")
         )
         d_card.layout().addWidget(donut)
         row1.addWidget(d_card, stretch=20)
 
-        h_card = self._mini_card("Soatlik (bugun)", f"mc_h_{cid}")
+        h_card = self._mini_card(t("chart.hourly_today"), f"mc_h_{cid}")
         h_card.layout().addLayout(self._chart_legend())
         hourly_chart = HourlyBarChart()
         hourly_chart.setMinimumHeight(130)
@@ -623,14 +624,14 @@ class AnalyticsPage(QWidget):
         h_card.layout().addWidget(hourly_chart)
         row1.addWidget(h_card, stretch=45)
 
-        cam_card = self._mini_card("Kameralar", f"mc_c_{cid}")
+        cam_card = self._mini_card(t("chart.cameras_section"), f"mc_c_{cid}")
         if cameras:
             for cam in cameras:
                 cn = cam.get("name", "?")
                 cl, ch_ = self.stats_db.get_camera_today(cid, cn)
                 cam_card.layout().addWidget(self._cam_row(cn, cl, ch_))
         else:
-            no_lbl = QLabel("Kamera yo'q")
+            no_lbl = QLabel(t("stats.no_cameras"))
             no_lbl.setStyleSheet(f"color: {C('text_muted')}; font-size: 11px;")
             cam_card.layout().addWidget(no_lbl)
         cam_card.layout().addStretch()
@@ -642,7 +643,7 @@ class AnalyticsPage(QWidget):
         row2 = QHBoxLayout()
         row2.setSpacing(12)
 
-        w_card = self._mini_card("Haftalik (7 kun)", f"mc_w_{cid}")
+        w_card = self._mini_card(t("chart.weekly_section"), f"mc_w_{cid}")
         w_card.layout().addLayout(self._chart_legend())
         w_chart = BarChart()
         w_chart.setMinimumHeight(120)
@@ -651,7 +652,7 @@ class AnalyticsPage(QWidget):
         w_card.layout().addWidget(w_chart)
         row2.addWidget(w_card, stretch=50)
 
-        m_card = self._mini_card("Oylik trend (30 kun)", f"mc_m_{cid}")
+        m_card = self._mini_card(t("chart.monthly"), f"mc_m_{cid}")
         m_card.layout().addLayout(self._chart_legend())
         m_chart = LineChart()
         m_chart.setMinimumHeight(120)
@@ -666,7 +667,7 @@ class AnalyticsPage(QWidget):
         main_layout.addWidget(self._hdiv())
         train_stats = self.stats_db.get_train_today_stats(cid)
         train_header = QHBoxLayout()
-        train_title = QLabel("Poyezd harakati")
+        train_title = QLabel(t("chart.movement"))
         train_title.setStyleSheet(
             f"color: {C('accent_teal')}; font-size: 14px; font-weight: bold;")
         tg = QGraphicsDropShadowEffect()
@@ -678,10 +679,10 @@ class AnalyticsPage(QWidget):
         train_header.addStretch()
 
         for txt, clr in [
-            (f"Bugun: {train_stats['count']} ta", C('accent_teal')),
-            (f"Min: {train_stats['min']:.0f}s", C('accent_green')),
-            (f"Max: {train_stats['max']:.0f}s", C('accent_red')),
-            (f"O'rt: {train_stats['avg']:.0f}s", C('accent_yellow')),
+            (t("stats.trains_today", count=train_stats['count']), C('accent_teal')),
+            (t("stats.min", v=train_stats['min']), C('accent_green')),
+            (t("stats.max", v=train_stats['max']), C('accent_red')),
+            (t("stats.avg", v=train_stats['avg']), C('accent_yellow')),
         ]:
             lbl = QLabel(txt)
             lbl.setStyleSheet(f"color: {clr}; font-size: 12px; font-weight: bold;")
@@ -699,9 +700,9 @@ class AnalyticsPage(QWidget):
         row3 = QHBoxLayout()
         row3.setSpacing(12)
 
-        tw_card = self._mini_card("Poyezdlar (7 kun)", f"mc_tw_{cid}")
+        tw_card = self._mini_card(t("chart.trains_7d"), f"mc_tw_{cid}")
         tw_legend = QHBoxLayout()
-        tw_legend.addWidget(self._legend_dot(C('accent_teal'), "Poyezd soni"))
+        tw_legend.addWidget(self._legend_dot(C('accent_teal'), t("legend.trains")))
         tw_legend.addStretch()
         tw_card.layout().addLayout(tw_legend)
         tw_chart = TrainBarChart()
@@ -711,9 +712,9 @@ class AnalyticsPage(QWidget):
         tw_card.layout().addWidget(tw_chart)
         row3.addWidget(tw_card, stretch=50)
 
-        tm_card = self._mini_card("Poyezdlar (30 kun)", f"mc_tm_{cid}")
+        tm_card = self._mini_card(t("chart.trains_30d"), f"mc_tm_{cid}")
         tm_legend = QHBoxLayout()
-        tm_legend.addWidget(self._legend_dot(C('accent_teal'), "Poyezd soni"))
+        tm_legend.addWidget(self._legend_dot(C('accent_teal'), t("legend.trains")))
         tm_legend.addStretch()
         tm_card.layout().addLayout(tm_legend)
         tm_chart = TrainBarChart()
@@ -727,11 +728,11 @@ class AnalyticsPage(QWidget):
 
         # ─── Heatmap (7 kun x 24 soat) ───────────────────────
         main_layout.addWidget(self._hdiv())
-        hm_card = self._mini_card("Bandlik xaritasi (7 kun x 24 soat)", f"mc_hm_{cid}")
+        hm_card = self._mini_card(t("chart.heatmap_section"), f"mc_hm_{cid}")
         hm_legend = QHBoxLayout()
-        hm_legend.addWidget(self._legend_dot(C('accent_green'), "Kam"))
-        hm_legend.addWidget(self._legend_dot(C('accent_yellow'), "O'rtacha"))
-        hm_legend.addWidget(self._legend_dot(C('accent_red'), "Ko'p"))
+        hm_legend.addWidget(self._legend_dot(C('accent_green'), t("legend.low")))
+        hm_legend.addWidget(self._legend_dot(C('accent_yellow'), t("legend.medium")))
+        hm_legend.addWidget(self._legend_dot(C('accent_red'), t("legend.high")))
         hm_legend.addStretch()
         hm_card.layout().addLayout(hm_legend)
 
@@ -795,8 +796,8 @@ class AnalyticsPage(QWidget):
     def _chart_legend(self):
         legend = QHBoxLayout()
         legend.setSpacing(10)
-        legend.addWidget(self._legend_dot(C('accent_blue'), "Yengil"))
-        legend.addWidget(self._legend_dot(C('accent_orange'), "Og'ir"))
+        legend.addWidget(self._legend_dot(C('accent_blue'), t("legend.light")))
+        legend.addWidget(self._legend_dot(C('accent_orange'), t("legend.heavy")))
         legend.addStretch()
         return legend
 
@@ -841,14 +842,21 @@ class AnalyticsPage(QWidget):
         h_lbl.setStyleSheet(f"color: {C('accent_orange')}; font-size: 10px;")
         layout.addWidget(h_lbl)
 
-        t = light + heavy
-        t_lbl = QLabel(f"={t}")
+        total_val = light + heavy
+        t_lbl = QLabel(f"={total_val}")
         t_lbl.setStyleSheet(f"color: {C('text_primary')}; font-size: 10px; font-weight: bold;")
         layout.addWidget(t_lbl)
 
         return row
 
     # ─── PUBLIC ───────────────────────────────────────────────
+
+    def _retranslate(self, _lang=None):
+        """Til o'zgarganida hamma contentni qayta yuklash"""
+        try:
+            self._load_data()
+        except (RuntimeError, Exception):
+            pass
 
     def refresh(self):
         self._load_data()

@@ -17,6 +17,7 @@ from gui.ui.about_page import AboutPage
 from gui.ui.analytics_page import AnalyticsPage
 from gui.utils.config_manager import ConfigManager
 from gui.utils.theme_colors import set_theme, C
+from gui.utils.language import t, LM
 
 
 class MainWindow(QMainWindow):
@@ -27,7 +28,12 @@ class MainWindow(QMainWindow):
         self.config_manager = ConfigManager()
         self.current_crossing_id = None
 
-        self.setWindowTitle("Perez")
+        # Til yuklash (config dan)
+        lang = self.config_manager.get_settings().get("language", "uz")
+        LM._load(lang)
+        LM.language_changed.connect(self._retranslate)
+
+        self.setWindowTitle("RailSafe")
         self.setMinimumSize(1200, 800)
 
         # Remove default menu bar
@@ -65,46 +71,46 @@ class MainWindow(QMainWindow):
         self.addToolBar(self.toolbar)
 
         # App icon/name
-        self.app_label = QLabel("  Perez  ")
+        self.app_label = QLabel("  RailSafe  ")
         self.toolbar.addWidget(self.app_label)
 
         self.toolbar.addSeparator()
 
         # Dashboard
-        a = QAction("Dashboard", self)
-        a.setShortcut("Ctrl+H")
-        a.triggered.connect(self._show_dashboard)
-        self.toolbar.addAction(a)
+        self._act_dashboard = QAction(t("nav.dashboard"), self)
+        self._act_dashboard.setShortcut("Ctrl+H")
+        self._act_dashboard.triggered.connect(self._show_dashboard)
+        self.toolbar.addAction(self._act_dashboard)
 
-        # Pereezd Qo'shish
-        a = QAction("+ Pereezd Qo'shish", self)
-        a.setShortcut("Ctrl+N")
-        a.triggered.connect(self._add_crossing)
-        self.toolbar.addAction(a)
+        # Add crossing
+        self._act_add_crossing = QAction(t("nav.add_crossing"), self)
+        self._act_add_crossing.setShortcut("Ctrl+N")
+        self._act_add_crossing.triggered.connect(self._add_crossing)
+        self.toolbar.addAction(self._act_add_crossing)
 
-        # Yangilash
-        a = QAction("Yangilash", self)
-        a.setShortcut("F5")
-        a.triggered.connect(self._refresh_current_view)
-        self.toolbar.addAction(a)
+        # Refresh
+        self._act_refresh = QAction(t("nav.refresh"), self)
+        self._act_refresh.setShortcut("F5")
+        self._act_refresh.triggered.connect(self._refresh_current_view)
+        self.toolbar.addAction(self._act_refresh)
 
-        # Sozlamalar
-        a = QAction("Sozlamalar", self)
-        a.setShortcut("Ctrl+,")
-        a.triggered.connect(self._show_settings)
-        self.toolbar.addAction(a)
+        # Settings
+        self._act_settings = QAction(t("nav.settings"), self)
+        self._act_settings.setShortcut("Ctrl+,")
+        self._act_settings.triggered.connect(self._show_settings)
+        self.toolbar.addAction(self._act_settings)
 
-        # Analitika
-        a = QAction("Analitika", self)
-        a.setShortcut("Ctrl+A")
-        a.triggered.connect(self._show_analytics)
-        self.toolbar.addAction(a)
+        # Analytics
+        self._act_analytics = QAction(t("nav.analytics"), self)
+        self._act_analytics.setShortcut("Ctrl+A")
+        self._act_analytics.triggered.connect(self._show_analytics)
+        self.toolbar.addAction(self._act_analytics)
 
-        # Tizim haqida
-        a = QAction("Tizim haqida", self)
-        a.setShortcut("F1")
-        a.triggered.connect(self._show_about)
-        self.toolbar.addAction(a)
+        # About
+        self._act_about = QAction(t("nav.about"), self)
+        self._act_about.setShortcut("F1")
+        self._act_about.triggered.connect(self._show_about)
+        self.toolbar.addAction(self._act_about)
 
         # Spacer
         spacer = QWidget()
@@ -177,8 +183,7 @@ class MainWindow(QMainWindow):
             total = len(crossings)
             total_cams = sum(len(c.get("cameras", [])) for c in crossings)
             now = _time.strftime("%H:%M:%S")
-            self.toolbar_stats.setText(f"Pereezdlar: {total} | Kameralar: {total_cams}")
-            self.statusbar.showMessage(f"Jami: {total} pereezd, {total_cams} kamera")
+            self.toolbar_stats.setText(t("statusbar", total=total, cams=total_cams))
             self.clock_label.setText(now)
         except (RuntimeError, Exception):
             pass
@@ -250,7 +255,7 @@ class MainWindow(QMainWindow):
             self.stacked_widget.addWidget(detail)
             self.stacked_widget.setCurrentWidget(detail)
         except Exception as e:
-            QMessageBox.critical(self, "Xatolik", f"Pereezdni ochishda xatolik: {e}")
+            QMessageBox.critical(self, t("error.title"), t("error.crossing_open", e=e))
             self._show_dashboard()
 
     def _add_crossing(self):
@@ -264,8 +269,8 @@ class MainWindow(QMainWindow):
             self._refresh_current_view()
 
     def _delete_crossing(self, crossing_id: int):
-        reply = QMessageBox.question(self, "Tasdiqlash",
-            "Bu pereezdni o'chirmoqchimisiz?",
+        reply = QMessageBox.question(self, t("confirm.title"),
+            t("confirm.delete_crossing"),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No)
         if reply == QMessageBox.StandardButton.Yes:
@@ -317,7 +322,7 @@ class MainWindow(QMainWindow):
             self.stacked_widget.addWidget(analytics)
             self.stacked_widget.setCurrentWidget(analytics)
         except Exception as e:
-            QMessageBox.critical(self, "Xatolik", f"Analitikani ochishda xatolik: {e}")
+            QMessageBox.critical(self, t("error.title"), t("error.page_open"))
             self._show_dashboard()
 
     def _show_about(self):
@@ -329,7 +334,7 @@ class MainWindow(QMainWindow):
             self.stacked_widget.addWidget(about_page)
             self.stacked_widget.setCurrentWidget(about_page)
         except Exception as e:
-            QMessageBox.critical(self, "Xatolik", f"Sahifani ochishda xatolik: {e}")
+            QMessageBox.critical(self, t("error.title"), t("error.page_open"))
             self._show_dashboard()
 
     def _refresh_current_view(self):
@@ -337,8 +342,18 @@ class MainWindow(QMainWindow):
         if hasattr(current, 'refresh'):
             current.refresh()
 
+    def _retranslate(self):
+        """Til o'zgarganida barcha toolbar textlarni yangilash."""
+        self._act_dashboard.setText(t("nav.dashboard"))
+        self._act_add_crossing.setText(t("nav.add_crossing"))
+        self._act_refresh.setText(t("nav.refresh"))
+        self._act_settings.setText(t("nav.settings"))
+        self._act_analytics.setText(t("nav.analytics"))
+        self._act_about.setText(t("nav.about"))
+        self._update_stats()
+
     def closeEvent(self, event):
-        reply = QMessageBox.question(self, "Chiqish", "Dasturdan chiqmoqchimisiz?",
+        reply = QMessageBox.question(self, t("confirm.title"), t("confirm.exit"),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No)
         if reply == QMessageBox.StandardButton.Yes:

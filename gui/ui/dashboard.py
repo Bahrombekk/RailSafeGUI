@@ -10,6 +10,7 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from gui.widgets.crossing_card import CrossingCard
 from gui.utils.theme_colors import C
 from gui.utils.stats_db import StatsDB
+from gui.utils.language import t, LM
 
 try:
     from detectors import RealtimeMultiCameraDetector
@@ -38,7 +39,9 @@ class Dashboard(QWidget):
         # Statistika bazasi (barcha pereezdlar uchun bitta)
         self.stats_db = StatsDB()
 
+        self._empty_label = None
         self._setup_ui()
+        LM.language_changed.connect(self._retranslate)
         # Detektor va kameralar KEYINROQ ishga tushadi (engine tayyor bo'lgandan keyin)
 
     def start_detection(self):
@@ -140,10 +143,10 @@ class Dashboard(QWidget):
         crossings = self.config_manager.get_crossings()
 
         if not crossings:
-            msg = QLabel("Pereezdlar yo'q. Toolbar dan '+ Pereezd Qo'shish' bosing.")
-            msg.setStyleSheet(f"color: {C('text_muted')}; font-size: 14px; padding: 40px;")
-            msg.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.grid.addWidget(msg, 0, 0, 1, 3)
+            self._empty_label = QLabel(t("dashboard.empty"))
+            self._empty_label.setStyleSheet(f"color: {C('text_muted')}; font-size: 14px; padding: 40px;")
+            self._empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.grid.addWidget(self._empty_label, 0, 0, 1, 3)
             return
 
         count = len(crossings)
@@ -238,5 +241,14 @@ class Dashboard(QWidget):
             except (RuntimeError, Exception):
                 pass
 
+    def _retranslate(self, _lang=None):
+        """Til o'zgarganida bo'sh holat labelini yangilash"""
+        if self._empty_label is not None:
+            try:
+                self._empty_label.setText(t("dashboard.empty"))
+            except RuntimeError:
+                pass
+
     def refresh(self):
+        self._empty_label = None
         self._load_crossings()

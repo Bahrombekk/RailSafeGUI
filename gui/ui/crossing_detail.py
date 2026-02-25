@@ -16,6 +16,7 @@ import json
 import threading
 
 from gui.utils.theme_colors import C
+from gui.utils.language import t, LM
 from gui.utils.polygon_tracker import PolygonTracker
 from gui.widgets.hourly_chart import HourlyChartPanel
 
@@ -59,7 +60,31 @@ def _open_camera(source: str, camera_name: str = "") -> tuple:
             print(f"[{camera_name}] GStreamer CPU (H.265)")
             return cap, "gst-cpu"
 
-    # 3) FFmpeg fallback (har doim ishlaydi)
+        # 3) GStreamer NVDEC (GPU H.264 decode)
+        gst_nvdec264 = (
+            f"rtspsrc location={source} latency=0 protocols=tcp ! "
+            f"rtph264depay ! h264parse ! nvh264dec ! "
+            f"videoconvert ! video/x-raw,format=BGR ! "
+            f"appsink drop=true max-buffers=1 sync=false"
+        )
+        cap = cv2.VideoCapture(gst_nvdec264, cv2.CAP_GSTREAMER)
+        if cap.isOpened():
+            print(f"[{camera_name}] GStreamer NVDEC (GPU H.264)")
+            return cap, "gst-nvdec264"
+
+        # 4) GStreamer CPU (software H.264 decode)
+        gst_cpu264 = (
+            f"rtspsrc location={source} latency=0 protocols=tcp ! "
+            f"rtph264depay ! h264parse ! avdec_h264 ! "
+            f"videoconvert ! video/x-raw,format=BGR ! "
+            f"appsink drop=true max-buffers=1 sync=false"
+        )
+        cap = cv2.VideoCapture(gst_cpu264, cv2.CAP_GSTREAMER)
+        if cap.isOpened():
+            print(f"[{camera_name}] GStreamer CPU (H.264)")
+            return cap, "gst-cpu264"
+
+    # 5) FFmpeg fallback (har doim ishlaydi)
     cap = cv2.VideoCapture(source, cv2.CAP_FFMPEG)
     if cap.isOpened():
         cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
@@ -161,14 +186,12 @@ class DetailCameraWorker(QThread):
                                     break
                                 continue
                             fails = 0
-                            # Faqat kerak bo'lganda decode (CPU 50% tejash)
-                            with _frame_lock:
-                                need_decode = _latest_frame[0] is None
-                            if need_decode:
-                                ret, frame = cap.retrieve()
-                                if ret:
-                                    with _frame_lock:
-                                        _latest_frame[0] = frame
+                            # Har doim decode — har doim eng yangi kadrni saqlash
+                            # (eski kadr main thread tomonidan olinmagan bo'lsa ham ustini yozadi)
+                            ret, frm = cap.retrieve()
+                            if ret:
+                                with _frame_lock:
+                                    _latest_frame[0] = frm
 
                     gt = threading.Thread(target=_grab_loop, daemon=True)
                     gt.start()
@@ -179,6 +202,8 @@ class DetailCameraWorker(QThread):
                     _cam_fps = 0.0
                     _poly_loaded = False
                     _tracker = None  # PolygonTracker (polygon yuklangandan keyin yaratiladi)
+                    _last_stats_emit = 0.0      # Stats throttle: max 4/sec
+                    _last_in_poly = -1          # Polygon holatini kuzatish (darhol emit)
 
                     while self._is_running() and not _grab_error[0]:
                         with _frame_lock:
@@ -224,15 +249,17 @@ class DetailCameraWorker(QThread):
                                 detections, det_frame = self.car_detector.detect_async(
                                     frame, camera_id=f"detail_{self.camera_name}")
                                 detection_count = len(detections)
-                                if detections:
-                                    draw_on = det_frame if det_frame is not None else frame
-                                    # Tracking + counting
-                                    in_poly_bboxes = None
-                                    if _tracker is not None:
-                                        _tracker.process_detections(detections)
-                                        in_poly_count = _tracker.get_inside_count()
-                                        max_time = _tracker.get_max_time()
+                                # Tracking + counting (har doim chaqiriladi — eski tracklar expire bo'lishi uchun)
+                                in_poly_bboxes = None
+                                if _tracker is not None:
+                                    _tracker.process_detections(detections)
+                                    in_poly_count = _tracker.get_inside_count()
+                                    max_time = _tracker.get_max_time()
+                                    if detections:
                                         in_poly_bboxes = _tracker.get_in_polygon_bboxes()
+                                if detections:
+                                    # det_frame = aniqlashan kadr, uning ustiga chizish (100% mos)
+                                    draw_on = det_frame if det_frame is not None else frame
                                     frame = self.car_detector.draw_detections(
                                         draw_on, detections,
                                         thickness=2, font_scale=0.6,
@@ -268,16 +295,22 @@ class DetailCameraWorker(QThread):
                             _cam_fps = _fc / _el
                             _fc = 0
                             _fps_t = _now
-                        if _tracker is not None:
-                            self.stats_updated.emit(
-                                _tracker.light_count,
-                                _tracker.heavy_count,
-                                in_poly_count,
-                                _tracker.get_max_time(),
-                                _cam_fps
-                            )
-                        else:
-                            self.stats_updated.emit(0, 0, detection_count, 0.0, _cam_fps)
+                        # Stats throttle: polygon holat o'zgarse darhol, aks holda 4/sec
+                        _now_stats = time.time()
+                        _poly_changed = in_poly_count != _last_in_poly
+                        if _poly_changed or (_now_stats - _last_stats_emit) >= 0.25:
+                            _last_stats_emit = _now_stats
+                            _last_in_poly = in_poly_count
+                            if _tracker is not None:
+                                self.stats_updated.emit(
+                                    _tracker.light_count,
+                                    _tracker.heavy_count,
+                                    in_poly_count,
+                                    _tracker.get_max_time(),
+                                    _cam_fps
+                                )
+                            else:
+                                self.stats_updated.emit(0, 0, detection_count, 0.0, _cam_fps)
                 else:
                     if self._is_running():
                         self.status_changed.emit("error")
@@ -368,6 +401,7 @@ class CrossingDetail(QWidget):
         self._setup_ui()
         self._load_startup_counts()
         QTimer.singleShot(300, self._start_all_cameras)
+        LM.language_changed.connect(self._retranslate)
 
     def _load_startup_counts(self):
         """DB dan bugungi sanashni yuklash"""
@@ -449,16 +483,16 @@ class CrossingDetail(QWidget):
         header_layout.setSpacing(10)
 
         # Back
-        back_btn = QPushButton("< Orqaga")
-        back_btn.clicked.connect(self.back_clicked.emit)
-        back_btn.setStyleSheet(f"""
+        self._back_btn = QPushButton(t("crossing.back"))
+        self._back_btn.clicked.connect(self.back_clicked.emit)
+        self._back_btn.setStyleSheet(f"""
             QPushButton {{
                 background: {C('bg_input')}; color: {C('text_primary')}; border: none;
                 border-radius: 6px; padding: 6px 14px; font-size: 12px;
             }}
             QPushButton:hover {{ background: {C('bg_hover')}; }}
         """)
-        header_layout.addWidget(back_btn)
+        header_layout.addWidget(self._back_btn)
 
         # Separator
         sep = QFrame()
@@ -493,20 +527,20 @@ class CrossingDetail(QWidget):
             QPushButton:hover {{ background: {hover}; }}
         """
 
-        add_cam_btn = QPushButton("+ Kamera")
-        add_cam_btn.setStyleSheet(btn_css.format(bg=C('bg_input'), fg=C('accent_brand'), hover=C('bg_hover')))
-        add_cam_btn.clicked.connect(lambda: self.add_camera_clicked.emit(self.crossing_id))
-        header_layout.addWidget(add_cam_btn)
+        self._add_cam_btn = QPushButton(t("crossing.add_camera"))
+        self._add_cam_btn.setStyleSheet(btn_css.format(bg=C('bg_input'), fg=C('accent_brand'), hover=C('bg_hover')))
+        self._add_cam_btn.clicked.connect(lambda: self.add_camera_clicked.emit(self.crossing_id))
+        header_layout.addWidget(self._add_cam_btn)
 
-        settings_btn = QPushButton("Sozlamalar")
-        settings_btn.setStyleSheet(btn_css.format(bg=C('bg_input'), fg=C('accent_green'), hover=C('bg_hover')))
-        settings_btn.clicked.connect(lambda: self.edit_crossing_clicked.emit(self.crossing_id))
-        header_layout.addWidget(settings_btn)
+        self._settings_btn = QPushButton(t("crossing.settings_btn"))
+        self._settings_btn.setStyleSheet(btn_css.format(bg=C('bg_input'), fg=C('accent_green'), hover=C('bg_hover')))
+        self._settings_btn.clicked.connect(lambda: self.edit_crossing_clicked.emit(self.crossing_id))
+        header_layout.addWidget(self._settings_btn)
 
-        delete_btn = QPushButton("O'chirish")
-        delete_btn.setStyleSheet(btn_css.format(bg=C('bg_input'), fg=C('accent_red'), hover=C('accent_red')))
-        delete_btn.clicked.connect(lambda: self.delete_crossing_clicked.emit(self.crossing_id))
-        header_layout.addWidget(delete_btn)
+        self._delete_btn = QPushButton(t("crossing.delete"))
+        self._delete_btn.setStyleSheet(btn_css.format(bg=C('bg_input'), fg=C('accent_red'), hover=C('accent_red')))
+        self._delete_btn.clicked.connect(lambda: self.delete_crossing_clicked.emit(self.crossing_id))
+        header_layout.addWidget(self._delete_btn)
 
         layout.addWidget(header)
         layout.addSpacing(8)
@@ -567,7 +601,7 @@ class CrossingDetail(QWidget):
         cameras = self.crossing_data.get("cameras", [])
 
         if not cameras:
-            empty = QLabel("Kameralar yo'q. '+ Kamera' tugmasini bosing.")
+            empty = QLabel(t("crossing.no_cameras"))
             empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
             empty.setStyleSheet(f"""
                 color: {C('text_muted')}; font-size: 14px; padding: 60px;
@@ -622,7 +656,7 @@ class CrossingDetail(QWidget):
         cam_type = cam_data.get("type", "additional")
         is_main = cam_type == "main"
         badge_color = C('accent_brand') if is_main else C('accent_green')
-        badge_text = "Asosiy" if is_main else "Qo'shimcha"
+        badge_text = t("crossing.type.main") if is_main else t("crossing.type.additional")
         badge = QLabel(badge_text)
         badge.setStyleSheet(f"""
             color: {badge_color}; font-size: 9px; font-weight: bold;
@@ -641,7 +675,7 @@ class CrossingDetail(QWidget):
         hdr.addStretch()
 
         # Settings gear
-        gear = QPushButton("Settings")
+        gear = QPushButton(t("crossing.camera_settings"))
         gear.setFixedHeight(22)
         gear.setStyleSheet(f"""
             QPushButton {{
@@ -668,7 +702,7 @@ class CrossingDetail(QWidget):
         """)
         # Set aspect ratio hint
         video.setMinimumHeight(150)
-        self._set_placeholder(video, "Ulanmoqda...", 480, 270)
+        self._set_placeholder(video, t("cam.status.connecting"), 480, 270)
         self.camera_labels[cam_id] = video
         p_layout.addWidget(video)
 
@@ -682,7 +716,7 @@ class CrossingDetail(QWidget):
         bottom.addWidget(time_lbl)
 
         # Detection info label
-        det_lbl = QLabel("Yengil: 0 | Og'ir: 0 | Jami: 0 | FPS: 0.0")
+        det_lbl = QLabel(t("cam.detection", light=0, heavy=0, total=0, fps=0.0))
         det_lbl.setStyleSheet(f"color: {C('text_secondary')}; font-size: 10px; background: transparent;")
         self.camera_detection_labels[cam_id] = det_lbl
         bottom.addWidget(det_lbl)
@@ -690,7 +724,7 @@ class CrossingDetail(QWidget):
         bottom.addStretch()
 
         # Polygon vaqt label
-        poly_time_lbl = QLabel("Polygon: bo'sh")
+        poly_time_lbl = QLabel(t("cam.polygon.empty"))
         poly_time_lbl.setStyleSheet(f"color: {C('text_muted')}; font-size: 10px; background: transparent;")
         self.camera_polytime_labels[cam_id] = poly_time_lbl
         bottom.addWidget(poly_time_lbl)
@@ -717,7 +751,7 @@ class CrossingDetail(QWidget):
             if isinstance(qimg, QImage):
                 pixmap = QPixmap.fromImage(qimg)
                 scaled = pixmap.scaled(label.size(), Qt.AspectRatioMode.KeepAspectRatio,
-                                       Qt.TransformationMode.SmoothTransformation)
+                                       Qt.TransformationMode.FastTransformation)
                 label.setPixmap(scaled)
             else:
                 # Fallback for numpy array (placeholder)
@@ -805,11 +839,11 @@ class CrossingDetail(QWidget):
                 elif status == "reconnecting":
                     dot.setStyleSheet(f"color: {C('accent_yellow')}; font-size: 12px; background: transparent;")
                     if label:
-                        self._set_placeholder(label, "Qayta ulanmoqda...", 480, 270)
+                        self._set_placeholder(label, t("cam.status.reconnecting"), 480, 270)
                 elif status == "error":
                     dot.setStyleSheet(f"color: {C('accent_red')}; font-size: 12px; background: transparent;")
                     if label:
-                        self._set_placeholder(label, "Ulanmadi", 480, 270)
+                        self._set_placeholder(label, t("cam.status.failed"), 480, 270)
         except RuntimeError:
             self._destroyed = True
 
@@ -822,20 +856,30 @@ class CrossingDetail(QWidget):
             det_label = self.camera_detection_labels.get(cam_id)
             if det_label:
                 total = light_count + heavy_count
-                det_label.setText(f"Yengil: {light_count} | Og'ir: {heavy_count} | Jami: {total} | FPS: {fps:.1f}")
-                if in_poly_count > 0:
-                    det_label.setStyleSheet(f"color: {C('accent_green')}; font-size: 10px; font-weight: bold; background: transparent;")
-                else:
-                    det_label.setStyleSheet(f"color: {C('text_secondary')}; font-size: 10px; background: transparent;")
+                det_label.setText(t("cam.detection", light=light_count, heavy=heavy_count, total=total, fps=fps))
+                # setStyleSheet faqat holat o'zgarganda (qimmat operatsiya)
+                _prev_in_poly = getattr(self, f'_prev_in_poly_{cam_id}', -1)
+                if (in_poly_count > 0) != (_prev_in_poly > 0):
+                    setattr(self, f'_prev_in_poly_{cam_id}', in_poly_count)
+                    if in_poly_count > 0:
+                        det_label.setStyleSheet(f"color: {C('accent_green')}; font-size: 10px; font-weight: bold; background: transparent;")
+                    else:
+                        det_label.setStyleSheet(f"color: {C('text_secondary')}; font-size: 10px; background: transparent;")
             # Polygon vaqtni yangilash
             poly_lbl = self.camera_polytime_labels.get(cam_id)
             if poly_lbl:
                 if max_time > 0:
-                    poly_lbl.setText(f"Polygon: {max_time:.1f}s")
-                    poly_lbl.setStyleSheet(f"color: {C('accent_red')}; font-size: 10px; font-weight: bold; background: transparent;")
+                    poly_lbl.setText(t("cam.polygon.time", time=max_time))
+                    _prev_poly_active = getattr(self, f'_prev_poly_active_{cam_id}', False)
+                    if not _prev_poly_active:
+                        setattr(self, f'_prev_poly_active_{cam_id}', True)
+                        poly_lbl.setStyleSheet(f"color: {C('accent_red')}; font-size: 10px; font-weight: bold; background: transparent;")
                 else:
-                    poly_lbl.setText("Polygon: bo'sh")
-                    poly_lbl.setStyleSheet(f"color: {C('text_muted')}; font-size: 10px; background: transparent;")
+                    poly_lbl.setText(t("cam.polygon.empty"))
+                    _prev_poly_active = getattr(self, f'_prev_poly_active_{cam_id}', True)
+                    if _prev_poly_active:
+                        setattr(self, f'_prev_poly_active_{cam_id}', False)
+                        poly_lbl.setStyleSheet(f"color: {C('text_muted')}; font-size: 10px; background: transparent;")
             # Asosiy kamera bo'lsa → statistika panelni yangilash (offset + tracker)
             cam_type = self.camera_types.get(cam_id, "additional")
             if cam_type == "main":
@@ -893,9 +937,9 @@ class CrossingDetail(QWidget):
         layout.setContentsMargins(16, 12, 16, 12)
         layout.setSpacing(10)
 
-        title = QLabel("Statistika")
-        title.setStyleSheet(f"color: {C('text_primary')}; font-size: 14px; font-weight: bold; background: transparent;")
-        layout.addWidget(title)
+        self._stats_title = QLabel(t("stats.panel"))
+        self._stats_title.setStyleSheet(f"color: {C('text_primary')}; font-size: 14px; font-weight: bold; background: transparent;")
+        layout.addWidget(self._stats_title)
 
         # Divider
         div = QFrame()
@@ -908,9 +952,9 @@ class CrossingDetail(QWidget):
 
         # Kameralar (statik)
         row_cam = QHBoxLayout()
-        n_cam = QLabel("Kameralar")
-        n_cam.setStyleSheet(f"color: {C('text_muted')}; font-size: 12px; background: transparent;")
-        row_cam.addWidget(n_cam)
+        self._stat_cameras_lbl = QLabel(t("stats.cameras"))
+        self._stat_cameras_lbl.setStyleSheet(f"color: {C('text_muted')}; font-size: 12px; background: transparent;")
+        row_cam.addWidget(self._stat_cameras_lbl)
         row_cam.addStretch()
         v_cam = QLabel(f"{active}/{cameras_count}")
         v_cam.setStyleSheet(f"color: {C('accent_brand')}; font-size: 14px; font-weight: bold; background: transparent;")
@@ -919,9 +963,9 @@ class CrossingDetail(QWidget):
 
         # Yengil transport (dinamik)
         row_light = QHBoxLayout()
-        n_light = QLabel("Yengil transport")
-        n_light.setStyleSheet(f"color: {C('text_muted')}; font-size: 12px; background: transparent;")
-        row_light.addWidget(n_light)
+        self._stat_light_lbl = QLabel(t("stats.light"))
+        self._stat_light_lbl.setStyleSheet(f"color: {C('text_muted')}; font-size: 12px; background: transparent;")
+        row_light.addWidget(self._stat_light_lbl)
         row_light.addStretch()
         self._stat_light_label = QLabel("0")
         self._stat_light_label.setStyleSheet(f"color: {C('accent_blue')}; font-size: 14px; font-weight: bold; background: transparent;")
@@ -930,9 +974,9 @@ class CrossingDetail(QWidget):
 
         # Og'ir transport (dinamik)
         row_heavy = QHBoxLayout()
-        n_heavy = QLabel("Og'ir transport")
-        n_heavy.setStyleSheet(f"color: {C('text_muted')}; font-size: 12px; background: transparent;")
-        row_heavy.addWidget(n_heavy)
+        self._stat_heavy_lbl = QLabel(t("stats.heavy"))
+        self._stat_heavy_lbl.setStyleSheet(f"color: {C('text_muted')}; font-size: 12px; background: transparent;")
+        row_heavy.addWidget(self._stat_heavy_lbl)
         row_heavy.addStretch()
         self._stat_heavy_label = QLabel("0")
         self._stat_heavy_label.setStyleSheet(f"color: {C('accent_orange')}; font-size: 14px; font-weight: bold; background: transparent;")
@@ -941,9 +985,9 @@ class CrossingDetail(QWidget):
 
         # Jami transport (dinamik)
         row_total = QHBoxLayout()
-        n_total = QLabel("Jami transport")
-        n_total.setStyleSheet(f"color: {C('text_muted')}; font-size: 12px; background: transparent;")
-        row_total.addWidget(n_total)
+        self._stat_total_lbl = QLabel(t("stats.total"))
+        self._stat_total_lbl.setStyleSheet(f"color: {C('text_muted')}; font-size: 12px; background: transparent;")
+        row_total.addWidget(self._stat_total_lbl)
         row_total.addStretch()
         self._stat_total_label = QLabel("0")
         self._stat_total_label.setStyleSheet(f"color: {C('accent_green')}; font-size: 14px; font-weight: bold; background: transparent;")
@@ -967,7 +1011,7 @@ class CrossingDetail(QWidget):
         layout.setContentsMargins(16, 12, 16, 12)
         layout.setSpacing(10)
 
-        title = QLabel("PLC Holati")
+        title = QLabel(t("plc.title"))
         title.setStyleSheet(f"color: {C('text_primary')}; font-size: 14px; font-weight: bold; background: transparent;")
         layout.addWidget(title)
 
@@ -980,17 +1024,17 @@ class CrossingDetail(QWidget):
 
         if plc.get("enabled", False):
             row1 = QHBoxLayout()
-            s = QLabel("Holat")
+            s = QLabel(t("plc.status_label"))
             s.setStyleSheet(f"color: {C('text_muted')}; font-size: 12px; background: transparent;")
             row1.addWidget(s)
             row1.addStretch()
-            sv = QLabel("ULANGAN")
+            sv = QLabel(t("plc.connected"))
             sv.setStyleSheet(f"color: {C('accent_green')}; font-size: 12px; font-weight: bold; background: transparent;")
             row1.addWidget(sv)
             layout.addLayout(row1)
 
             row2 = QHBoxLayout()
-            ip_n = QLabel("IP")
+            ip_n = QLabel(t("plc.ip"))
             ip_n.setStyleSheet(f"color: {C('text_muted')}; font-size: 12px; background: transparent;")
             row2.addWidget(ip_n)
             row2.addStretch()
@@ -1000,7 +1044,7 @@ class CrossingDetail(QWidget):
             layout.addLayout(row2)
 
             row3 = QHBoxLayout()
-            p_n = QLabel("Port")
+            p_n = QLabel(t("plc.port"))
             p_n.setStyleSheet(f"color: {C('text_muted')}; font-size: 12px; background: transparent;")
             row3.addWidget(p_n)
             row3.addStretch()
@@ -1010,11 +1054,11 @@ class CrossingDetail(QWidget):
             layout.addLayout(row3)
         else:
             row = QHBoxLayout()
-            s = QLabel("Holat")
+            s = QLabel(t("plc.status_label"))
             s.setStyleSheet(f"color: {C('text_muted')}; font-size: 12px; background: transparent;")
             row.addWidget(s)
             row.addStretch()
-            sv = QLabel("O'CHIRILGAN")
+            sv = QLabel(t("plc.disabled"))
             sv.setStyleSheet(f"color: {C('text_muted')}; font-size: 12px; font-weight: bold; background: transparent;")
             row.addWidget(sv)
             layout.addLayout(row)
@@ -1074,6 +1118,35 @@ class CrossingDetail(QWidget):
         self.camera_detection_labels.clear()
         self.camera_polytime_labels.clear()
         self.camera_types.clear()
+
+    def _retranslate(self):
+        """Til o'zgarganida UI textlarini yangilash."""
+        try:
+            if hasattr(self, '_back_btn'):
+                self._back_btn.setText(t("crossing.back"))
+            if hasattr(self, '_add_cam_btn'):
+                self._add_cam_btn.setText(t("crossing.add_camera"))
+            if hasattr(self, '_settings_btn'):
+                self._settings_btn.setText(t("crossing.settings_btn"))
+            if hasattr(self, '_delete_btn'):
+                self._delete_btn.setText(t("crossing.delete"))
+            if hasattr(self, '_stats_title'):
+                self._stats_title.setText(t("stats.panel"))
+            if hasattr(self, '_stat_cameras_lbl'):
+                self._stat_cameras_lbl.setText(t("stats.cameras"))
+            if hasattr(self, '_stat_light_lbl'):
+                self._stat_light_lbl.setText(t("stats.light"))
+            if hasattr(self, '_stat_heavy_lbl'):
+                self._stat_heavy_lbl.setText(t("stats.heavy"))
+            if hasattr(self, '_stat_total_lbl'):
+                self._stat_total_lbl.setText(t("stats.total"))
+            # Kamera labellarini yangilash
+            for cam_id, lbl in self.camera_detection_labels.items():
+                lbl.setText(t("cam.detection", light=0, heavy=0, total=0, fps=0.0))
+            for cam_id, lbl in self.camera_polytime_labels.items():
+                lbl.setText(t("cam.polygon.empty"))
+        except (RuntimeError, Exception):
+            pass
 
     def refresh(self):
         self.cleanup()
