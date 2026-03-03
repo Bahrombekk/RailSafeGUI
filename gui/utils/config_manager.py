@@ -10,12 +10,18 @@ from pathlib import Path
 from typing import Dict, List, Optional
 from datetime import datetime
 
+# gui/utils/config_manager.py → gui/utils → gui → project_root
+_PROJECT_ROOT = Path(__file__).parent.parent.parent
+_CONFIG_DIR   = _PROJECT_ROOT / "config"
+_GUI_CONFIG   = _CONFIG_DIR / "gui_config.json"
+_APP_CONFIG   = _CONFIG_DIR / "config.yaml"
+
 
 class ConfigManager:
     """Manages system configuration for crossings, cameras, and PLCs"""
 
-    def __init__(self, config_file: str = "gui_config.json"):
-        self.config_file = Path(config_file)
+    def __init__(self, config_file: str = None):
+        self.config_file = Path(config_file) if config_file else _GUI_CONFIG
         self.config = self._load_config()
 
     def _load_config(self) -> Dict:
@@ -241,34 +247,26 @@ class ConfigManager:
             print(f"Error importing YAML: {e}")
             return None
 
-    def get_car_detector_config(self, config_yaml_path: str = "config.yaml") -> Dict:
+    def get_car_detector_config(self, config_yaml_path: str = None) -> Dict:
         """
-        Get car detector configuration from main config.yaml
+        Get car detector configuration from config/config.yaml.
         GUI settings dan model_type va custom_model_path tekshiriladi.
-
-        Args:
-            config_yaml_path: Path to config.yaml
-
-        Returns:
-            Car detector config dict
         """
         default_config = {
             "enabled": False,
-            "model_path": "models/car_detect.pt",
-            "confidence": 0.5,
+            "model_path": str(_PROJECT_ROOT / "models" / "yolo26m.pt"),
+            "confidence": 0.3,
             "iou_threshold": 0.45,
             "imgsz": 640,
             "device": "cuda",
-            "half": True,     # FP16 - 2x faster on GPU
-            "stream": True    # Real-time streaming mode
+            "half": True,
+            "stream": True
         }
 
         try:
-            config_path = Path(config_yaml_path)
+            config_path = Path(config_yaml_path) if config_yaml_path else _APP_CONFIG
             if not config_path.is_absolute():
-                # Relative to project root
-                project_root = Path(__file__).parent.parent.parent
-                config_path = project_root / config_yaml_path
+                config_path = _PROJECT_ROOT / config_path
 
             if config_path.exists():
                 with open(config_path, 'r', encoding='utf-8') as f:
@@ -280,21 +278,20 @@ class ConfigManager:
                     if "model_path" in car_config:
                         model_path = Path(car_config["model_path"])
                         if not model_path.is_absolute():
-                            car_config["model_path"] = str(project_root / model_path)
+                            car_config["model_path"] = str(_PROJECT_ROOT / model_path)
 
                     # GUI settings dan maxsus model tekshirish
                     gui_settings = self.get_settings()
                     if gui_settings.get("model_type") == "custom":
-                        # models/ dan avtomatik topish (har doim birinchi tekshiriladi)
-                        default_custom = project_root / "models" / "pereezd_yolo26n.pt"
-                        if default_custom.is_file():
-                            custom_path = str(default_custom)
-                        else:
-                            custom_path = gui_settings.get("custom_model_path", "")
-                        if custom_path and Path(custom_path).is_file():
-                            car_config["model_path"] = custom_path
-                            car_config["imgsz"] = 1088
-                            car_config["filter_classes"] = None
+                        # config.yaml dan custom_model_path o'qish
+                        raw_custom = car_config.get("custom_model_path", "")
+                        custom_path = Path(raw_custom)
+                        if not custom_path.is_absolute():
+                            custom_path = _PROJECT_ROOT / custom_path
+                        if custom_path.is_file():
+                            car_config["model_path"] = str(custom_path)
+                            car_config["imgsz"] = car_config.get("custom_imgsz", 1088)
+                            car_config["filter_classes"] = car_config.get("custom_filter_classes")
                             car_config["is_custom_model"] = True
                             print(f"[ConfigManager] Maxsus model: {custom_path}")
                     else:

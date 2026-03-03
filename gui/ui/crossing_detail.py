@@ -20,75 +20,137 @@ from gui.utils.language import t, LM
 from gui.utils.polygon_tracker import PolygonTracker
 from gui.widgets.hourly_chart import HourlyChartPanel
 
-# RTSP ultra-low-latency (FFmpeg fallback uchun)
+# RTSP ultra-low-latency: UDP transport (TCP dan tezroq), minimal buffer
 os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = (
-    'rtsp_transport;tcp|stimeout;2000000|'
+    'rtsp_transport;udp|stimeout;2000000|'
     'fflags;nobuffer+discardcorrupt|flags;low_delay|'
-    'analyzeduration;100000|probesize;100000|'
-    'max_delay;0|reorder_queue_size;0'
+    'analyzeduration;0|probesize;32|'
+    'max_delay;0|reorder_queue_size;0|'
+    'thread_queue_size;1'
 )
-os.environ['OPENCV_LOG_LEVEL'] = 'ERROR'
+os.environ['OPENCV_LOG_LEVEL'] = 'SILENT'
+os.environ['OPENCV_FFMPEG_LOGLEVEL'] = '-8'  # AV_LOG_QUIET
+
+# Intel GPU OpenCL — resize va color conversion uchun
+def _init_opencl() -> bool:
+    try:
+        if cv2.ocl.haveOpenCL():
+            cv2.ocl.setUseOpenCL(True)
+            dev = cv2.ocl.Device.getDefault()
+            print(f"[OpenCL] Intel GPU: {dev.name()} — resize/cvtColor GPU da")
+            return True
+    except Exception:
+        pass
+    print("[OpenCL] Mavjud emas — CPU ishlatiladi")
+    return False
+
+_USE_OPENCL = _init_opencl()
+
+# GStreamer mavjudligini bir marta tekshirish (har kamera uchun 8 urinish oldini oladi)
+def _check_gstreamer() -> bool:
+    try:
+        info = cv2.getBuildInformation()
+        idx = info.find("GStreamer")
+        return idx != -1 and "YES" in info[idx:idx + 40]
+    except Exception:
+        return False
+
+_HAS_GSTREAMER = _check_gstreamer()
 
 
 def _open_camera(source: str, camera_name: str = "") -> tuple:
-    """RTSP kamerani ochish: GStreamer NVDEC → GStreamer CPU → FFmpeg fallback.
+    """RTSP kamerani ochish: D3D11 → QSV → NVDEC → CPU → FFmpeg.
     Returns (cap, backend_name) or (None, None)."""
     is_rtsp = source.lower().startswith("rtsp://")
 
-    if is_rtsp:
-        # 1) GStreamer NVDEC (GPU H.265 decode)
-        gst_nvdec = (
+    if is_rtsp and _HAS_GSTREAMER:
+        _appsink = "appsink drop=true max-buffers=1 sync=false"
+
+        # 1) Intel/AMD/NVIDIA Direct3D11 H.265 (Windows GPU universal)
+        cap = cv2.VideoCapture(
+            f"rtspsrc location={source} latency=0 protocols=tcp ! "
+            f"rtph265depay ! h265parse ! d3d11h265dec ! "
+            f"d3d11convert ! video/x-raw(memory:SystemMemory),format=BGR ! {_appsink}",
+            cv2.CAP_GSTREAMER)
+        if cap.isOpened():
+            print(f"[{camera_name}] D3D11 GPU H.265")
+            return cap, "d3d11-h265"
+
+        # 2) Intel/AMD/NVIDIA Direct3D11 H.264
+        cap = cv2.VideoCapture(
+            f"rtspsrc location={source} latency=0 protocols=tcp ! "
+            f"rtph264depay ! h264parse ! d3d11h264dec ! "
+            f"d3d11convert ! video/x-raw(memory:SystemMemory),format=BGR ! {_appsink}",
+            cv2.CAP_GSTREAMER)
+        if cap.isOpened():
+            print(f"[{camera_name}] D3D11 GPU H.264")
+            return cap, "d3d11-h264"
+
+        # 3) Intel Quick Sync H.265 (iGPU / Arc)
+        cap = cv2.VideoCapture(
+            f"rtspsrc location={source} latency=0 protocols=tcp ! "
+            f"rtph265depay ! h265parse ! msdkh265dec ! "
+            f"videoconvert ! video/x-raw,format=BGR ! {_appsink}",
+            cv2.CAP_GSTREAMER)
+        if cap.isOpened():
+            print(f"[{camera_name}] Intel QSV H.265")
+            return cap, "qsv-h265"
+
+        # 4) Intel Quick Sync H.264
+        cap = cv2.VideoCapture(
+            f"rtspsrc location={source} latency=0 protocols=tcp ! "
+            f"rtph264depay ! h264parse ! msdkh264dec ! "
+            f"videoconvert ! video/x-raw,format=BGR ! {_appsink}",
+            cv2.CAP_GSTREAMER)
+        if cap.isOpened():
+            print(f"[{camera_name}] Intel QSV H.264")
+            return cap, "qsv-h264"
+
+        # 5) NVIDIA NVDEC H.265
+        cap = cv2.VideoCapture(
             f"rtspsrc location={source} latency=0 protocols=tcp ! "
             f"rtph265depay ! h265parse ! nvh265dec ! "
-            f"videoconvert ! video/x-raw,format=BGR ! "
-            f"appsink drop=true max-buffers=1 sync=false"
-        )
-        cap = cv2.VideoCapture(gst_nvdec, cv2.CAP_GSTREAMER)
+            f"videoconvert ! video/x-raw,format=BGR ! {_appsink}",
+            cv2.CAP_GSTREAMER)
         if cap.isOpened():
-            print(f"[{camera_name}] GStreamer NVDEC (GPU H.265)")
-            return cap, "gst-nvdec"
+            print(f"[{camera_name}] NVDEC GPU H.265")
+            return cap, "nvdec-h265"
 
-        # 2) GStreamer CPU (software H.265 decode)
-        gst_cpu = (
-            f"rtspsrc location={source} latency=0 protocols=tcp ! "
-            f"rtph265depay ! h265parse ! avdec_h265 ! "
-            f"videoconvert ! video/x-raw,format=BGR ! "
-            f"appsink drop=true max-buffers=1 sync=false"
-        )
-        cap = cv2.VideoCapture(gst_cpu, cv2.CAP_GSTREAMER)
-        if cap.isOpened():
-            print(f"[{camera_name}] GStreamer CPU (H.265)")
-            return cap, "gst-cpu"
-
-        # 3) GStreamer NVDEC (GPU H.264 decode)
-        gst_nvdec264 = (
+        # 6) NVIDIA NVDEC H.264
+        cap = cv2.VideoCapture(
             f"rtspsrc location={source} latency=0 protocols=tcp ! "
             f"rtph264depay ! h264parse ! nvh264dec ! "
-            f"videoconvert ! video/x-raw,format=BGR ! "
-            f"appsink drop=true max-buffers=1 sync=false"
-        )
-        cap = cv2.VideoCapture(gst_nvdec264, cv2.CAP_GSTREAMER)
+            f"videoconvert ! video/x-raw,format=BGR ! {_appsink}",
+            cv2.CAP_GSTREAMER)
         if cap.isOpened():
-            print(f"[{camera_name}] GStreamer NVDEC (GPU H.264)")
-            return cap, "gst-nvdec264"
+            print(f"[{camera_name}] NVDEC GPU H.264")
+            return cap, "nvdec-h264"
 
-        # 4) GStreamer CPU (software H.264 decode)
-        gst_cpu264 = (
+        # 7) CPU software H.265
+        cap = cv2.VideoCapture(
+            f"rtspsrc location={source} latency=0 protocols=tcp ! "
+            f"rtph265depay ! h265parse ! avdec_h265 ! "
+            f"videoconvert ! video/x-raw,format=BGR ! {_appsink}",
+            cv2.CAP_GSTREAMER)
+        if cap.isOpened():
+            print(f"[{camera_name}] CPU H.265")
+            return cap, "cpu-h265"
+
+        # 8) CPU software H.264
+        cap = cv2.VideoCapture(
             f"rtspsrc location={source} latency=0 protocols=tcp ! "
             f"rtph264depay ! h264parse ! avdec_h264 ! "
-            f"videoconvert ! video/x-raw,format=BGR ! "
-            f"appsink drop=true max-buffers=1 sync=false"
-        )
-        cap = cv2.VideoCapture(gst_cpu264, cv2.CAP_GSTREAMER)
+            f"videoconvert ! video/x-raw,format=BGR ! {_appsink}",
+            cv2.CAP_GSTREAMER)
         if cap.isOpened():
-            print(f"[{camera_name}] GStreamer CPU (H.264)")
-            return cap, "gst-cpu264"
+            print(f"[{camera_name}] CPU H.264")
+            return cap, "cpu-h264"
 
-    # 5) FFmpeg fallback (har doim ishlaydi)
+    # 9) FFmpeg fallback (har doim ishlaydi)
     cap = cv2.VideoCapture(source, cv2.CAP_FFMPEG)
     if cap.isOpened():
         cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-        print(f"[{camera_name}] FFmpeg fallback")
+        print(f"[{camera_name}] FFmpeg fallback (CPU)")
         return cap, "ffmpeg"
 
     return None, None
@@ -163,22 +225,26 @@ class DetailCameraWorker(QThread):
             try:
                 cap, backend = _open_camera(self.source, self.camera_name)
                 if cap is not None:
-                    # RTSP buffer tozalash - eski kadrlarni tashlash (~3 sek)
-                    for _ in range(90):
+                    # RTSP buffer tozalash — vaqt bo'yicha (300ms), tez flush
+                    _flush_end = time.perf_counter() + 0.3
+                    while time.perf_counter() < _flush_end:
                         cap.grab()
 
                     self.status_changed.emit("online")
                     retry_count = 0
 
-                    # --- Dedicated grab thread: grab() HECH QACHON to'xtamaydi ---
-                    _latest_frame = [None]
+                    # --- Dedicated grab thread ---
+                    # grab() har doim tight loop — network buffer doim bo'sh
+                    # retrieve() (decode) faqat main thread so'raganda — minimum latency
                     _frame_lock = threading.Lock()
                     _grab_error = [False]
+                    _want_frame = [False]   # main thread: "menga frame kerak"
+                    _latest_frame = [None]  # grab thread: dekod qilingan frame
 
                     def _grab_loop():
                         fails = 0
                         while _grab_running[0]:
-                            ret = cap.grab()
+                            ret = cap.grab()  # tez: faqat compressed packet o'qiydi
                             if not ret:
                                 fails += 1
                                 if fails > 30:
@@ -186,12 +252,13 @@ class DetailCameraWorker(QThread):
                                     break
                                 continue
                             fails = 0
-                            # Har doim decode — har doim eng yangi kadrni saqlash
-                            # (eski kadr main thread tomonidan olinmagan bo'lsa ham ustini yozadi)
-                            ret, frm = cap.retrieve()
-                            if ret:
-                                with _frame_lock:
-                                    _latest_frame[0] = frm
+                            # Faqat main thread so'raganda decode — har doim eng yangi packet
+                            if _want_frame[0]:
+                                _want_frame[0] = False
+                                ret2, frm = cap.retrieve()
+                                if ret2:
+                                    with _frame_lock:
+                                        _latest_frame[0] = frm
 
                     gt = threading.Thread(target=_grab_loop, daemon=True)
                     gt.start()
@@ -205,21 +272,40 @@ class DetailCameraWorker(QThread):
                     _last_stats_emit = 0.0      # Stats throttle: max 4/sec
                     _last_in_poly = -1          # Polygon holatini kuzatish (darhol emit)
 
+                    _target_interval = 1.0 / 30.0  # 30 FPS cap
+                    _last_frame_t = 0.0
+
                     while self._is_running() and not _grab_error[0]:
+                        # 30 FPS limitiga yetmagan bo'lsa grab threadga signal ber
+                        _now_t = time.perf_counter()
+                        if _now_t - _last_frame_t >= _target_interval:
+                            _want_frame[0] = True
+
                         with _frame_lock:
                             frame = _latest_frame[0]
                             _latest_frame[0] = None
 
                         if frame is None:
-                            time.sleep(0.003)
+                            time.sleep(0.002)
                             continue
 
+                        _last_frame_t = time.perf_counter()
                         h, w = frame.shape[:2]
+
+                        # Resize — Intel GPU (OpenCL UMat) yoki CPU
                         if w > self.display_width:
                             scale = self.display_width / w
-                            frame = cv2.resize(frame, (self.display_width, int(h * scale)),
-                                               interpolation=cv2.INTER_AREA)
-                            h, w = frame.shape[:2]
+                            new_w = self.display_width
+                            new_h = int(h * scale)
+                            if _USE_OPENCL:
+                                umat = cv2.UMat(frame)
+                                umat = cv2.resize(umat, (new_w, new_h),
+                                                  interpolation=cv2.INTER_LINEAR)
+                                frame = umat.get()
+                            else:
+                                frame = cv2.resize(frame, (new_w, new_h),
+                                                   interpolation=cv2.INTER_LINEAR)
+                            h, w = new_h, new_w
 
                         # Polygon yuklash (birinchi frame kelganda)
                         if not _poly_loaded:
@@ -280,7 +366,13 @@ class DetailCameraWorker(QThread):
                                 color = (0, 0, 255)    # QIZIL — buzilish!
                             cv2.polylines(frame, [self._poly_pts], True, color, 2)
 
-                        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                        # BGR→RGB — Intel GPU (OpenCL) yoki CPU
+                        if _USE_OPENCL:
+                            umat = cv2.UMat(frame)
+                            umat = cv2.cvtColor(umat, cv2.COLOR_BGR2RGB)
+                            rgb = umat.get()
+                        else:
+                            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                         qimg = QImage(rgb.data, w, h, w * 3,
                                       QImage.Format.Format_RGB888).copy()
 
@@ -383,6 +475,8 @@ class CrossingDetail(QWidget):
         self.crossing_id = crossing_id
         self.crossing_data = config_manager.get_crossing(crossing_id)
         self.camera_workers = []
+        self.camera_workers_dict = {}   # cam_id -> worker
+        self.camera_toggle_btns = {}    # cam_id -> toggle QPushButton
         self.camera_labels = {}
         self.camera_status_labels = {}
         self.camera_detection_labels = {}  # Detection info labels
@@ -674,6 +768,25 @@ class CrossingDetail(QWidget):
 
         hdr.addStretch()
 
+        # Enable/disable toggle button
+        cam_enabled = cam_data.get("enabled", True)
+        toggle_btn = QPushButton("◉ " + (t("cam_dlg.enabled") if cam_enabled else t("cam_dlg.disabled")))
+        toggle_btn.setFixedHeight(22)
+        toggle_color = C('accent_green') if cam_enabled else C('accent_red')
+        toggle_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent; color: {toggle_color};
+                border: 1px solid {toggle_color}; border-radius: 4px;
+                padding: 2px 8px; font-size: 10px;
+            }}
+            QPushButton:hover {{ background: {toggle_color}20; }}
+        """)
+        toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        toggle_btn.clicked.connect(
+            lambda _, cid=cam_id, en=cam_enabled: self._toggle_camera(cid, en))
+        hdr.addWidget(toggle_btn)
+        self.camera_toggle_btns[cam_id] = toggle_btn
+
         # Settings gear
         gear = QPushButton(t("crossing.camera_settings"))
         gear.setFixedHeight(22)
@@ -816,6 +929,7 @@ class CrossingDetail(QWidget):
             )
             worker.start()
             self.camera_workers.append(worker)
+            self.camera_workers_dict[cam_id] = worker
 
     def _on_frame(self, label, worker):
         if not self._destroyed:
@@ -915,6 +1029,94 @@ class CrossingDetail(QWidget):
                     lbl.setText(current)
         except RuntimeError:
             self._destroyed = True
+
+    def _toggle_camera(self, camera_id, currently_enabled):
+        if not self.config_manager or not camera_id:
+            return
+        new_enabled = not currently_enabled
+        self.config_manager.update_camera(
+            self.crossing_id, camera_id, {"enabled": new_enabled})
+
+        # Update toggle button appearance (no full refresh)
+        btn = self.camera_toggle_btns.get(camera_id)
+        if btn:
+            btn.setText("◉ " + (t("cam_dlg.enabled") if new_enabled else t("cam_dlg.disabled")))
+            clr = C('accent_green') if new_enabled else C('accent_red')
+            btn.setStyleSheet(f"""
+                QPushButton {{
+                    background: transparent; color: {clr};
+                    border: 1px solid {clr}; border-radius: 4px;
+                    padding: 2px 8px; font-size: 10px;
+                }}
+                QPushButton:hover {{ background: {clr}20; }}
+            """)
+            btn.clicked.disconnect()
+            btn.clicked.connect(
+                lambda _, cid=camera_id, en=new_enabled: self._toggle_camera(cid, en))
+
+        if new_enabled:
+            # Start the camera worker
+            self.crossing_data = self.config_manager.get_crossing(self.crossing_id)
+            cameras = self.crossing_data.get("cameras", [])
+            cam = next((c for c in cameras if c.get("id") == camera_id), None)
+            if cam:
+                self._start_single_camera(cam)
+        else:
+            # Stop and remove the worker, show disabled placeholder
+            worker = self.camera_workers_dict.pop(camera_id, None)
+            if worker:
+                try:
+                    self.camera_workers.remove(worker)
+                except ValueError:
+                    pass
+                worker.stop()
+            label = self.camera_labels.get(camera_id)
+            if label:
+                self._set_placeholder(label, t("cam_dlg.disabled"), 480, 270)
+            status = self.camera_status_labels.get(camera_id)
+            if status:
+                status.setStyleSheet(f"color: {C('status_error')}; font-size: 12px; background: transparent;")
+
+    def _start_single_camera(self, cam: dict):
+        """Bitta kamerani ishga tushirish (toggle yoki qayta ulanish uchun)"""
+        cam_id = cam.get("id", 0)
+        src = cam.get("source", "")
+        if not src:
+            return
+        label = self.camera_labels.get(cam_id)
+        if not label:
+            return
+        cam_name = cam.get("name", f"Cam-{cam_id}")
+        cam_type = cam.get("type", "additional")
+        self.camera_types[cam_id] = cam_type
+
+        poly_file = cam.get("polygon_file", "")
+        if poly_file and not os.path.isabs(poly_file):
+            project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            poly_file = os.path.join(project_root, poly_file)
+
+        settings = self.config_manager.get_settings() if self.config_manager else {}
+        warn_t = settings.get("warning_threshold", 10.0)
+        viol_t = settings.get("violation_threshold", 15.0)
+
+        worker = DetailCameraWorker(
+            src, cam_name,
+            car_detector=self.car_detector,
+            detection_enabled=cam.get("detection_enabled", True),
+            polygon_file=poly_file if poly_file and os.path.isfile(poly_file) else None,
+            warning_threshold=warn_t,
+            violation_threshold=viol_t,
+            is_custom_model=self.is_custom_model,
+        )
+        worker.frame_ready.connect(lambda lbl=label, w=worker: self._on_frame(lbl, w))
+        worker.status_changed.connect(lambda s, cid=cam_id: self._on_camera_status(cid, s))
+        worker.stats_updated.connect(
+            lambda light, heavy, in_poly, max_t, fps, cid=cam_id, cname=cam_name:
+                self._on_stats_update(cid, cname, light, heavy, in_poly, max_t, fps)
+        )
+        worker.start()
+        self.camera_workers.append(worker)
+        self.camera_workers_dict[cam_id] = worker
 
     def _open_camera_settings(self, camera_id):
         from gui.ui.dialogs import AddCameraDialog
@@ -1115,6 +1317,8 @@ class CrossingDetail(QWidget):
             except (RuntimeError, Exception):
                 pass
         self.camera_workers.clear()
+        self.camera_workers_dict.clear()
+        self.camera_toggle_btns.clear()
         self.camera_detection_labels.clear()
         self.camera_polytime_labels.clear()
         self.camera_types.clear()
@@ -1161,6 +1365,8 @@ class CrossingDetail(QWidget):
         self.camera_polytime_labels.clear()
         self.camera_types.clear()
         self.camera_workers = []
+        self.camera_workers_dict.clear()
+        self.camera_toggle_btns.clear()
 
         # Remove all child widgets
         old_layout = self.layout()

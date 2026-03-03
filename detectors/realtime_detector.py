@@ -55,24 +55,21 @@ class Detection:
 
 
 def find_engine(model_path: str) -> Optional[str]:
-    """TensorRT engine faylni topish (model_path asosida)"""
+    """TensorRT engine faylni topish.
+    .pt yoki .onnx ko'rsatilsa — faqat EXACT nom bo'yicha qidiriladi (wildcard yo'q).
+    .engine ko'rsatilsa — to'g'ridan-to'g'ri ishlatiladi.
+    """
+    ext = os.path.splitext(model_path)[1].lower()
     base = os.path.splitext(model_path)[0]
 
-    # Exact match: yolo26m.engine
+    # Agar foydalanuvchi to'g'ridan-to'g'ri .engine ko'rsatsa
+    if ext == ".engine":
+        return model_path if os.path.exists(model_path) else None
+
+    # .pt yoki .onnx: faqat exact match (wildcard yo'q — boshqa batch/imgsz li engine qo'llanmasin)
     exact = f"{base}.engine"
     if os.path.exists(exact):
         return exact
-
-    # TRT10 specific: yolo26m_trt10.engine
-    trt10 = f"{base}_trt10.engine"
-    if os.path.exists(trt10):
-        return trt10
-
-    # Any engine with same base: yolo26m*.engine
-    pattern = f"{base}*.engine"
-    engines = glob.glob(pattern)
-    if engines:
-        return max(engines, key=os.path.getmtime)
 
     return None
 

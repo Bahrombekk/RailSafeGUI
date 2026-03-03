@@ -353,7 +353,7 @@ if __name__ == "__main__":
     import sys
 
     # Test model
-    model_path = "/home/bahrombek/Desktop/RailSafeGUI/models/car_detect.pt"
+    model_path = "RailSafeGUI/models/car_detect.pt"
 
     detector = CarDetector(model_path, confidence_threshold=0.5)
 

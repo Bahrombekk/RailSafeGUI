@@ -17,24 +17,23 @@
           "source": "rtsp://admin:1q2w3e4r5t@192.168.170.160:554/Streaming/Channels/201",
           "polygon_file": "polygons/paligon_pereezd.json",
           "enabled": true,
-          "status": "offline",
           "id": 1,
-          "updated_at": "2026-02-09T17:52:15.711104"
+          "updated_at": "2026-03-03T10:24:56.948380"
         },
         {
           "name": "A2",
           "type": "main",
           "source": "rtsp://admin:1q2w3e4r5t@192.168.170.160:554/Streaming/Channels/301",
-          "polygon_file": "/home/bahrombek/Desktop/RailSafeAI_v1.1/polygons/aa/labels_my-project-name_2026-01-12-06-32-27.json",
+          "polygon_file": "polygons\\paligon_301.json",
           "enabled": true,
           "id": 2,
-          "updated_at": "2026-02-18T09:27:02.957070"
+          "updated_at": "2026-03-03T10:35:29.128212"
         }
       ],
       "id": 1,
       "created_at": "2026-02-09T17:46:49.554067",
       "status": "offline",
-      "updated_at": "2026-02-18T09:27:02.957092"
+      "updated_at": "2026-03-03T10:35:29.128212"
     },
     {
       "name": "Pereezd 9",
@@ -51,7 +50,7 @@
           "name": "B1",
           "type": "main",
           "source": "rtsp://admin:1q2w3e4r5t@192.168.170.160:554/Streaming/Channels/801",
-          "polygon_file": "/home/bahrombek/Desktop/RailSafeAI_v1.1/polygons/aa/labels_my-project-name_2026-01-23-09-20-43.json",
+          "polygon_file": "polygons/paligon_801.json",
           "enabled": true,
           "id": 1,
           "updated_at": "2026-02-10T14:52:23.097129"
@@ -60,7 +59,7 @@
           "name": "B2",
           "type": "additional",
           "source": "rtsp://admin:1q2w3e4r5t@192.168.170.160:554/Streaming/Channels/401",
-          "polygon_file": "/home/bahrombek/Desktop/RailSafeGUI/polygons/aa/f1.json",
+          "polygon_file": "polygons/paligon_401.json",
           "enabled": true,
           "id": 2,
           "updated_at": "2026-02-10T15:00:54.089005"
@@ -70,17 +69,85 @@
       "created_at": "2026-02-10T14:48:20.597492",
       "status": "offline",
       "updated_at": "2026-02-10T15:00:54.089027"
+    },
+    {
+      "name": "Pereezd 9",
+      "location": "asd",
+      "description": "as",
+      "plc": {
+        "enabled": false,
+        "ip": "",
+        "port": 102,
+        "type": "Siemens S7-1200"
+      },
+      "cameras": [
+        {
+          "name": "B1",
+          "type": "main",
+          "source": "rtsp://admin:1q2w3e4r5t@192.168.170.160:554/Streaming/Channels/801",
+          "polygon_file": "polygons/paligon_801.json",
+          "enabled": true,
+          "id": 1,
+          "updated_at": "2026-02-10T14:52:23.097129"
+        },
+        {
+          "name": "B2",
+          "type": "additional",
+          "source": "rtsp://admin:1q2w3e4r5t@192.168.170.160:554/Streaming/Channels/401",
+          "polygon_file": "polygons/paligon_401.json",
+          "enabled": true,
+          "id": 2,
+          "updated_at": "2026-02-10T15:00:54.089005"
+        }
+      ],
+      "id": 3,
+      "created_at": "2026-03-03T11:21:54.340041",
+      "status": "offline"
+    },
+    {
+      "name": "Pereezd 9",
+      "location": "asd",
+      "description": "as",
+      "plc": {
+        "enabled": false,
+        "ip": "",
+        "port": 102,
+        "type": "Siemens S7-1200"
+      },
+      "cameras": [
+        {
+          "name": "B1",
+          "type": "main",
+          "source": "rtsp://admin:1q2w3e4r5t@192.168.170.160:554/Streaming/Channels/801",
+          "polygon_file": "polygons/paligon_801.json",
+          "enabled": true,
+          "id": 1,
+          "updated_at": "2026-02-10T14:52:23.097129"
+        },
+        {
+          "name": "B2",
+          "type": "additional",
+          "source": "rtsp://admin:1q2w3e4r5t@192.168.170.160:554/Streaming/Channels/401",
+          "polygon_file": "polygons/paligon_401.json",
+          "enabled": true,
+          "id": 2,
+          "updated_at": "2026-02-10T15:00:54.089005"
+        }
+      ],
+      "id": 4,
+      "created_at": "2026-03-03T11:24:56.340479",
+      "status": "offline"
     }
   ],
   "settings": {
     "theme": "military",
-    "language": "ru",
+    "language": "uz",
     "auto_save": true,
     "warning_threshold": 30.0,
     "violation_threshold": 40.0,
     "video_recording_enabled": true,
     "model_type": "custom",
-    "custom_model_path": "/home/bahrombek/Desktop/RailSafeGUI/runs/pereezd_v12/weights/best.pt"
+    "custom_model_path": "runs/pereezd_v12/weights/best.pt"
   },
-  "last_updated": "2026-02-24T15:19:53.184032"
+  "last_updated": "2026-03-03T11:57:02.336358"
 }

@@ -17,6 +17,16 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 os.environ['OPENCV_LOG_LEVEL'] = 'ERROR'
 os.environ['OPENCV_FFMPEG_LOGLEVEL'] = '-8'
 
+# PyQt6 dan OLDIN torch yuklanishi SHART - Windows da Qt DLL lari
+# c10.dll ni ishga tushirishiga to'sqinlik qiladi
+try:
+    import torch as _torch
+    if _torch.cuda.is_available():
+        _torch.zeros(1, device='cuda')  # CUDA kontekstini main threadda yaratish
+        _torch.cuda.synchronize()
+except Exception as _e:
+    print(f"[Warning] torch pre-init: {_e}")
+
 from PyQt6.QtWidgets import QApplication, QMessageBox
 from PyQt6.QtGui import QIcon
 from PyQt6.QtCore import Qt

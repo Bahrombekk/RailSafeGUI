@@ -625,6 +625,33 @@ class AddCameraDialog(QDialog):
 
         layout.addLayout(form_layout)
 
+        # Enable/Disable quick toggle (only in edit mode)
+        if self.is_edit:
+            div = QFrame()
+            div.setFixedHeight(1)
+            div.setStyleSheet(f"background: {C('bg_hover')};")
+            layout.addWidget(div)
+
+            cam_enabled = self.camera_data.get("enabled", True)
+            toggle_layout = QHBoxLayout()
+            toggle_layout.addStretch()
+            toggle_text = t("cam_dlg.toggle_off") if cam_enabled else t("cam_dlg.toggle_on")
+            toggle_color = C('accent_yellow') if cam_enabled else C('accent_green')
+            self._quick_toggle_btn = QPushButton(
+                ("⏸ " if cam_enabled else "▶ ") + toggle_text)
+            self._quick_toggle_btn.setMinimumWidth(160)
+            self._quick_toggle_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background: transparent; color: {toggle_color};
+                    border: 1px solid {toggle_color}; border-radius: 4px;
+                    padding: 5px 14px; font-size: 11px;
+                }}
+                QPushButton:hover {{ background: {toggle_color}20; }}
+            """)
+            self._quick_toggle_btn.clicked.connect(self._quick_toggle)
+            toggle_layout.addWidget(self._quick_toggle_btn)
+            layout.addLayout(toggle_layout)
+
         # Buttons
         buttons_layout = QHBoxLayout()
         buttons_layout.addStretch()
@@ -710,6 +737,30 @@ class AddCameraDialog(QDialog):
         else:
             self.config_manager.add_camera(self.crossing_id, camera_data)
 
+        self.accept()
+
+    def _quick_toggle(self):
+        """Kamerani yoqish/o'chirish — saqlash tugmasisiz"""
+        if not self.config_manager or not self.camera_id:
+            return
+        current = self.camera_data.get("enabled", True)
+        new_enabled = not current
+        self.config_manager.update_camera(
+            self.crossing_id, self.camera_id, {"enabled": new_enabled})
+        self.camera_data["enabled"] = new_enabled
+        # Update checkbox and button
+        self.enabled_checkbox.setChecked(new_enabled)
+        toggle_text = t("cam_dlg.toggle_off") if new_enabled else t("cam_dlg.toggle_on")
+        toggle_color = C('accent_yellow') if new_enabled else C('accent_green')
+        self._quick_toggle_btn.setText(("⏸ " if new_enabled else "▶ ") + toggle_text)
+        self._quick_toggle_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent; color: {toggle_color};
+                border: 1px solid {toggle_color}; border-radius: 4px;
+                padding: 5px 14px; font-size: 11px;
+            }}
+            QPushButton:hover {{ background: {toggle_color}20; }}
+        """)
         self.accept()
 
 
@@ -1064,6 +1115,9 @@ class EngineExportWorker(QThread):
         self.models = models  # [{"abs_path": ..., "imgsz": ..., "name": ...}, ...]
 
     def run(self):
+        import subprocess
+        import sys
+
         success_count = 0
         total = len(self.models)
 
@@ -1071,26 +1125,34 @@ class EngineExportWorker(QThread):
             model_name = m["name"]
             model_path = m["abs_path"]
             imgsz = m["imgsz"]
+            batch = m.get("batch", 8)
 
             try:
                 self.model_started.emit(i, model_name)
                 self.stage_changed.emit(f"{model_name} yuklanmoqda...")
 
-                from ultralytics import YOLO
-                model = YOLO(model_path)
-
-                batch = m.get("batch", 8)
+                # Subprocess orqali export: QThread DLL muammosidan qochish
+                script = (
+                    f"from ultralytics import YOLO; "
+                    f"m = YOLO(r'{model_path}'); "
+                    f"m.export(format='engine', imgsz={imgsz}, half=True, batch={batch})"
+                )
                 self.stage_changed.emit(
                     f"{model_name} — TensorRT engine yaratilmoqda (batch={batch})...\n"
                     f"Bu 2-5 daqiqa davom etishi mumkin"
                 )
-                model.export(format="engine", imgsz=imgsz, half=True, batch=batch)
+                result = subprocess.run(
+                    [sys.executable, "-c", script],
+                    capture_output=True, text=True, timeout=600
+                )
 
                 engine_path = os.path.splitext(model_path)[0] + ".engine"
-                if os.path.exists(engine_path):
+                if result.returncode == 0 and os.path.exists(engine_path):
                     success_count += 1
                     self.model_finished.emit(i, True)
                 else:
+                    err = result.stderr.strip().splitlines()[-1] if result.stderr.strip() else "noma'lum xato"
+                    print(f"[EngineExport] {model_name} xatolik: {err}")
                     self.model_finished.emit(i, False)
 
             except Exception as e:

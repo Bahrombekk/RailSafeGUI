@@ -1,0 +1,30 @@
+# RailSafe AI — Detektor konfiguratsiyasi
+
+car_detector:
+  enabled: true
+
+  # Default model (COCO - umumiy transport)
+  model_path: "models/yolo26m.pt"
+  confidence: 0.3
+  iou_threshold: 0.45
+  imgsz: 640
+  filter_classes: [2, 3, 5, 7]   # COCO: car, motorcycle, bus, truck
+
+  # Maxsus model (pereezd uchun o'qitilgan)
+  custom_model_path: "models/pereezd_yolo26n.pt"
+  custom_imgsz: 1088
+  custom_filter_classes: ~        # null - barcha klasslar
+
+  device: "cuda"
+  half: true        # FP16 - 2x tezroq
+  stream: true      # Real-time streaming
+
+thresholds:
+  warning: 10.0     # Ogohlantirish (soniya)
+  violation: 15.0   # Qoida buzilishi (soniya)
+
+processing:
+  adaptive_mode: true
+  frame_skip_idle: 3
+  frame_skip_active: 1
+  polygon_length: 8.0
