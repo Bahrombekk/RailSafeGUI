@@ -543,6 +543,7 @@ class CrossingCard(QWidget):
         self.additional_camera_label = None
         self._is_destroyed = False
         self._main_camera_down = False  # Asosiy kamera uzilsa True
+        self._last_paused_ids: set = set()  # Oldingi paused holat (o'zgarishni kuzatish)
 
         # Car detector - SHARED instance (GPU maksimal ishlatish)
         self.car_detector = car_detector
@@ -567,8 +568,33 @@ class CrossingCard(QWidget):
         self._midnight_timer.timeout.connect(self._check_midnight)
         self._midnight_timer.start(30000)
 
+        # Camera state o'zgarishini kuzatish (har 3 sekundda)
+        self._state_timer = QTimer(self)
+        self._state_timer.timeout.connect(self._check_camera_state_change)
+        self._state_timer.start(3000)
+
         LM.language_changed.connect(self._retranslate)
         QTimer.singleShot(100, self._start_cameras)
+
+    def _check_camera_state_change(self):
+        """Camera_state.json o'zgarganini tekshirish — o'zgarsa workerllarni qayta ishga tushirish."""
+        if self._is_destroyed or not self.config_manager:
+            return
+        current = self.config_manager.get_paused_cameras(self.crossing_id)
+        if current != self._last_paused_ids:
+            self._last_paused_ids = current
+            self._restart_camera_workers()
+
+    def _restart_camera_workers(self):
+        """Barcha camera workerlarni to'xtatib, yangi holat bilan qayta ishga tushirish."""
+        for w in self.camera_workers:
+            try:
+                w.stop()
+            except Exception:
+                pass
+        self.camera_workers.clear()
+        self._main_camera_down = False
+        QTimer.singleShot(300, self._start_cameras)
 
     def _check_midnight(self):
         """Yarim tunda hisoblagichlarni nolga qaytarish"""
@@ -1137,8 +1163,23 @@ class CrossingCard(QWidget):
         try:
             cameras = self.crossing_data.get("cameras", [])
 
+            # Paused kameralar ro'yxati (camera_state.json dan)
+            paused_ids = (
+                self.config_manager.get_paused_cameras(self.crossing_id)
+                if self.config_manager else set()
+            )
+            self._last_paused_ids = paused_ids
+
+            # Asosiy to'xtatilgan/o'chirilgan bo'lsa — qo'shimcha asosiy joyni egallaydi
+            main_id = self.main_camera_data.get("id") if self.main_camera_data else None
+            main_enabled = self.main_camera_data.get("enabled", True) if self.main_camera_data else True
+            if main_id and (main_id in paused_ids or not main_enabled):
+                self._main_camera_down = True
+
             for i, camera in enumerate(cameras[:2]):
                 if not camera.get("enabled", False):
+                    continue
+                if camera.get("id") in paused_ids:
                     continue
 
                 source = camera.get("source", "")
@@ -1180,6 +1221,9 @@ class CrossingCard(QWidget):
                 else:
                     worker.frame_ready.connect(lambda w=worker: self._on_additional_frame(w))
                     worker.status_changed.connect(self._on_additional_status)
+                    # Asosiy to'xtatilgan bo'lsa — qo'shimcha sanashni davom ettiradi
+                    if self._main_camera_down:
+                        worker.stats_updated.connect(self._on_stats_update)
 
                 worker.start()
                 self.camera_workers.append(worker)
@@ -1374,6 +1418,8 @@ class CrossingCard(QWidget):
         try:
             if hasattr(self, '_midnight_timer'):
                 self._midnight_timer.stop()
+            if hasattr(self, '_state_timer'):
+                self._state_timer.stop()
         except RuntimeError:
             pass
         self.stop_cameras()

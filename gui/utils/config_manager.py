@@ -11,10 +11,11 @@ from typing import Dict, List, Optional
 from datetime import datetime
 
 # gui/utils/config_manager.py → gui/utils → gui → project_root
-_PROJECT_ROOT = Path(__file__).parent.parent.parent
-_CONFIG_DIR   = _PROJECT_ROOT / "config"
-_GUI_CONFIG   = _CONFIG_DIR / "gui_config.json"
-_APP_CONFIG   = _CONFIG_DIR / "config.yaml"
+_PROJECT_ROOT  = Path(__file__).parent.parent.parent
+_CONFIG_DIR    = _PROJECT_ROOT / "config"
+_GUI_CONFIG    = _CONFIG_DIR / "gui_config.json"
+_APP_CONFIG    = _CONFIG_DIR / "config.yaml"
+_CAMERA_STATE  = _CONFIG_DIR / "camera_state.json"
 
 
 class ConfigManager:
@@ -131,9 +132,9 @@ class ConfigManager:
 
         for i, camera in enumerate(crossing.get("cameras", [])):
             if camera["id"] == camera_id:
-                camera_data["id"] = camera_id
-                camera_data["updated_at"] = datetime.now().isoformat()
-                crossing["cameras"][i] = camera_data
+                crossing["cameras"][i].update(camera_data)
+                crossing["cameras"][i]["id"] = camera_id
+                crossing["cameras"][i]["updated_at"] = datetime.now().isoformat()
                 self.update_crossing(crossing_id, crossing)
                 return True
         return False
@@ -170,6 +171,41 @@ class ConfigManager:
         """Update application settings"""
         self.config["settings"].update(settings)
         self.save_config()
+
+    # --- Kamera holati (paused/resumed) — config/camera_state.json ---
+
+    def _load_camera_state(self) -> Dict:
+        try:
+            if _CAMERA_STATE.exists():
+                with open(_CAMERA_STATE, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+        except Exception:
+            pass
+        return {"paused": {}}
+
+    def _save_camera_state(self, state: Dict):
+        _CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        with open(_CAMERA_STATE, 'w', encoding='utf-8') as f:
+            json.dump(state, f, indent=2)
+
+    def get_paused_cameras(self, crossing_id: int) -> set:
+        """Berilgan pereezd uchun to'xtatilgan kamera ID larini qaytaradi."""
+        state = self._load_camera_state()
+        paused = state.get("paused", {}).get(str(crossing_id), [])
+        return set(paused)
+
+    def set_camera_paused(self, crossing_id: int, camera_id: int, paused: bool):
+        """Kamerani paused/resumed holatini saqlaydi."""
+        state = self._load_camera_state()
+        key = str(crossing_id)
+        paused_list = state.setdefault("paused", {}).get(key, [])
+        if paused:
+            if camera_id not in paused_list:
+                paused_list.append(camera_id)
+        else:
+            paused_list = [c for c in paused_list if c != camera_id]
+        state["paused"][key] = paused_list
+        self._save_camera_state(state)
 
     def export_to_yaml(self, crossing_id: int, output_file: str) -> bool:
         """Export crossing configuration to YAML (for backend processing)"""

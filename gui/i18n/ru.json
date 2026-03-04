@@ -23,6 +23,9 @@
   "cam.detection": "Лёгкие: {light} | Тяжёлые: {heavy} | Всего: {total} | FPS: {fps:.1f}",
   "cam.polygon.empty": "Зона: пусто",
   "cam.polygon.time": "Зона: {time:.1f}с",
+  "cam.pause": "Пауза",
+  "cam.resume": "Продолжить",
+  "cam.paused": "На паузе",
 
   "stats.panel": "Статистика",
   "stats.cameras": "Камеры",

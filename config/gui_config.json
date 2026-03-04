@@ -13,27 +13,28 @@
       },
       "cameras": [
         {
-          "id": 1,
-          "name": "A1",
-          "type": "additional",
-          "source": "rtsp://admin:1q2w3e4r5t@192.168.170.160:554/Streaming/Channels/201",
-          "polygon_file": "polygons/paligon_pereezd.json",
-          "enabled": true,
-          "updated_at": "2026-03-03T10:24:56.948380"
-        },
-        {
-          "id": 2,
           "name": "A2",
           "type": "main",
           "source": "rtsp://admin:1q2w3e4r5t@192.168.170.160:554/Streaming/Channels/301",
-          "polygon_file": "polygons/paligon_301.json",
+          "polygon_file": "polygons\\paligon_301.json",
           "enabled": true,
-          "updated_at": "2026-03-03T10:35:29.128212"
+          "id": 2,
+          "updated_at": "2026-03-03T15:34:35.659515"
+        },
+        {
+          "name": "A1",
+          "type": "additional",
+          "source": "rtsp://admin:1q2w3e4r5t@192.168.170.160:554/Streaming/Channels/201",
+          "polygon_file": "polygons\\paligon_pereezd.json",
+          "enabled": true,
+          "id": 3,
+          "created_at": "2026-03-04T09:56:00.765566",
+          "status": "offline"
         }
       ],
       "created_at": "2026-02-09T17:46:49.554067",
       "status": "offline",
-      "updated_at": "2026-03-03T10:35:29.128212"
+      "updated_at": "2026-03-04T09:56:00.765566"
     },
     {
       "id": 2,
@@ -78,8 +79,8 @@
     "warning_threshold": 30.0,
     "violation_threshold": 40.0,
     "video_recording_enabled": true,
-    "model_type": "default",
+    "model_type": "custom",
     "custom_model_path": "runs/pereezd_v12/weights/best.pt"
   },
-  "last_updated": "2026-03-03T14:23:35.422714"
+  "last_updated": "2026-03-04T10:23:21.870831"
 }

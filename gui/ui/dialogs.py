@@ -625,21 +625,17 @@ class AddCameraDialog(QDialog):
 
         layout.addLayout(form_layout)
 
-        # Enable/Disable quick toggle (only in edit mode)
-        if self.is_edit:
-            div = QFrame()
-            div.setFixedHeight(1)
-            div.setStyleSheet(f"background: {C('bg_hover')};")
-            layout.addWidget(div)
+        # Buttons
+        buttons_layout = QHBoxLayout()
 
+        # Edit rejimida: chap tomonda yoq/o'chir tugmasi
+        if self.is_edit:
             cam_enabled = self.camera_data.get("enabled", True)
-            toggle_layout = QHBoxLayout()
-            toggle_layout.addStretch()
             toggle_text = t("cam_dlg.toggle_off") if cam_enabled else t("cam_dlg.toggle_on")
             toggle_color = C('accent_yellow') if cam_enabled else C('accent_green')
             self._quick_toggle_btn = QPushButton(
                 ("⏸ " if cam_enabled else "▶ ") + toggle_text)
-            self._quick_toggle_btn.setMinimumWidth(160)
+            self._quick_toggle_btn.setMinimumWidth(140)
             self._quick_toggle_btn.setStyleSheet(f"""
                 QPushButton {{
                     background: transparent; color: {toggle_color};
@@ -649,11 +645,8 @@ class AddCameraDialog(QDialog):
                 QPushButton:hover {{ background: {toggle_color}20; }}
             """)
             self._quick_toggle_btn.clicked.connect(self._quick_toggle)
-            toggle_layout.addWidget(self._quick_toggle_btn)
-            layout.addLayout(toggle_layout)
+            buttons_layout.addWidget(self._quick_toggle_btn)
 
-        # Buttons
-        buttons_layout = QHBoxLayout()
         buttons_layout.addStretch()
 
         cancel_btn = QPushButton(f"❌ {t('dlg.add_camera.cancel')}")

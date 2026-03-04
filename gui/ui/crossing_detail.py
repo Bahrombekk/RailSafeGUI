@@ -476,12 +476,19 @@ class CrossingDetail(QWidget):
         self.crossing_data = config_manager.get_crossing(crossing_id)
         self.camera_workers = []
         self.camera_workers_dict = {}   # cam_id -> worker
-        self.camera_toggle_btns = {}    # cam_id -> toggle QPushButton
+        self.camera_toggle_btns = {}    # cam_id -> pause/resume QPushButton
+        self.camera_panels_dict = {}    # cam_id -> QFrame panel
+        # Paused holatini camera_state.json dan yuklash
+        self.camera_paused: set = (
+            config_manager.get_paused_cameras(crossing_id)
+            if config_manager else set()
+        )
         self.camera_labels = {}
         self.camera_status_labels = {}
         self.camera_detection_labels = {}  # Detection info labels
         self.camera_polytime_labels = {}  # Polygon time labels
         self.camera_types = {}  # cam_id -> "main"/"additional"
+        self._active_main_cam_id = None  # Hozirgi aktiv asosiy kamera (pause bo'lganda o'zgaradi)
         self.stats_db = stats_db
         self.is_custom_model = is_custom_model
         self._destroyed = False
@@ -709,8 +716,10 @@ class CrossingDetail(QWidget):
         cameras_grid = QGridLayout()
         cameras_grid.setSpacing(10)
 
-        cam_count = len(cameras)
-        for i, cam in enumerate(cameras):
+        # Faqat yoqilgan kameralarni ko'rsatish
+        active_cameras = [c for c in cameras if c.get("enabled", True)]
+        cam_count = len(active_cameras)
+        for i, cam in enumerate(active_cameras):
             row = i // cols
             col = i % cols
             panel = self._create_camera_panel(cam, i)
@@ -722,6 +731,7 @@ class CrossingDetail(QWidget):
         return container
 
     def _create_camera_panel(self, cam_data: dict, index: int):
+        cam_id = cam_data.get("id", index)
         panel = QFrame()
         panel.setStyleSheet(f"""
             QFrame#camPanel {{
@@ -732,6 +742,7 @@ class CrossingDetail(QWidget):
         """)
         panel.setObjectName("camPanel")
         panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.camera_panels_dict[cam_id] = panel
 
         p_layout = QVBoxLayout(panel)
         p_layout.setContentsMargins(10, 8, 10, 8)
@@ -768,24 +779,22 @@ class CrossingDetail(QWidget):
 
         hdr.addStretch()
 
-        # Enable/disable toggle button
-        cam_enabled = cam_data.get("enabled", True)
-        toggle_btn = QPushButton("◉ " + (t("cam_dlg.enabled") if cam_enabled else t("cam_dlg.disabled")))
-        toggle_btn.setFixedHeight(22)
-        toggle_color = C('accent_green') if cam_enabled else C('accent_red')
-        toggle_btn.setStyleSheet(f"""
+        # Pause/Resume tugmasi (JSON ga tegmaydi, faqat in-memory)
+        pause_color = C('accent_blue')
+        pause_btn = QPushButton(f"⏸ {t('cam.pause')}")
+        pause_btn.setFixedHeight(22)
+        pause_btn.setStyleSheet(f"""
             QPushButton {{
-                background: transparent; color: {toggle_color};
-                border: 1px solid {toggle_color}; border-radius: 4px;
+                background: transparent; color: {pause_color};
+                border: 1px solid {pause_color}; border-radius: 4px;
                 padding: 2px 8px; font-size: 10px;
             }}
-            QPushButton:hover {{ background: {toggle_color}20; }}
+            QPushButton:hover {{ background: {pause_color}20; }}
         """)
-        toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        toggle_btn.clicked.connect(
-            lambda _, cid=cam_id, en=cam_enabled: self._toggle_camera(cid, en))
-        hdr.addWidget(toggle_btn)
-        self.camera_toggle_btns[cam_id] = toggle_btn
+        pause_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        pause_btn.clicked.connect(lambda _, cid=cam_id: self._pause_resume_camera(cid))
+        hdr.addWidget(pause_btn)
+        self.camera_toggle_btns[cam_id] = pause_btn
 
         # Settings gear
         gear = QPushButton(t("crossing.camera_settings"))
@@ -890,6 +899,26 @@ class CrossingDetail(QWidget):
             cam_name = cam.get("name", f"Cam-{cam_id}")
             cam_type = cam.get("type", "additional")
             self.camera_types[cam_id] = cam_type
+            if cam_type == "main" and self._active_main_cam_id is None:
+                self._active_main_cam_id = cam_id
+
+            # Paused kamerani o'tkazib yuborish + tugmasini to'g'ri holatda ko'rsatish
+            if cam_id in self.camera_paused:
+                label = self.camera_labels.get(cam_id)
+                if label:
+                    self._set_placeholder(label, t("cam.paused"), 480, 270)
+                btn = self.camera_toggle_btns.get(cam_id)
+                clr = C('accent_orange')
+                if btn:
+                    btn.setText(f"▶ {t('cam.resume')}")
+                    btn.setStyleSheet(f"""QPushButton {{
+                        background: transparent; color: {clr};
+                        border: 1px solid {clr}; border-radius: 4px;
+                        padding: 2px 8px; font-size: 10px;
+                    }} QPushButton:hover {{ background: {clr}20; }}""")
+                if cam_type == "main":
+                    self._failover_main()
+                continue
 
             label = self.camera_labels.get(cam_id)
             if not label:
@@ -994,9 +1023,8 @@ class CrossingDetail(QWidget):
                     if _prev_poly_active:
                         setattr(self, f'_prev_poly_active_{cam_id}', False)
                         poly_lbl.setStyleSheet(f"color: {C('text_muted')}; font-size: 10px; background: transparent;")
-            # Asosiy kamera bo'lsa → statistika panelni yangilash (offset + tracker)
-            cam_type = self.camera_types.get(cam_id, "additional")
-            if cam_type == "main":
+            # Active main kamera bo'lsa → statistika panelni yangilash
+            if cam_id == self._active_main_cam_id:
                 display_light = self._light_offset + light_count
                 display_heavy = self._heavy_offset + heavy_count
                 self._update_statistics_panel(display_light, display_heavy)
@@ -1030,39 +1058,51 @@ class CrossingDetail(QWidget):
         except RuntimeError:
             self._destroyed = True
 
-    def _toggle_camera(self, camera_id, currently_enabled):
-        if not self.config_manager or not camera_id:
+    def _pause_resume_camera(self, camera_id):
+        """Kamerani vaqtinchalik to'xtatish/davom ettirish. JSON ga tegmaydi."""
+        if not camera_id:
             return
-        new_enabled = not currently_enabled
-        self.config_manager.update_camera(
-            self.crossing_id, camera_id, {"enabled": new_enabled})
-
-        # Update toggle button appearance (no full refresh)
         btn = self.camera_toggle_btns.get(camera_id)
-        if btn:
-            btn.setText("◉ " + (t("cam_dlg.enabled") if new_enabled else t("cam_dlg.disabled")))
-            clr = C('accent_green') if new_enabled else C('accent_red')
-            btn.setStyleSheet(f"""
-                QPushButton {{
-                    background: transparent; color: {clr};
-                    border: 1px solid {clr}; border-radius: 4px;
-                    padding: 2px 8px; font-size: 10px;
-                }}
-                QPushButton:hover {{ background: {clr}20; }}
-            """)
-            btn.clicked.disconnect()
-            btn.clicked.connect(
-                lambda _, cid=camera_id, en=new_enabled: self._toggle_camera(cid, en))
+        is_paused = camera_id in self.camera_paused
 
-        if new_enabled:
-            # Start the camera worker
+        if is_paused:
+            # --- RESUME ---
+            self.camera_paused.discard(camera_id)
+            self.config_manager.set_camera_paused(self.crossing_id, camera_id, False)
+            clr = C('accent_blue')
+            if btn:
+                btn.setText(f"⏸ {t('cam.pause')}")
+                btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background: transparent; color: {clr};
+                        border: 1px solid {clr}; border-radius: 4px;
+                        padding: 2px 8px; font-size: 10px;
+                    }}
+                    QPushButton:hover {{ background: {clr}20; }}
+                """)
+            # Agar asosiy kamera qayta yoqilsa — uni active main ga qaytarish
+            if self.camera_types.get(camera_id) == "main":
+                self._active_main_cam_id = camera_id
             self.crossing_data = self.config_manager.get_crossing(self.crossing_id)
             cameras = self.crossing_data.get("cameras", [])
             cam = next((c for c in cameras if c.get("id") == camera_id), None)
             if cam:
                 self._start_single_camera(cam)
         else:
-            # Stop and remove the worker, show disabled placeholder
+            # --- PAUSE ---
+            self.camera_paused.add(camera_id)
+            self.config_manager.set_camera_paused(self.crossing_id, camera_id, True)
+            clr = C('accent_orange')
+            if btn:
+                btn.setText(f"▶ {t('cam.resume')}")
+                btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background: transparent; color: {clr};
+                        border: 1px solid {clr}; border-radius: 4px;
+                        padding: 2px 8px; font-size: 10px;
+                    }}
+                    QPushButton:hover {{ background: {clr}20; }}
+                """)
             worker = self.camera_workers_dict.pop(camera_id, None)
             if worker:
                 try:
@@ -1072,10 +1112,24 @@ class CrossingDetail(QWidget):
                 worker.stop()
             label = self.camera_labels.get(camera_id)
             if label:
-                self._set_placeholder(label, t("cam_dlg.disabled"), 480, 270)
-            status = self.camera_status_labels.get(camera_id)
-            if status:
-                status.setStyleSheet(f"color: {C('status_error')}; font-size: 12px; background: transparent;")
+                self._set_placeholder(label, t("cam.paused"), 480, 270)
+
+            # Asosiy to'xtatilsa → birinchi aktiv qo'shimchaga failover
+            if self.camera_types.get(camera_id) == "main":
+                self._failover_main()
+
+    def _failover_main(self):
+        """Asosiy kamera to'xtatilganda, birinchi aktiv qo'shimchani active main qilib qo'yish."""
+        cameras = self.crossing_data.get("cameras", [])
+        for cam in cameras:
+            cid = cam.get("id")
+            if (cid not in self.camera_paused
+                    and cam.get("enabled", True)
+                    and cam.get("type", "additional") == "additional"):
+                self._active_main_cam_id = cid
+                return
+        # Hech qanday qo'shimcha yo'q — active main None
+        self._active_main_cam_id = None
 
     def _start_single_camera(self, cam: dict):
         """Bitta kamerani ishga tushirish (toggle yoki qayta ulanish uchun)"""
@@ -1319,6 +1373,7 @@ class CrossingDetail(QWidget):
         self.camera_workers.clear()
         self.camera_workers_dict.clear()
         self.camera_toggle_btns.clear()
+        self.camera_panels_dict.clear()
         self.camera_detection_labels.clear()
         self.camera_polytime_labels.clear()
         self.camera_types.clear()
@@ -1367,6 +1422,8 @@ class CrossingDetail(QWidget):
         self.camera_workers = []
         self.camera_workers_dict.clear()
         self.camera_toggle_btns.clear()
+        self.camera_panels_dict.clear()
+        self.camera_paused.clear()
 
         # Remove all child widgets
         old_layout = self.layout()

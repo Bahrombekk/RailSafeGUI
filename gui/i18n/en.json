@@ -23,6 +23,9 @@
   "cam.detection": "Light: {light} | Heavy: {heavy} | Total: {total} | FPS: {fps:.1f}",
   "cam.polygon.empty": "Zone: empty",
   "cam.polygon.time": "Zone: {time:.1f}s",
+  "cam.pause": "Pause",
+  "cam.resume": "Resume",
+  "cam.paused": "Paused",
 
   "stats.panel": "Statistics",
   "stats.cameras": "Cameras",

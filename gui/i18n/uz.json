@@ -23,6 +23,9 @@
   "cam.detection": "Yengil: {light} | Og'ir: {heavy} | Jami: {total} | FPS: {fps:.1f}",
   "cam.polygon.empty": "Polygon: bo'sh",
   "cam.polygon.time": "Polygon: {time:.1f}s",
+  "cam.pause": "To'xtatish",
+  "cam.resume": "Davom ettirish",
+  "cam.paused": "To'xtatilgan",
 
   "stats.panel": "Statistika",
   "stats.cameras": "Kameralar",
