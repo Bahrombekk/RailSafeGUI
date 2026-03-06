@@ -128,6 +128,7 @@ def _load_polygon(polygon_file: str, frame_w: int, frame_h: int):
 class CameraWorker(QThread):
     """Worker thread - all heavy work here, GUI thread only does setPixmap"""
     frame_ready = pyqtSignal()  # Lightweight - payload yo'q (queue backup bo'lmaydi)
+    frame_with_data = pyqtSignal(QImage)  # Shared consumers uchun (detail view)
     status_changed = pyqtSignal(str)
     stats_updated = pyqtSignal(int, int, int, float)  # light_count, heavy_count, in_poly_count, max_poly_time
 
@@ -292,6 +293,7 @@ class CameraWorker(QThread):
 
                     self._latest_qimg = qimg
                     self.frame_ready.emit()
+                    self.frame_with_data.emit(qimg)
 
                 if _grab_error[0]:
                     self.status_changed.emit("error")
@@ -539,6 +541,7 @@ class CrossingCard(QWidget):
         self.stats_db = stats_db
         self.is_custom_model = is_custom_model
         self.camera_workers = []
+        self.camera_workers_by_id = {}  # cam_id -> worker (detail view uchun)
         self.main_camera_label = None
         self.additional_camera_label = None
         self._is_destroyed = False
@@ -593,8 +596,13 @@ class CrossingCard(QWidget):
             except Exception:
                 pass
         self.camera_workers.clear()
+        self.camera_workers_by_id.clear()
         self._main_camera_down = False
         QTimer.singleShot(300, self._start_cameras)
+
+    def get_shared_workers(self) -> dict:
+        """Detail view uchun: cam_id → worker lug'atini qaytaradi (workerlar to'xtatilmaydi)."""
+        return dict(self.camera_workers_by_id)
 
     def _check_midnight(self):
         """Yarim tunda hisoblagichlarni nolga qaytarish"""
@@ -1227,6 +1235,7 @@ class CrossingCard(QWidget):
 
                 worker.start()
                 self.camera_workers.append(worker)
+                self.camera_workers_by_id[camera.get("id")] = worker
         except (RuntimeError, Exception) as e:
             print(f"[StartCameras] Error: {e}")
 

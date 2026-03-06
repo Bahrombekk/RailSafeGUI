@@ -1,0 +1,111 @@
+2026-03-04 10:42:21 [ERROR] Thread 'Thread-13 (_grab_loop)' exception:
+Traceback (most recent call last):
+  File "C:\Users\User\AppData\Local\Programs\Python\Python310\lib\threading.py", line 1016, in _bootstrap_inner
+    self.run()
+  File "C:\Users\User\AppData\Local\Programs\Python\Python310\lib\threading.py", line 953, in run
+    self._target(*self._args, **self._kwargs)
+  File "C:\Users\User\Desktop\RailSafeGUI\gui\widgets\crossing_card.py", line 185, in _grab_loop
+    ret = cap.grab()
+cv2.error: Unknown C++ exception from OpenCV code
+
+2026-03-04 11:02:28 [ERROR] Thread 'Thread-19 (_grab_loop)' exception:
+Traceback (most recent call last):
+  File "C:\Users\User\AppData\Local\Programs\Python\Python310\lib\threading.py", line 1016, in _bootstrap_inner
+    self.run()
+  File "C:\Users\User\AppData\Local\Programs\Python\Python310\lib\threading.py", line 953, in run
+    self._target(*self._args, **self._kwargs)
+  File "C:\Users\User\Desktop\RailSafeGUI\gui\widgets\crossing_card.py", line 185, in _grab_loop
+    ret = cap.grab()
+cv2.error: Unknown C++ exception from OpenCV code
+
+2026-03-04 11:54:57 [ERROR] Thread 'Thread-42 (_grab_loop)' exception:
+Traceback (most recent call last):
+  File "C:\Users\User\AppData\Local\Programs\Python\Python310\lib\threading.py", line 1016, in _bootstrap_inner
+    self.run()
+  File "C:\Users\User\AppData\Local\Programs\Python\Python310\lib\threading.py", line 953, in run
+    self._target(*self._args, **self._kwargs)
+  File "C:\Users\User\Desktop\RailSafeGUI\gui\widgets\crossing_card.py", line 185, in _grab_loop
+    ret = cap.grab()
+cv2.error: Unknown C++ exception from OpenCV code
+
+2026-03-06 12:56:46 [ERROR] Unhandled exception:
+TypeError: CrossingDetail._start_all_cameras.<locals>.<lambda>() missing 1 required positional argument: 'fps'
+
+2026-03-06 13:00:24 [ERROR] Unhandled exception:
+TypeError: CrossingDetail._start_all_cameras.<locals>.<lambda>() missing 1 required positional argument: 'fps'
+
+2026-03-06 13:00:25 [ERROR] Unhandled exception:
+TypeError: CrossingDetail._start_all_cameras.<locals>.<lambda>() missing 1 required positional argument: 'fps'
+
+2026-03-06 13:00:37 [ERROR] Unhandled exception:
+TypeError: CrossingDetail._start_all_cameras.<locals>.<lambda>() missing 1 required positional argument: 'fps'
+
+2026-03-06 13:00:37 [ERROR] Unhandled exception:
+TypeError: CrossingDetail._start_all_cameras.<locals>.<lambda>() missing 1 required positional argument: 'fps'
+
+2026-03-06 13:00:39 [ERROR] Unhandled exception:
+TypeError: CrossingDetail._start_all_cameras.<locals>.<lambda>() missing 1 required positional argument: 'fps'
+
+2026-03-06 13:00:39 [ERROR] Unhandled exception:
+TypeError: CrossingDetail._start_all_cameras.<locals>.<lambda>() missing 1 required positional argument: 'fps'
+
+2026-03-06 13:00:39 [ERROR] Unhandled exception:
+TypeError: CrossingDetail._start_all_cameras.<locals>.<lambda>() missing 1 required positional argument: 'fps'
+
+2026-03-06 13:00:40 [ERROR] Unhandled exception:
+TypeError: CrossingDetail._start_all_cameras.<locals>.<lambda>() missing 1 required positional argument: 'fps'
+
+2026-03-06 13:00:40 [ERROR] Unhandled exception:
+TypeError: CrossingDetail._start_all_cameras.<locals>.<lambda>() missing 1 required positional argument: 'fps'
+
+2026-03-06 13:00:40 [ERROR] Unhandled exception:
+TypeError: CrossingDetail._start_all_cameras.<locals>.<lambda>() missing 1 required positional argument: 'fps'
+
+2026-03-06 13:00:40 [ERROR] Unhandled exception:
+TypeError: CrossingDetail._start_all_cameras.<locals>.<lambda>() missing 1 required positional argument: 'fps'
+
+2026-03-06 13:00:41 [ERROR] Unhandled exception:
+TypeError: CrossingDetail._start_all_cameras.<locals>.<lambda>() missing 1 required positional argument: 'fps'
+
+2026-03-06 13:00:41 [ERROR] Unhandled exception:
+TypeError: CrossingDetail._start_all_cameras.<locals>.<lambda>() missing 1 required positional argument: 'fps'
+
+2026-03-06 13:00:41 [ERROR] Unhandled exception:
+TypeError: CrossingDetail._start_all_cameras.<locals>.<lambda>() missing 1 required positional argument: 'fps'
+
+2026-03-06 13:00:41 [ERROR] Unhandled exception:
+TypeError: CrossingDetail._start_all_cameras.<locals>.<lambda>() missing 1 required positional argument: 'fps'
+
+2026-03-06 13:00:41 [ERROR] Unhandled exception:
+TypeError: CrossingDetail._start_all_cameras.<locals>.<lambda>() missing 1 required positional argument: 'fps'
+
+2026-03-06 13:00:42 [ERROR] Unhandled exception:
+TypeError: CrossingDetail._start_all_cameras.<locals>.<lambda>() missing 1 required positional argument: 'fps'
+
+2026-03-06 13:00:42 [ERROR] Unhandled exception:
+TypeError: CrossingDetail._start_all_cameras.<locals>.<lambda>() missing 1 required positional argument: 'fps'
+
+2026-03-06 13:00:42 [ERROR] Unhandled exception:
+TypeError: CrossingDetail._start_all_cameras.<locals>.<lambda>() missing 1 required positional argument: 'fps'
+
+2026-03-06 13:00:42 [ERROR] Unhandled exception:
+TypeError: CrossingDetail._start_all_cameras.<locals>.<lambda>() missing 1 required positional argument: 'fps'
+
+2026-03-06 13:00:43 [ERROR] Unhandled exception:
+TypeError: CrossingDetail._start_all_cameras.<locals>.<lambda>() missing 1 required positional argument: 'fps'
+
+2026-03-06 13:00:43 [ERROR] Unhandled exception:
+TypeError: CrossingDetail._start_all_cameras.<locals>.<lambda>() missing 1 required positional argument: 'fps'
+
+2026-03-06 13:00:43 [ERROR] Unhandled exception:
+TypeError: CrossingDetail._start_all_cameras.<locals>.<lambda>() missing 1 required positional argument: 'fps'
+
+2026-03-06 13:00:43 [ERROR] Unhandled exception:
+TypeError: CrossingDetail._start_all_cameras.<locals>.<lambda>() missing 1 required positional argument: 'fps'
+
+2026-03-06 13:00:43 [ERROR] Unhandled exception:
+TypeError: CrossingDetail._start_all_cameras.<locals>.<lambda>() missing 1 required positional argument: 'fps'
+
+2026-03-06 13:00:48 [ERROR] Unhandled exception:
+TypeError: CrossingDetail._start_all_cameras.<locals>.<lambda>() missing 1 required positional argument: 'fps'
+

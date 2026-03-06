@@ -73,7 +73,7 @@
     }
   ],
   "settings": {
-    "theme": "military",
+    "theme": "dark",
     "language": "uz",
     "auto_save": true,
     "warning_threshold": 30.0,
@@ -82,5 +82,5 @@
     "model_type": "custom",
     "custom_model_path": "runs/pereezd_v12/weights/best.pt"
   },
-  "last_updated": "2026-03-04T10:23:21.870831"
+  "last_updated": "2026-03-06T15:48:03.213866"
 }

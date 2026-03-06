@@ -469,11 +469,15 @@ class CrossingDetail(QWidget):
     delete_crossing_clicked = pyqtSignal(int)
 
     def __init__(self, config_manager, crossing_id: int, car_detector=None,
-                 stats_db=None, is_custom_model=False, parent=None):
+                 stats_db=None, is_custom_model=False, shared_workers: dict = None,
+                 parent=None):
         super().__init__(parent)
         self.config_manager = config_manager
         self.crossing_id = crossing_id
         self.crossing_data = config_manager.get_crossing(crossing_id)
+        # shared_workers: card dan kelgan cam_id->worker (yangi ulanish ochilmaydi)
+        self._shared_workers = shared_workers or {}
+        self._shared_signal_ids = {}  # cam_id -> signal connection id (disconnect uchun)
         self.camera_workers = []
         self.camera_workers_dict = {}   # cam_id -> worker
         self.camera_toggle_btns = {}    # cam_id -> pause/resume QPushButton
@@ -924,6 +928,23 @@ class CrossingDetail(QWidget):
             if not label:
                 continue
 
+            # --- Shared worker: card dan kelgan worker bo'lsa qayta ulanish ochmaymiz ---
+            if cam_id in self._shared_workers:
+                worker = self._shared_workers[cam_id]
+                # frame_with_data QImage ni to'g'ridan-to'g'ri yuboradi — take_frame() konflikti yo'q
+                fn_frame = lambda qimg, lbl=label: self._on_shared_frame(lbl, qimg)
+                # Card worker 4 arg yuboradi (fps yo'q) → fps=0.0 bilan chaqiramiz
+                fn_stats = lambda light, heavy, in_poly, max_t, cid=cam_id, cname=cam_name: \
+                    self._on_stats_update(cid, cname, light, heavy, in_poly, max_t, 0.0)
+                worker.frame_with_data.connect(fn_frame)
+                worker.stats_updated.connect(fn_stats)
+                self._shared_signal_ids[cam_id] = (worker, fn_frame, fn_stats)
+                self.camera_workers_dict[cam_id] = worker
+                self._on_camera_status(cam_id, "online")
+                print(f"[Detail] Shared worker: {cam_name} (yangi ulanish yo'q)")
+                continue
+
+            # --- Yangi worker (card da yo'q yoki restart kerak) ---
             # Polygon file yo'lini aniqlash
             poly_file = cam.get("polygon_file", "")
             if poly_file and not os.path.isabs(poly_file):
@@ -935,10 +956,8 @@ class CrossingDetail(QWidget):
             warn_t = settings.get("warning_threshold", 10.0)
             viol_t = settings.get("violation_threshold", 15.0)
 
-            # Create worker with car detector + polygon
             worker = DetailCameraWorker(
-                src,
-                cam_name,
+                src, cam_name,
                 car_detector=self.car_detector,
                 detection_enabled=cam.get("detection_enabled", True),
                 polygon_file=poly_file if poly_file and os.path.isfile(poly_file) else None,
@@ -965,6 +984,14 @@ class CrossingDetail(QWidget):
             qimg = worker.take_frame()
             if qimg is None:
                 return
+            try:
+                self._show_frame(label, qimg)
+            except RuntimeError:
+                self._destroyed = True
+
+    def _on_shared_frame(self, label, qimg):
+        """Shared worker (card) frame_with_data signali — QImage to'g'ridan keladi."""
+        if not self._destroyed:
             try:
                 self._show_frame(label, qimg)
             except RuntimeError:
@@ -1351,7 +1378,19 @@ class CrossingDetail(QWidget):
                 self._chart_timer.stop()
         except RuntimeError:
             pass
-        # Avval signallarni uzib, keyin to'xtatish (crash prevention)
+        # Shared workerlardan signallarni uzish (worker to'xtatilmaydi — card ishlatmoqda)
+        for cam_id, (worker, fn_frame, fn_stats) in self._shared_signal_ids.items():
+            try:
+                worker.frame_with_data.disconnect(fn_frame)
+            except (TypeError, RuntimeError):
+                pass
+            try:
+                worker.stats_updated.disconnect(fn_stats)
+            except (TypeError, RuntimeError):
+                pass
+        self._shared_signal_ids.clear()
+
+        # O'z workerlarini to'xtatish (shared emaslar)
         for w in self.camera_workers:
             try:
                 w.frame_ready.disconnect()

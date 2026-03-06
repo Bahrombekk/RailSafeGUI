@@ -241,11 +241,19 @@ class MainWindow(QMainWindow):
         self._cleanup_detail_views()
 
         try:
+            # Card dagi mavjud workerlarni topib detail ga uzatamiz
+            shared_workers = {}
+            for card in self.dashboard.crossing_cards:
+                if card.crossing_id == crossing_id:
+                    shared_workers = card.get_shared_workers()
+                    break
+
             detail = CrossingDetail(
                 self.config_manager, crossing_id,
                 car_detector=self.dashboard.car_detector,
                 stats_db=self.dashboard.stats_db,
                 is_custom_model=self.dashboard.is_custom_model,
+                shared_workers=shared_workers,
             )
             detail.back_clicked.connect(self._show_dashboard)
             detail.add_camera_clicked.connect(self._add_camera)
