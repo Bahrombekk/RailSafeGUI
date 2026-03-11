@@ -1,15 +1,14 @@
 {
   "crossings": [
     {
-      "id": 1,
       "name": "Pereezd 8",
       "location": "ssds",
       "description": "sss",
       "plc": {
-        "enabled": false,
-        "ip": "",
+        "enabled": true,
+        "ip": "192.168.170.159",
         "port": 102,
-        "type": "Siemens S7-1200"
+        "type": "Boshqa"
       },
       "cameras": [
         {
@@ -32,9 +31,8 @@
           "status": "offline"
         }
       ],
-      "created_at": "2026-02-09T17:46:49.554067",
-      "status": "offline",
-      "updated_at": "2026-03-04T09:56:00.765566"
+      "id": 1,
+      "updated_at": "2026-03-11T13:32:48.910913"
     },
     {
       "id": 2,
@@ -82,5 +80,5 @@
     "model_type": "custom",
     "custom_model_path": "runs/pereezd_v12/weights/best.pt"
   },
-  "last_updated": "2026-03-06T15:48:03.213866"
+  "last_updated": "2026-03-11T17:08:47.595260"
 }

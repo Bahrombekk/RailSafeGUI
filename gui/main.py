@@ -8,7 +8,11 @@ import os
 import logging
 import threading
 import traceback
+import faulthandler
 from pathlib import Path
+
+# C-darajadagi crash (segfault) ni stderr ga yozish
+faulthandler.enable()
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -54,15 +58,7 @@ def _global_exception_handler(exc_type, exc_value, exc_tb):
     msg = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
     _logger.error(f"Unhandled exception:\n{msg}")
     print(f"[CRITICAL] Unhandled exception:\n{msg}", file=sys.stderr)
-    # Ilovani crash qildirmaslik — xabar ko'rsatish
-    try:
-        app = QApplication.instance()
-        if app:
-            QMessageBox.critical(None, "Kutilmagan xatolik",
-                f"Dasturda xatolik yuz berdi:\n\n{exc_type.__name__}: {exc_value}\n\n"
-                "Dastur ishlashda davom etadi. Loglarni tekshiring.")
-    except Exception:
-        pass  # QMessageBox ochilmasa ham dastur davom etsin
+    sys.stderr.flush()
 
 
 def _thread_exception_handler(args):

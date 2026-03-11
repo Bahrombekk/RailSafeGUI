@@ -6,6 +6,7 @@ Manages crossings, cameras, and PLC configurations
 import json
 import yaml
 import os
+import tempfile
 from pathlib import Path
 from typing import Dict, List, Optional
 from datetime import datetime
@@ -24,31 +25,46 @@ class ConfigManager:
     def __init__(self, config_file: str = None):
         self.config_file = Path(config_file) if config_file else _GUI_CONFIG
         self.config = self._load_config()
+        self._camera_state_cache = None  # Disk o'qishni kamaytirish uchun xotira keshi
 
     def _load_config(self) -> Dict:
         """Load configuration from file"""
         if self.config_file.exists():
-            with open(self.config_file, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        else:
-            # Default configuration
-            return {
-                "crossings": [],
-                "settings": {
-                    "theme": "dark",
-                    "language": "uz",
-                    "auto_save": True,
-                    "warning_threshold": 10.0,
-                    "violation_threshold": 15.0
-                },
-                "last_updated": datetime.now().isoformat()
-            }
+            try:
+                with open(self.config_file, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            except Exception as e:
+                print(f"[ConfigManager] Config o'qishda xato: {e}, default ishlatiladi")
+        return {
+            "crossings": [],
+            "settings": {
+                "theme": "dark",
+                "language": "uz",
+                "auto_save": True,
+                "warning_threshold": 10.0,
+                "violation_threshold": 15.0
+            },
+            "last_updated": datetime.now().isoformat()
+        }
 
     def save_config(self):
-        """Save configuration to file"""
+        """Atomic write: avval temp faylga yoziladi, keyin rename — buzilish xavfsiz."""
         self.config["last_updated"] = datetime.now().isoformat()
-        with open(self.config_file, 'w', encoding='utf-8') as f:
-            json.dump(self.config, f, indent=2, ensure_ascii=False)
+        tmp_path = None
+        try:
+            self.config_file.parent.mkdir(parents=True, exist_ok=True)
+            fd, tmp_path = tempfile.mkstemp(
+                dir=self.config_file.parent, suffix=".tmp", prefix=".cfg_")
+            with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                json.dump(self.config, f, indent=2, ensure_ascii=False)
+            os.replace(tmp_path, self.config_file)
+        except Exception as e:
+            print(f"[ConfigManager] Saqlashda xato: {e}")
+            if tmp_path:
+                try:
+                    os.unlink(tmp_path)
+                except Exception:
+                    pass
 
     def get_crossings(self) -> List[Dict]:
         """Get all crossings"""
@@ -175,18 +191,34 @@ class ConfigManager:
     # --- Kamera holati (paused/resumed) — config/camera_state.json ---
 
     def _load_camera_state(self) -> Dict:
+        if self._camera_state_cache is not None:
+            return self._camera_state_cache
         try:
             if _CAMERA_STATE.exists():
                 with open(_CAMERA_STATE, 'r', encoding='utf-8') as f:
-                    return json.load(f)
+                    self._camera_state_cache = json.load(f)
+                    return self._camera_state_cache
         except Exception:
             pass
-        return {"paused": {}}
+        self._camera_state_cache = {"paused": {}}
+        return self._camera_state_cache
 
     def _save_camera_state(self, state: Dict):
+        self._camera_state_cache = state
         _CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-        with open(_CAMERA_STATE, 'w', encoding='utf-8') as f:
-            json.dump(state, f, indent=2)
+        tmp_path = None
+        try:
+            fd, tmp_path = tempfile.mkstemp(dir=_CONFIG_DIR, suffix=".tmp")
+            with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                json.dump(state, f, indent=2)
+            os.replace(tmp_path, _CAMERA_STATE)
+        except Exception as e:
+            print(f"[ConfigManager] Camera state saqlashda xato: {e}")
+            if tmp_path:
+                try:
+                    os.unlink(tmp_path)
+                except Exception:
+                    pass
 
     def get_paused_cameras(self, crossing_id: int) -> set:
         """Berilgan pereezd uchun to'xtatilgan kamera ID larini qaytaradi."""

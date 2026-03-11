@@ -1,0 +1,10 @@
+Collecting av
+  Downloading av-16.1.0-cp310-cp310-win_amd64.whl (31.8 MB)
+     -------------------------------------- 31.8/31.8 MB 418.8 kB/s eta 0:00:00
+Installing collected packages: av
+  WARNING: The script pyav.exe is installed in 'C:\Users\User\AppData\Local\Programs\Python\Python310\Scripts' which is not on PATH.
+  Consider adding this directory to PATH or, if you prefer to suppress this warning, use --no-warn-script-location.
+Successfully installed av-16.1.0
+
+[notice] A new release of pip is available: 23.0.1 -> 26.0.1
+[notice] To update, run: C:\Users\User\AppData\Local\Programs\Python\Python310\python.exe -m pip install --upgrade pip

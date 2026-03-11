@@ -1,13 +1,11 @@
 {
   "app.title": "RailSafe",
-
   "nav.dashboard": "Dashboard",
   "nav.analytics": "Analytics",
   "nav.settings": "Settings",
   "nav.about": "About",
   "nav.add_crossing": "+ Add Crossing",
   "nav.refresh": "Refresh",
-
   "crossing.back": "< Back",
   "crossing.add_camera": "+ Camera",
   "crossing.settings_btn": "Settings",
@@ -16,7 +14,6 @@
   "crossing.type.additional": "Additional",
   "crossing.no_cameras": "No cameras. Click '+ Camera' button.",
   "crossing.camera_settings": "Settings",
-
   "cam.status.connecting": "Connecting...",
   "cam.status.reconnecting": "Reconnecting...",
   "cam.status.failed": "Connection failed",
@@ -26,7 +23,6 @@
   "cam.pause": "Pause",
   "cam.resume": "Resume",
   "cam.paused": "Paused",
-
   "stats.panel": "Statistics",
   "stats.cameras": "Cameras",
   "stats.light": "Light vehicles",
@@ -40,19 +36,18 @@
   "stats.avg": "Avg: {v:.0f}s",
   "stats.trains_today": "Today: {count}",
   "stats.no_cameras": "No cameras",
-
   "plc.title": "PLC Status",
   "plc.status_label": "Status",
   "plc.connected": "CONNECTED",
+  "plc.active": "TRAIN COMING",
+  "plc.no_connection": "NO CONNECTION",
   "plc.disabled": "DISABLED",
   "plc.ip": "IP",
   "plc.port": "Port",
-
   "analytics.title": "Analytics",
   "analytics.updated": "Updated: {dt}",
   "analytics.report_btn": "Download Report",
   "analytics.no_crossings": "No crossings. Go back to Dashboard and add a crossing.",
-
   "chart.today_dist": "Today's distribution",
   "chart.weekly": "Weekly statistics (7 days)",
   "chart.yearly": "Yearly trend (12 months)",
@@ -66,14 +61,12 @@
   "chart.cameras_section": "Cameras",
   "chart.weekly_section": "Weekly (7 days)",
   "chart.heatmap_section": "Occupancy heatmap (7 days × 24 hours)",
-
   "legend.light": "Light",
   "legend.heavy": "Heavy",
   "legend.low": "Low",
   "legend.medium": "Medium",
   "legend.high": "High",
   "legend.trains": "Train count",
-
   "summary.total_transport": "Total vehicles",
   "summary.today": "today",
   "summary.light": "Light",
@@ -83,9 +76,7 @@
   "summary.cameras": "Cameras",
   "summary.active": "active",
   "summary.connected": "connected",
-
   "statusbar": "Crossings: {total} | Cameras: {cams}",
-
   "dlg.add_crossing.title_add": "Add New Crossing",
   "dlg.add_crossing.title_edit": "Edit Crossing",
   "dlg.add_crossing.tab_main": "Basic Information",
@@ -109,7 +100,6 @@
   "dlg.add_crossing.placeholder_name": "e.g.: Crossing 1",
   "dlg.add_crossing.placeholder_loc": "e.g.: Main St, Downtown",
   "dlg.add_crossing.placeholder_desc": "Additional information",
-
   "dlg.add_camera.title_add": "Add New Camera",
   "dlg.add_camera.title_edit": "Edit Camera",
   "dlg.add_camera.name": "Name:*",
@@ -131,7 +121,6 @@
   "dlg.add_camera.type_main_info": "This camera will be displayed as the main (large) camera",
   "dlg.add_camera.type_additional_info": "This camera will be displayed as additional (small)",
   "dlg.add_camera.type_main_warn": "Note: Previous main camera will become additional",
-
   "settings.title": "Settings",
   "settings.interface": "Interface",
   "settings.language": "Language:",
@@ -154,7 +143,6 @@
   "settings.model.default_sub": "80 classes, imgsz=640",
   "settings.model.custom": "Custom model (pereezd_yolo26n.pt)",
   "settings.model.custom_sub": "2 classes (light/heavy), imgsz=1088",
-
   "export.title": "TensorRT Engine Export",
   "export.waiting": "waiting...",
   "export.running": "exporting...",
@@ -162,7 +150,6 @@
   "export.error": "error",
   "export.preparing": "Preparing...",
   "export.time": "Time: {mins:02d}:{secs:02d}",
-
   "confirm.delete_crossing": "Do you want to delete this crossing?",
   "confirm.exit": "Do you want to exit the application?",
   "confirm.title": "Confirm",
@@ -170,9 +157,7 @@
   "error.page_open": "Error opening page",
   "error.crossing_open": "Error opening crossing: {e}",
   "error.report": "Error generating report.",
-
   "dashboard.empty": "No crossings. Click '+ Add Crossing' in the toolbar.",
-
   "report.title": "Download Report",
   "report.hint": "Select a date range and download a Word format report.",
   "report.today": "Today",
@@ -186,7 +171,6 @@
   "report.err_date": "Start date cannot be after end date.",
   "report.success": "Report saved:\n{path}",
   "report.save_dialog": "Save Report",
-
   "about.title": "About",
   "about.nav.general": "General",
   "about.nav.architecture": "Architecture",
@@ -196,11 +180,9 @@
   "about.nav.forecast": "Forecast",
   "about.nav.version": "Version",
   "about.version_badge": "Version 1.0.5 • 2025  OEM Design",
-
   "cam.loading": "Loading...",
   "cam.bandlik": "Occupancy: {count}",
   "cam.status.main_down": "Main camera disconnected",
-
   "cam_dlg.title": "Camera Settings - {name}",
   "cam_dlg.subtitle": "- Cameras",
   "cam_dlg.no_cameras": "No cameras found",
@@ -213,27 +195,22 @@
   "cam_dlg.toggle_msg_off": "Camera disabled. Reload the page to apply changes.",
   "cam_dlg.toggle_msg_on": "Camera enabled. Reload the page to apply changes.",
   "cam_dlg.toggle_title": "Done",
-
   "confirm.delete_camera": "Delete camera '{name}'?",
-
   "dlg.add_crossing.import_err": "JSON read error: {e}",
-
   "export.json_title": "JSON Export",
   "export.json_success": "Data saved:\n{path}",
   "export.json_error": "Export error: {e}",
-
   "chart.total": "Total",
-
   "menu.open": "Open",
   "menu.cam_settings": "Camera Settings",
   "menu.info": "Crossing Info",
   "menu.export_json": "JSON Export",
-
   "about.section.general": "General purpose",
   "about.section.architecture": "System architecture",
   "about.section.howworks": "How it works",
   "about.section.security": "Security level",
   "about.section.analytics": "Analytics",
   "about.section.forecast": "Forecast",
-  "about.section.version": "Version and author"
+  "about.section.version": "Version and author",
+  "chart.trains_hourly": "Hourly trains (today)"
 }

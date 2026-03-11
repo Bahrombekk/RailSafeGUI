@@ -143,6 +143,90 @@ class HourlyBarChart(QWidget):
         painter.end()
 
 
+class TrainHourlyBarChart(QWidget):
+    """24 soatlik poyezd soni bar chart (teal rangli, bitta ustun)."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._data: List[int] = [0] * 24   # har soat uchun poyezd soni
+        self._current_hour = datetime.now().hour
+        self.setMinimumHeight(120)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+
+    def set_data(self, data: List[int]):
+        """Ma'lumotni yangilash: 24 elementli list [count_hour0, ..., count_hour23]"""
+        self._data = data if len(data) == 24 else [0] * 24
+        self._current_hour = datetime.now().hour
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        w = self.width()
+        h = self.height()
+        left_m, right_m, top_m, bottom_m = 30, 10, 10, 25
+        chart_w = w - left_m - right_m
+        chart_h = h - top_m - bottom_m
+
+        if chart_w <= 0 or chart_h <= 0:
+            painter.end()
+            return
+
+        max_val = max(self._data) if self._data else 0
+        if max_val == 0:
+            max_val = 1
+
+        bar_w = chart_w / 24
+        gap = max(1, bar_w * 0.15)
+
+        teal_color = QColor(C('accent_teal'))
+        current_hl = QColor(C('accent_teal'))
+        current_hl.setAlpha(30)
+        bg_color = QColor(C('bg_panel_dark'))
+        grid_color = QColor(C('bg_input'))
+        text_color = QColor(C('text_muted'))
+
+        painter.fillRect(QRectF(left_m, top_m, chart_w, chart_h), QBrush(bg_color))
+
+        painter.setPen(QPen(grid_color, 1))
+        font = QFont()
+        font.setPixelSize(8)
+        painter.setFont(font)
+        for i in range(1, 4):
+            y = top_m + chart_h - (chart_h * i / 3)
+            painter.drawLine(int(left_m), int(y), int(left_m + chart_w), int(y))
+            val = int(max_val * i / 3)
+            painter.setPen(QPen(text_color, 1))
+            painter.drawText(QRectF(0, y - 6, left_m - 4, 12),
+                             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+                             str(val))
+            painter.setPen(QPen(grid_color, 1))
+
+        for i, count in enumerate(self._data):
+            x = left_m + i * bar_w
+            if i == self._current_hour:
+                painter.fillRect(QRectF(x, top_m, bar_w, chart_h), QBrush(current_hl))
+            if count > 0:
+                bar_h = (count / max_val) * chart_h
+                bar_x = x + gap / 2
+                actual_w = bar_w - gap
+                y0 = top_m + chart_h - bar_h
+                painter.fillRect(QRectF(bar_x, y0, actual_w, bar_h), QBrush(teal_color))
+            if i % 3 == 0:
+                painter.setPen(QPen(text_color, 1))
+                painter.drawText(
+                    QRectF(x, top_m + chart_h + 2, bar_w, bottom_m - 2),
+                    Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop,
+                    f"{i:02d}"
+                )
+
+        painter.setPen(QPen(grid_color, 1))
+        painter.drawLine(int(left_m), int(top_m + chart_h),
+                         int(left_m + chart_w), int(top_m + chart_h))
+        painter.end()
+
+
 class HourlyChartPanel(QWidget):
     """So'nggi Hodisalar paneli - title + legend + chart"""
 

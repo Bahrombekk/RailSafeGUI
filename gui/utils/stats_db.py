@@ -31,6 +31,8 @@ class StatsDB:
         self._lock = threading.Lock()
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._conn.execute("PRAGMA journal_mode=WAL")
+        self._conn.execute("PRAGMA synchronous=NORMAL")
+        self._conn.execute("PRAGMA cache_size=-4096")  # 4MB kesh
         self._create_tables()
         # Delta tracking: tracker har safar 0 dan boshlaydi,
         # shuning uchun oxirgi yuborilgan qiymatni saqlaymiz
@@ -163,23 +165,24 @@ class StatsDB:
         Returns: [{"date": "2026-02-11", "day": "Du", "light": 10, "heavy": 3}, ...]"""
         days_uz = ["Du", "Se", "Cho", "Pa", "Ju", "Sha", "Ya"]
         today = date.today()
-        data = []
+        date_from = (today - timedelta(days=6)).isoformat()
         with self._lock:
-            for i in range(6, -1, -1):
-                d = today - timedelta(days=i)
-                ds = d.isoformat()
-                row = self._conn.execute("""
-                    SELECT COALESCE(SUM(light_count), 0),
-                           COALESCE(SUM(heavy_count), 0)
-                    FROM hourly_stats
-                    WHERE crossing_id = ? AND date(hour_start) = ?
-                """, (crossing_id, ds)).fetchone()
-                data.append({
-                    "date": ds,
-                    "day": days_uz[d.weekday()],
-                    "light": row[0] if row else 0,
-                    "heavy": row[1] if row else 0,
-                })
+            rows = self._conn.execute("""
+                SELECT date(hour_start) as d,
+                       COALESCE(SUM(light_count), 0),
+                       COALESCE(SUM(heavy_count), 0)
+                FROM hourly_stats
+                WHERE crossing_id = ?
+                  AND date(hour_start) >= ? AND date(hour_start) <= ?
+                GROUP BY d
+            """, (crossing_id, date_from, today.isoformat())).fetchall()
+        db_map = {r[0]: (r[1], r[2]) for r in rows}
+        data = []
+        for i in range(6, -1, -1):
+            d = today - timedelta(days=i)
+            ds = d.isoformat()
+            light, heavy = db_map.get(ds, (0, 0))
+            data.append({"date": ds, "day": days_uz[d.weekday()], "light": light, "heavy": heavy})
         data.sort(key=lambda x: days_uz.index(x["day"]))
         return data
 
@@ -187,23 +190,24 @@ class StatsDB:
         """Oxirgi 30 kun (kunlik jami).
         Returns: [{"date": "2026-01-13", "light": 10, "heavy": 3}, ...]"""
         today = date.today()
-        data = []
+        date_from = (today - timedelta(days=29)).isoformat()
         with self._lock:
-            for i in range(29, -1, -1):
-                d = today - timedelta(days=i)
-                ds = d.isoformat()
-                row = self._conn.execute("""
-                    SELECT COALESCE(SUM(light_count), 0),
-                           COALESCE(SUM(heavy_count), 0)
-                    FROM hourly_stats
-                    WHERE crossing_id = ? AND date(hour_start) = ?
-                """, (crossing_id, ds)).fetchone()
-                data.append({
-                    "date": ds,
-                    "day": d.day,
-                    "light": row[0] if row else 0,
-                    "heavy": row[1] if row else 0,
-                })
+            rows = self._conn.execute("""
+                SELECT date(hour_start) as d,
+                       COALESCE(SUM(light_count), 0),
+                       COALESCE(SUM(heavy_count), 0)
+                FROM hourly_stats
+                WHERE crossing_id = ?
+                  AND date(hour_start) >= ? AND date(hour_start) <= ?
+                GROUP BY d
+            """, (crossing_id, date_from, today.isoformat())).fetchall()
+        db_map = {r[0]: (r[1], r[2]) for r in rows}
+        data = []
+        for i in range(29, -1, -1):
+            d = today - timedelta(days=i)
+            ds = d.isoformat()
+            light, heavy = db_map.get(ds, (0, 0))
+            data.append({"date": ds, "day": d.day, "light": light, "heavy": heavy})
         return data
 
     def get_yearly_data(self, crossing_id: int) -> List[Dict]:
@@ -243,27 +247,26 @@ class StatsDB:
         """
         days_uz = ["Du", "Se", "Cho", "Pa", "Ju", "Sha", "Ya"]
         today = date.today()
-        data = []
+        date_from = (today - timedelta(days=6)).isoformat()
         with self._lock:
-            for i in range(6, -1, -1):
-                d = today - timedelta(days=i)
-                ds = d.isoformat()
-                row = [0] * 24
-                rows = self._conn.execute("""
-                    SELECT CAST(strftime('%H', hour_start) AS INTEGER) as hour,
-                           COALESCE(SUM(light_count), 0) + COALESCE(SUM(heavy_count), 0)
-                    FROM hourly_stats
-                    WHERE crossing_id = ? AND date(hour_start) = ?
-                    GROUP BY hour
-                """, (crossing_id, ds)).fetchall()
-                for hour, total in rows:
-                    if 0 <= hour < 24:
-                        row[hour] = total or 0
-                data.append({
-                    "date": ds,
-                    "day": days_uz[d.weekday()],
-                    "hours": row
-                })
+            rows = self._conn.execute("""
+                SELECT date(hour_start) as d,
+                       CAST(strftime('%H', hour_start) AS INTEGER) as h,
+                       COALESCE(SUM(light_count), 0) + COALESCE(SUM(heavy_count), 0)
+                FROM hourly_stats
+                WHERE crossing_id = ?
+                  AND date(hour_start) >= ? AND date(hour_start) <= ?
+                GROUP BY d, h
+            """, (crossing_id, date_from, today.isoformat())).fetchall()
+        db_map = {}
+        for d_str, h, total in rows:
+            db_map.setdefault(d_str, {})[h] = total
+        data = []
+        for i in range(6, -1, -1):
+            d = today - timedelta(days=i)
+            ds = d.isoformat()
+            hours = [db_map.get(ds, {}).get(h, 0) for h in range(24)]
+            data.append({"date": ds, "day": days_uz[d.weekday()], "hours": hours})
         data.sort(key=lambda x: days_uz.index(x["day"]))
         return data
 
@@ -332,10 +335,32 @@ class StatsDB:
 
     # ─── TRAIN EVENTS ────────────────────────────────────────
 
+    def record_train_event(self, crossing_id: int,
+                           start_dt: datetime, end_dt: datetime):
+        """Tugallangan poyezd o'tishini bir vaqtda yozish (start + end birgalikda).
+        Yolg'on qisqa signallardan himoya: faqat davomiylik >= MIN_DURATION bo'lganda chaqiriladi.
+        """
+        duration = (end_dt - start_dt).total_seconds()
+        with self._lock:
+            self._conn.execute("""
+                INSERT INTO train_events
+                    (crossing_id, start_time, end_time, duration_seconds, event_date)
+                VALUES (?, ?, ?, ?, ?)
+            """, (crossing_id, start_dt.isoformat(), end_dt.isoformat(),
+                  duration, start_dt.date().isoformat()))
+            self._conn.commit()
+
     def record_train_start(self, crossing_id: int):
-        """PLC ON bo'lganda — poyezd kelmoqda."""
+        """Eski usul (to'g'ridan-to'g'ri foydalanilmaydi, moslik uchun saqlanadi)."""
         now = datetime.now()
         with self._lock:
+            existing = self._conn.execute("""
+                SELECT id FROM train_events
+                WHERE crossing_id = ? AND end_time IS NULL
+                LIMIT 1
+            """, (crossing_id,)).fetchone()
+            if existing:
+                return
             self._conn.execute("""
                 INSERT INTO train_events (crossing_id, start_time, event_date)
                 VALUES (?, ?, ?)
@@ -343,7 +368,7 @@ class StatsDB:
             self._conn.commit()
 
     def record_train_end(self, crossing_id: int):
-        """PLC OFF bo'lganda — poyezd o'tdi. Oxirgi ochiq eventni yopish."""
+        """Eski usul (to'g'ridan-to'g'ri foydalanilmaydi, moslik uchun saqlanadi)."""
         now = datetime.now()
         with self._lock:
             row = self._conn.execute("""
@@ -387,23 +412,23 @@ class StatsDB:
         Returns: [{"date": "...", "day": "Du", "count": 3, "avg": 65.0}, ...]"""
         days_uz = ["Du", "Se", "Cho", "Pa", "Ju", "Sha", "Ya"]
         today = date.today()
-        data = []
+        date_from = (today - timedelta(days=6)).isoformat()
         with self._lock:
-            for i in range(6, -1, -1):
-                d = today - timedelta(days=i)
-                ds = d.isoformat()
-                row = self._conn.execute("""
-                    SELECT COUNT(*), COALESCE(AVG(duration_seconds), 0)
-                    FROM train_events
-                    WHERE crossing_id = ? AND event_date = ?
-                      AND duration_seconds IS NOT NULL
-                """, (crossing_id, ds)).fetchone()
-                data.append({
-                    "date": ds,
-                    "day": days_uz[d.weekday()],
-                    "count": row[0] if row else 0,
-                    "avg": row[1] if row else 0,
-                })
+            rows = self._conn.execute("""
+                SELECT event_date, COUNT(*), COALESCE(AVG(duration_seconds), 0)
+                FROM train_events
+                WHERE crossing_id = ?
+                  AND event_date >= ? AND event_date <= ?
+                  AND duration_seconds IS NOT NULL
+                GROUP BY event_date
+            """, (crossing_id, date_from, today.isoformat())).fetchall()
+        db_map = {r[0]: (r[1], r[2]) for r in rows}
+        data = []
+        for i in range(6, -1, -1):
+            d = today - timedelta(days=i)
+            ds = d.isoformat()
+            count, avg = db_map.get(ds, (0, 0))
+            data.append({"date": ds, "day": days_uz[d.weekday()], "count": count, "avg": avg})
         data.sort(key=lambda x: days_uz.index(x["day"]))
         return data
 
@@ -411,23 +436,23 @@ class StatsDB:
         """Oxirgi 30 kun poyezd soni.
         Returns: [{"date": "...", "day": 13, "count": 3, "avg": 65.0}, ...]"""
         today = date.today()
-        data = []
+        date_from = (today - timedelta(days=29)).isoformat()
         with self._lock:
-            for i in range(29, -1, -1):
-                d = today - timedelta(days=i)
-                ds = d.isoformat()
-                row = self._conn.execute("""
-                    SELECT COUNT(*), COALESCE(AVG(duration_seconds), 0)
-                    FROM train_events
-                    WHERE crossing_id = ? AND event_date = ?
-                      AND duration_seconds IS NOT NULL
-                """, (crossing_id, ds)).fetchone()
-                data.append({
-                    "date": ds,
-                    "day": d.day,
-                    "count": row[0] if row else 0,
-                    "avg": row[1] if row else 0,
-                })
+            rows = self._conn.execute("""
+                SELECT event_date, COUNT(*), COALESCE(AVG(duration_seconds), 0)
+                FROM train_events
+                WHERE crossing_id = ?
+                  AND event_date >= ? AND event_date <= ?
+                  AND duration_seconds IS NOT NULL
+                GROUP BY event_date
+            """, (crossing_id, date_from, today.isoformat())).fetchall()
+        db_map = {r[0]: (r[1], r[2]) for r in rows}
+        data = []
+        for i in range(29, -1, -1):
+            d = today - timedelta(days=i)
+            ds = d.isoformat()
+            count, avg = db_map.get(ds, (0, 0))
+            data.append({"date": ds, "day": d.day, "count": count, "avg": avg})
         return data
 
     def get_all_train_today(self) -> Dict[int, int]:
@@ -442,6 +467,34 @@ class StatsDB:
                 GROUP BY crossing_id
             """, (today,)).fetchall()
         return {r[0]: r[1] for r in rows}
+
+    def get_train_today_count(self, crossing_id: int) -> int:
+        """Bugungi poyezdlar soni (jarayondagilari ham bilan)."""
+        today = date.today().isoformat()
+        with self._lock:
+            row = self._conn.execute("""
+                SELECT COUNT(*) FROM train_events
+                WHERE crossing_id = ? AND event_date = ?
+            """, (crossing_id, today)).fetchone()
+        return row[0] if row else 0
+
+    def get_train_hourly_data(self, crossing_id: int,
+                              target_date: Optional[str] = None) -> List[int]:
+        """24 soatlik poyezd soni (grafik uchun). Returns: [0]*24 list."""
+        if target_date is None:
+            target_date = date.today().isoformat()
+        with self._lock:
+            rows = self._conn.execute("""
+                SELECT CAST(strftime('%H', start_time) AS INTEGER) as hour, COUNT(*)
+                FROM train_events
+                WHERE crossing_id = ? AND event_date = ?
+                GROUP BY hour
+            """, (crossing_id, target_date)).fetchall()
+        counts = [0] * 24
+        for hour, count in rows:
+            if 0 <= hour < 24:
+                counts[hour] = count
+        return counts
 
     def rename_camera(self, crossing_id: int, old_name: str, new_name: str):
         """Kamera nomi o'zgarganda barcha statslarni yangi nomga ko'chirish."""

@@ -1,13 +1,11 @@
 {
   "app.title": "RailSafe",
-
   "nav.dashboard": "Панель управления",
   "nav.analytics": "Аналитика",
   "nav.settings": "Настройки",
   "nav.about": "О системе",
   "nav.add_crossing": "+ Добавить переезд",
   "nav.refresh": "Обновить",
-
   "crossing.back": "< Назад",
   "crossing.add_camera": "+ Камера",
   "crossing.settings_btn": "Настройки",
@@ -16,7 +14,6 @@
   "crossing.type.additional": "Дополнительная",
   "crossing.no_cameras": "Нет камер. Нажмите кнопку '+ Камера'.",
   "crossing.camera_settings": "Настройки",
-
   "cam.status.connecting": "Подключение...",
   "cam.status.reconnecting": "Переподключение...",
   "cam.status.failed": "Не подключено",
@@ -26,7 +23,6 @@
   "cam.pause": "Пауза",
   "cam.resume": "Продолжить",
   "cam.paused": "На паузе",
-
   "stats.panel": "Статистика",
   "stats.cameras": "Камеры",
   "stats.light": "Лёгкий транспорт",
@@ -40,19 +36,18 @@
   "stats.avg": "Ср: {v:.0f}с",
   "stats.trains_today": "Сегодня: {count} шт",
   "stats.no_cameras": "Нет камер",
-
   "plc.title": "Состояние ПЛК",
   "plc.status_label": "Состояние",
   "plc.connected": "ПОДКЛЮЧЕНО",
+  "plc.active": "ПОЕЗД ЕДЕТ",
+  "plc.no_connection": "НЕТ СВЯЗИ",
   "plc.disabled": "ОТКЛЮЧЕНО",
   "plc.ip": "IP",
   "plc.port": "Порт",
-
   "analytics.title": "Аналитика",
   "analytics.updated": "Обновлено: {dt}",
   "analytics.report_btn": "Скачать отчёт",
   "analytics.no_crossings": "Нет переездов. Вернитесь на Dashboard и добавьте переезд.",
-
   "chart.today_dist": "Распределение сегодня",
   "chart.weekly": "Недельная статистика (7 дней)",
   "chart.yearly": "Годовой тренд (12 мес.)",
@@ -66,14 +61,12 @@
   "chart.cameras_section": "Камеры",
   "chart.weekly_section": "Недельная (7 дней)",
   "chart.heatmap_section": "Карта загруженности (7 дней × 24 часа)",
-
   "legend.light": "Лёгкие",
   "legend.heavy": "Тяжёлые",
   "legend.low": "Мало",
   "legend.medium": "Средне",
   "legend.high": "Много",
   "legend.trains": "Кол-во поездов",
-
   "summary.total_transport": "Весь транспорт",
   "summary.today": "сегодня",
   "summary.light": "Лёгкие",
@@ -83,9 +76,7 @@
   "summary.cameras": "Камеры",
   "summary.active": "активных",
   "summary.connected": "подключено",
-
   "statusbar": "Переезды: {total} | Камеры: {cams}",
-
   "dlg.add_crossing.title_add": "Добавить новый переезд",
   "dlg.add_crossing.title_edit": "Редактировать переезд",
   "dlg.add_crossing.tab_main": "Основная информация",
@@ -109,7 +100,6 @@
   "dlg.add_crossing.placeholder_name": "Например: Переезд 1",
   "dlg.add_crossing.placeholder_loc": "Например: Ташкент, Чиланзарский р-н",
   "dlg.add_crossing.placeholder_desc": "Дополнительная информация",
-
   "dlg.add_camera.title_add": "Добавить новую камеру",
   "dlg.add_camera.title_edit": "Редактировать камеру",
   "dlg.add_camera.name": "Название:*",
@@ -131,7 +121,6 @@
   "dlg.add_camera.type_main_info": "Эта камера будет отображаться как основная (большая)",
   "dlg.add_camera.type_additional_info": "Эта камера будет отображаться как дополнительная (малая)",
   "dlg.add_camera.type_main_warn": "Внимание: предыдущая основная камера станет дополнительной",
-
   "settings.title": "Настройки",
   "settings.interface": "Интерфейс",
   "settings.language": "Язык:",
@@ -154,7 +143,6 @@
   "settings.model.default_sub": "80 классов, imgsz=640",
   "settings.model.custom": "Специальная модель (pereezd_yolo26n.pt)",
   "settings.model.custom_sub": "2 класса (лёгкие/тяжёлые), imgsz=1088",
-
   "export.title": "Экспорт TensorRT Engine",
   "export.waiting": "ожидание...",
   "export.running": "экспортируется...",
@@ -162,7 +150,6 @@
   "export.error": "ошибка",
   "export.preparing": "Подготовка...",
   "export.time": "Время: {mins:02d}:{secs:02d}",
-
   "confirm.delete_crossing": "Вы хотите удалить этот переезд?",
   "confirm.exit": "Вы хотите выйти из программы?",
   "confirm.title": "Подтверждение",
@@ -170,9 +157,7 @@
   "error.page_open": "Ошибка при открытии страницы",
   "error.crossing_open": "Ошибка при открытии переезда: {e}",
   "error.report": "Ошибка при создании отчёта.",
-
   "dashboard.empty": "Нет переездов. Нажмите '+ Добавить переезд' на панели инструментов.",
-
   "report.title": "Скачать отчёт",
   "report.hint": "Выберите диапазон дат и скачайте отчёт в формате Word.",
   "report.today": "Сегодня",
@@ -186,7 +171,6 @@
   "report.err_date": "Дата начала не может быть позже даты окончания.",
   "report.success": "Отчёт сохранён:\n{path}",
   "report.save_dialog": "Сохранить отчёт",
-
   "about.title": "О системе",
   "about.nav.general": "Общее",
   "about.nav.architecture": "Архитектура",
@@ -196,11 +180,9 @@
   "about.nav.forecast": "Прогноз",
   "about.nav.version": "Версия",
   "about.version_badge": "Версия 1.0.5 • 2025  OEM Design",
-
   "cam.loading": "Загрузка...",
   "cam.bandlik": "Занятость: {count}",
   "cam.status.main_down": "Основная камера отключена",
-
   "cam_dlg.title": "Настройки камер - {name}",
   "cam_dlg.subtitle": "- Камеры",
   "cam_dlg.no_cameras": "Камеры не найдены",
@@ -213,27 +195,22 @@
   "cam_dlg.toggle_msg_off": "Камера отключена. Обновите страницу для применения изменений.",
   "cam_dlg.toggle_msg_on": "Камера включена. Обновите страницу для применения изменений.",
   "cam_dlg.toggle_title": "Готово",
-
   "confirm.delete_camera": "Удалить камеру '{name}'?",
-
   "dlg.add_crossing.import_err": "Ошибка чтения JSON: {e}",
-
   "export.json_title": "JSON Экспорт",
   "export.json_success": "Данные сохранены:\n{path}",
   "export.json_error": "Ошибка экспорта: {e}",
-
   "chart.total": "Всего",
-
   "menu.open": "Открыть",
   "menu.cam_settings": "Настройки камер",
   "menu.info": "Информация о переезде",
   "menu.export_json": "JSON Экспорт",
-
   "about.section.general": "Общая цель",
   "about.section.architecture": "Архитектура системы",
   "about.section.howworks": "Как работает",
   "about.section.security": "Уровень безопасности",
   "about.section.analytics": "Аналитика",
   "about.section.forecast": "Прогноз",
-  "about.section.version": "Версия и авторы"
+  "about.section.version": "Версия и авторы",
+  "chart.trains_hourly": "Поезда по часам (сегодня)"
 }

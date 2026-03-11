@@ -20,6 +20,7 @@ from datetime import date
 from gui.utils.theme_colors import C
 from gui.utils.polygon_tracker import PolygonTracker
 from gui.utils.language import t, LM
+from gui.utils.plc_manager import PLCManager as _PLCManager, SNAP7_AVAILABLE as _SNAP7_OK
 
 # Car detector import (optional)
 try:
@@ -31,10 +32,11 @@ except ImportError:
 
 # RTSP ultra-low-latency (FFmpeg fallback uchun)
 os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = (
-    'rtsp_transport;tcp|stimeout;2000000|'
+    'rtsp_transport;udp|stimeout;2000000|'
     'fflags;nobuffer+discardcorrupt|flags;low_delay|'
-    'analyzeduration;100000|probesize;100000|'
-    'max_delay;0|reorder_queue_size;0'
+    'analyzeduration;0|probesize;32|'
+    'max_delay;0|reorder_queue_size;0|'
+    'thread_queue_size;1'
 )
 os.environ['OPENCV_LOG_LEVEL'] = 'ERROR'
 
@@ -163,22 +165,29 @@ class CameraWorker(QThread):
     def run(self):
         cap = None
         gt = None
+        _pyav_container = None
         _grab_running = [True]
+        _latest_frame = [None]
+        _frame_lock = threading.Lock()
+        _grab_error = [False]
+        _want_frame = [False]
 
         try:
-            cap, backend = _open_camera(self.source, self.camera_name)
+            # 1. PyAV backend (low-latency: nobuffer, direct demux)
+            gt, _pyav_container = self._start_pyav(
+                _grab_running, _latest_frame, _frame_lock, _grab_error)
 
-            if cap is not None:
-                # RTSP buffer tozalash - eski kadrlarni tashlash (~3 sek)
-                for _ in range(90):
+            # 2. OpenCV fallback
+            if gt is None:
+                cap, backend = _open_camera(self.source, self.camera_name)
+                if cap is None:
+                    self.status_changed.emit("error")
+                    return
+
+                # RTSP buffer tozalash — vaqt bo'yicha (300ms), tez flush
+                _flush_end = time.perf_counter() + 0.3
+                while time.perf_counter() < _flush_end:
                     cap.grab()
-
-                self.status_changed.emit("online")
-
-                # --- Dedicated grab thread: grab() HECH QACHON to'xtamaydi ---
-                _latest_frame = [None]
-                _frame_lock = threading.Lock()
-                _grab_error = [False]
 
                 def _grab_loop():
                     fails = 0
@@ -191,113 +200,122 @@ class CameraWorker(QThread):
                                 break
                             continue
                         fails = 0
-                        # Har doim decode — har doim eng yangi kadrni saqlash
-                        ret, frm = cap.retrieve()
-                        if ret:
-                            with _frame_lock:
-                                _latest_frame[0] = frm
+                        # Faqat so'ralganda decode — har doim eng yangi packet
+                        if _want_frame[0]:
+                            _want_frame[0] = False
+                            ret2, frm = cap.retrieve()
+                            if ret2:
+                                with _frame_lock:
+                                    _latest_frame[0] = frm
 
                 gt = threading.Thread(target=_grab_loop, daemon=True)
                 gt.start()
 
-                # --- Main loop: eng oxirgi kadrni process qilish ---
-                _poly_loaded = False
-                _tracker = None  # PolygonTracker (polygon yuklangandan keyin yaratiladi)
-                while self._is_running() and not _grab_error[0]:
-                    with _frame_lock:
-                        frame = _latest_frame[0]
-                        _latest_frame[0] = None
+            self.status_changed.emit("online")
 
-                    if frame is None:
-                        time.sleep(0.003)
-                        continue
+            # --- Main loop: 30 FPS cap (PyAV va OpenCV uchun bir xil) ---
+            _poly_loaded = False
+            _tracker = None
+            _target_interval = 1.0 / 30.0
+            _last_frame_t = 0.0
+            while self._is_running() and not _grab_error[0]:
+                _now_t = time.perf_counter()
+                if _now_t - _last_frame_t >= _target_interval:
+                    _want_frame[0] = True  # OpenCV uchun; PyAV e'tibor bermaydi
 
+                with _frame_lock:
+                    frame = _latest_frame[0]
+                    _latest_frame[0] = None
+
+                if frame is None:
+                    time.sleep(0.002)
+                    continue
+                _last_frame_t = time.perf_counter()
+
+                h, w = frame.shape[:2]
+                if w > self.display_width:
+                    scale = self.display_width / w
+                    frame = cv2.resize(frame, (self.display_width, int(h * scale)),
+                                       interpolation=cv2.INTER_AREA)
                     h, w = frame.shape[:2]
-                    if w > self.display_width:
-                        scale = self.display_width / w
-                        frame = cv2.resize(frame, (self.display_width, int(h * scale)),
-                                           interpolation=cv2.INTER_AREA)
-                        h, w = frame.shape[:2]
 
-                    # Polygon yuklash (birinchi frame kelganda)
-                    if not _poly_loaded:
-                        _poly_loaded = True
-                        if self.polygon_file:
-                            self._poly_pts, self._poly_mask = _load_polygon(
-                                self.polygon_file, w, h)
-                        # Tracker yaratish (polygon mavjud bo'lsa)
-                        if self._poly_mask is not None:
-                            light_cls = PolygonTracker.CUSTOM_LIGHT if self.is_custom_model else None
-                            heavy_cls = PolygonTracker.CUSTOM_HEAVY if self.is_custom_model else None
-                            _tracker = PolygonTracker(
-                                poly_mask=self._poly_mask,
-                                iou_threshold=0.3,
-                                max_age=2.0,
-                                frame_width=w,
-                                frame_height=h,
-                                light_classes=light_cls,
-                                heavy_classes=heavy_cls,
-                            )
+                # Polygon yuklash (birinchi frame kelganda)
+                if not _poly_loaded:
+                    _poly_loaded = True
+                    if self.polygon_file:
+                        self._poly_pts, self._poly_mask = _load_polygon(
+                            self.polygon_file, w, h)
+                    # Tracker yaratish (polygon mavjud bo'lsa)
+                    if self._poly_mask is not None:
+                        light_cls = PolygonTracker.CUSTOM_LIGHT if self.is_custom_model else None
+                        heavy_cls = PolygonTracker.CUSTOM_HEAVY if self.is_custom_model else None
+                        _tracker = PolygonTracker(
+                            poly_mask=self._poly_mask,
+                            iou_threshold=0.3,
+                            max_age=2.0,
+                            frame_width=w,
+                            frame_height=h,
+                            light_classes=light_cls,
+                            heavy_classes=heavy_cls,
+                        )
 
-                    # Car detection - NON-BLOCKING
-                    detection_count = 0
-                    in_poly_count = 0
-                    max_time = 0.0
-                    if self.detection_enabled and self.car_detector is not None:
-                        try:
-                            detections, det_frame = self.car_detector.detect_async(
-                                frame, camera_id=self.camera_name)
-                            detection_count = len(detections)
-                            # Tracking (har doim — eski tracklar expire bo'lishi uchun)
-                            in_poly_bboxes = None
-                            if _tracker is not None:
-                                _tracker.process_detections(detections)
-                                in_poly_count = _tracker.get_inside_count()
-                                max_time = _tracker.get_max_time()
-                                if detections:
-                                    in_poly_bboxes = _tracker.get_in_polygon_bboxes()
-                                self.stats_updated.emit(
-                                    _tracker.light_count,
-                                    _tracker.heavy_count,
-                                    in_poly_count,
-                                    max_time
-                                )
-                            elif detections:
-                                self.stats_updated.emit(0, 0, detection_count, 0.0)
+                # Car detection - NON-BLOCKING
+                detection_count = 0
+                in_poly_count = 0
+                max_time = 0.0
+                if self.detection_enabled and self.car_detector is not None:
+                    try:
+                        detections, det_frame = self.car_detector.detect_async(
+                            frame, camera_id=self.camera_name)
+                        detection_count = len(detections)
+                        # Tracking (har doim — eski tracklar expire bo'lishi uchun)
+                        in_poly_bboxes = None
+                        if _tracker is not None:
+                            _tracker.process_detections(detections)
+                            in_poly_count = _tracker.get_inside_count()
+                            max_time = _tracker.get_max_time()
                             if detections:
-                                # det_frame = aniqlashan kadr (100% mos)
-                                draw_on = det_frame if det_frame is not None else frame
-                                frame = self.car_detector.draw_detections(
-                                    draw_on, detections,
-                                    thickness=2, font_scale=0.5,
-                                    in_polygon_bboxes=in_poly_bboxes)
-                                h, w = frame.shape[:2]
-                        except Exception as e:
-                            print(f"[{self.camera_name}] Detection error: {e}")
+                                in_poly_bboxes = _tracker.get_in_polygon_bboxes()
+                            self.stats_updated.emit(
+                                _tracker.light_count,
+                                _tracker.heavy_count,
+                                in_poly_count,
+                                max_time
+                            )
+                        elif detections:
+                            self.stats_updated.emit(0, 0, detection_count, 0.0)
+                        if detections:
+                            # det_frame = aniqlashan kadr (100% mos)
+                            draw_on = det_frame if det_frame is not None else frame
+                            frame = self.car_detector.draw_detections(
+                                draw_on, detections,
+                                thickness=2, font_scale=0.5,
+                                in_polygon_bboxes=in_poly_bboxes)
+                            h, w = frame.shape[:2]
+                    except Exception as e:
+                        print(f"[{self.camera_name}] Detection error: {e}")
 
-                    # Polygon chizish (yashil→sariq→apelsin→qizil)
-                    if self._poly_pts is not None:
-                        if in_poly_count == 0:
-                            color = (0, 255, 0)    # YASHIL — bo'sh
-                        elif max_time < self.warning_threshold:
-                            color = (0, 255, 255)  # SARIQ — mashina bor
-                        elif max_time < self.violation_threshold:
-                            color = (0, 165, 255)  # APELSIN — ogohlantirish
-                        else:
-                            color = (0, 0, 255)    # QIZIL — buzilish!
-                        cv2.polylines(frame, [self._poly_pts], True, color, 2)
+                # Polygon chizish (yashil→sariq→apelsin→qizil)
+                if self._poly_pts is not None:
+                    if in_poly_count == 0:
+                        color = (0, 255, 0)    # YASHIL — bo'sh
+                    elif max_time < self.warning_threshold:
+                        color = (0, 255, 255)  # SARIQ — mashina bor
+                    elif max_time < self.violation_threshold:
+                        color = (0, 165, 255)  # APELSIN — ogohlantirish
+                    else:
+                        color = (0, 0, 255)    # QIZIL — buzilish!
+                    cv2.polylines(frame, [self._poly_pts], True, color, 2)
 
-                    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                    qimg = QImage(rgb.data, w, h, w * 3,
-                                  QImage.Format.Format_RGB888).copy()
+                rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                qimg = QImage(rgb.data, w, h, w * 3,
+                              QImage.Format.Format_RGB888).copy()
 
-                    self._latest_qimg = qimg
-                    self.frame_ready.emit()
-                    self.frame_with_data.emit(qimg)
+                self._latest_qimg = qimg
+                self.frame_ready.emit()
+                self.frame_with_data.emit(qimg)
 
-                if _grab_error[0]:
-                    self.status_changed.emit("error")
-            else:
+            if _grab_error[0]:
                 self.status_changed.emit("error")
 
         except Exception as e:
@@ -305,10 +323,129 @@ class CameraWorker(QThread):
             self.status_changed.emit("error")
         finally:
             _grab_running[0] = False
+            # PyAV: interrupt_callback orqali blocking demux to'xtatiladi,
+            # container grab threadda yopiladi (heap corruption oldini olish)
+            if _pyav_container is not None:
+                try:
+                    _pyav_container.interrupt_callback = lambda: True
+                except Exception:
+                    pass
             if gt is not None:
-                gt.join(timeout=3.0)
+                gt.join(timeout=2.0)
+            # cap (OpenCV fallback)
             if cap is not None:
                 cap.release()
+
+    def _start_pyav(self, _grab_running, _latest_frame, _frame_lock, _grab_error):
+        """PyAV low-latency backend. Returns (grab_thread, container) or (None, None).
+
+        PyAV ustunliklari OpenCV/FFmpeg ga nisbatan:
+        - To'g'ridan-to'g'ri demux → minimal buferlanish
+        - fflags=nobuffer + flags=low_delay → iVMS ga yaqin kechikish
+        - UDP transport → TCP ga qaraganda 50-100ms kam
+        """
+        try:
+            import av as _av
+        except ImportError:
+            print(f"[{self.camera_name}] PyAV o'rnatilmagan, OpenCV ishlatiladi")
+            return None, None
+
+        base_opts = {
+            'fflags': 'nobuffer+discardcorrupt',  # discardcorrupt: UDP packet loss → tashlanadi, detection ga o'tmaydi
+            'flags': 'low_delay',
+            'max_delay': '0',
+            'reorder_queue_size': '0',
+            'analyzeduration': '0',
+            'probesize': '32',
+            'stimeout': '2000000',
+        }
+        is_rtsp = self.source.lower().startswith('rtsp://')
+        # TCP: ishonchli, H.265 error concealment yo'q → buzilish yo'q
+        if is_rtsp:
+            variants = [
+                {**base_opts, 'rtsp_transport': 'tcp'},
+                {**base_opts, 'rtsp_transport': 'udp'},
+            ]
+        else:
+            variants = [base_opts]
+
+        for opts in variants:
+            container = None
+            try:
+                container = _av.open(self.source, options=opts, timeout=8)
+                stream = container.streams.video[0]
+                # NONE: frame-threaded decode o'chiriladi → ichki bufer minimal → kam lag
+                stream.thread_type = 'NONE'
+                stream.codec_context.thread_count = 1
+                try:
+                    stream.codec_context.flags |= 0x4000  # AV_CODEC_FLAG_LOW_DELAY
+                except Exception:
+                    pass
+
+                transport = opts.get('rtsp_transport', 'local')
+                print(f"[{self.camera_name}] PyAV ({transport}) — low-latency mode")
+
+                # TCP ring buffer drain: kamera eski kadrlarini tezda yuboradi,
+                # ularni decode qilmasdan o'tkazib ketamiz → live pozitsiyaga tushish
+                if opts.get('rtsp_transport') == 'tcp':
+                    _drain_t = time.perf_counter()
+                    _drained = 0
+                    try:
+                        for _pkt in container.demux(stream):
+                            if _pkt.dts is None:
+                                continue
+                            _drained += 1
+                            _elapsed = time.perf_counter() - _drain_t
+                            # Kamera ring bufferini tez yuboradi (>>real-time);
+                            # sekinlashsa (>30ms/paket) = live pozitsiyaga yetdik
+                            if _drained > 1 and _elapsed / _drained > 0.030:
+                                break
+                            if _elapsed > 3.0:  # Eng ko'p 3 sekund kutamiz
+                                break
+                    except Exception:
+                        pass
+                    print(f"[{self.camera_name}] TCP drain: {_drained} pkt, {time.perf_counter()-_drain_t:.2f}s")
+
+                def _grab(cont=container, st=stream):
+                    try:
+                        for packet in cont.demux(st):
+                            if not _grab_running[0]:
+                                break
+                            if packet.dts is None:
+                                continue
+                            try:
+                                for frm in packet.decode():
+                                    img = frm.to_ndarray(format='bgr24')
+                                    with _frame_lock:
+                                        _latest_frame[0] = img
+                            except Exception:
+                                pass
+                    except Exception as e:
+                        if _grab_running[0]:
+                            print(f"[{self.camera_name}] PyAV grab error: {e}")
+                            _grab_error[0] = True
+                    finally:
+                        # Container shu threadda yopiladi (thread-safe)
+                        try:
+                            cont.close()
+                        except Exception:
+                            pass
+
+                gt = threading.Thread(target=_grab, daemon=True,
+                                      name=f"pyav-{self.camera_name}")
+                gt.start()
+                return gt, container
+
+            except Exception as e:
+                transport = opts.get('rtsp_transport', '')
+                print(f"[{self.camera_name}] PyAV ({transport}) failed: {e}")
+                if container is not None:
+                    try:
+                        container.close()
+                    except Exception:
+                        pass
+
+        return None, None
 
     def _is_running(self):
         try:
@@ -320,22 +457,22 @@ class CameraWorker(QThread):
             return False
 
     def stop(self):
-        # Signal thread to stop — tryLock deadlock dan himoya
+        # Signal thread to stop — NON-BLOCKING (GUI thread bloklanmaydi)
+        # Resources finally block da tozalanadi (PyAV container.close, cap.release)
         try:
-            if self._mutex.tryLock(1000):
-                self._running = False
+            self._mutex.tryLock(50)
+            self._running = False
+            try:
                 self._mutex.unlock()
-            else:
-                self._running = False
+            except Exception:
+                pass
         except Exception:
             self._running = False
-
-        # Wait for thread to finish naturally (cap.release happens in run())
         try:
             if self.isRunning():
                 self.quit()
-                if not self.wait(5000):
-                    print(f"[{self.camera_name}] Worker thread did not stop in 5s")
+                # wait() CHAQIRILMAYDI — GUI freeze oldini olish uchun
+                # QThread o'z-o'zicha to'xtaydi (finally block)
         except (RuntimeError, Exception):
             pass
 
@@ -547,6 +684,21 @@ class CrossingCard(QWidget):
         self._is_destroyed = False
         self._main_camera_down = False  # Asosiy kamera uzilsa True
         self._last_paused_ids: set = set()  # Oldingi paused holat (o'zgarishni kuzatish)
+        self._reconnect_pending = False  # Debounce: bir marta restart
+
+        # PLC Manager (har bir pereezd uchun alohida)
+        self._plc_manager = None
+        self._plc_active = False   # Hozirgi PLC holati (poyezd kelmoqdami?)
+        self._plc_enabled = False  # Config da enabled?
+
+        # Train tracking
+        self._plc_first_poll = True       # Birinchi poll — faqat init, hisob yo'q
+        self._train_count_today = 0       # Bugungi poyezdlar soni
+        self._train_start_time = 0.0      # monotonic time, PLC active bo'lganda
+        self._train_start_dt = None       # datetime — DB ga yozish uchun
+        self._last_train_duration = 0.0   # Oxirgi poyezd davomiyligi (sekund)
+        # Minimal haqiqiy poyezd davomiyligi (sek) — qisqa yolg'on signallarni o'tkazib yuborish
+        self._min_train_duration = 120.0
 
         # Car detector - SHARED instance (GPU maksimal ishlatish)
         self.car_detector = car_detector
@@ -576,17 +728,44 @@ class CrossingCard(QWidget):
         self._state_timer.timeout.connect(self._check_camera_state_change)
         self._state_timer.start(3000)
 
+        # PLC Manager — har bir pereezd uchun alohida
+        self._plc_timer = QTimer(self)
+        self._plc_timer.timeout.connect(self._poll_plc_state)
+        self._train_timer = QTimer(self)
+        self._train_timer.setInterval(1000)
+        self._train_timer.timeout.connect(self._update_train_elapsed)
+        plc_cfg = crossing_data.get("plc", {})
+        self._plc_enabled = plc_cfg.get("enabled", False)
+        plc_ip = plc_cfg.get("ip", "").strip()
+        if self._plc_enabled and plc_ip and _SNAP7_OK:
+            plc_port = int(plc_cfg.get("port", 102))
+            self._plc_manager = _PLCManager(plc_ip, plc_port)
+            self._plc_manager.start()
+            self._plc_timer.start(500)  # 500ms da bir poll
+        elif self._plc_enabled and not _SNAP7_OK:
+            print(f"[CrossingCard] PLC yoqilgan lekin snap7 o'rnatilmagan: {self.crossing_data.get('name')}")
+
+        # DB dan bugungi poyezd sonini yuklash
+        if self.stats_db and self._plc_enabled:
+            try:
+                self._train_count_today = self.stats_db.get_train_today_count(self.crossing_id)
+            except Exception:
+                pass
+
         LM.language_changed.connect(self._retranslate)
         QTimer.singleShot(100, self._start_cameras)
 
     def _check_camera_state_change(self):
         """Camera_state.json o'zgarganini tekshirish — o'zgarsa workerllarni qayta ishga tushirish."""
-        if self._is_destroyed or not self.config_manager:
-            return
-        current = self.config_manager.get_paused_cameras(self.crossing_id)
-        if current != self._last_paused_ids:
-            self._last_paused_ids = current
-            self._restart_camera_workers()
+        try:
+            if self._is_destroyed or not self.config_manager:
+                return
+            current = self.config_manager.get_paused_cameras(self.crossing_id)
+            if current != self._last_paused_ids:
+                self._last_paused_ids = current
+                self._restart_camera_workers()
+        except Exception:
+            pass
 
     def _restart_camera_workers(self):
         """Barcha camera workerlarni to'xtatib, yangi holat bilan qayta ishga tushirish."""
@@ -604,19 +783,161 @@ class CrossingCard(QWidget):
         """Detail view uchun: cam_id → worker lug'atini qaytaradi (workerlar to'xtatilmaydi)."""
         return dict(self.camera_workers_by_id)
 
+    def _poll_plc_state(self):
+        """PLC holatini 500ms da bir tekshirish (GUI thread da xavfsiz).
+
+        Hisoblash FAQAT PLC o'chganda va signal davomiyligi >= _min_train_duration
+        bo'lganda amalga oshiriladi — qisqa yolg'on signallar e'tiborsiz qoldiriladi.
+        """
+        try:
+            if self._is_destroyed or self._plc_manager is None:
+                return
+            active = self._plc_manager.get_plc_active()
+
+            # Birinchi poll — faqat holatni boshlash, hisob yo'q
+            if self._plc_first_poll:
+                self._plc_first_poll = False
+                self._plc_active = active
+                self._update_plc_ui(active)
+                if active:
+                    # Refresh paytida poyezd allaqachon o'tmoqda — timer boshlash
+                    self._train_start_time = time.monotonic()
+                    self._train_start_dt = None  # Aniq start vaqti noma'lum
+                    self._train_timer.start()
+                self._update_train_count_display()
+                return
+
+            if active != self._plc_active:
+                self._plc_active = active
+                self._update_plc_ui(active)
+                if active:
+                    # PLC yondi — timer boshlash, LEKIN hisob yo'q (hali yolg'on bo'lishi mumkin)
+                    self._train_start_time = time.monotonic()
+                    from datetime import datetime as _dt
+                    self._train_start_dt = _dt.now()
+                    self._train_timer.start()
+                else:
+                    # PLC o'chdi — davomiylikni tekshirish
+                    self._train_timer.stop()
+                    duration = 0.0
+                    if self._train_start_time > 0:
+                        duration = time.monotonic() - self._train_start_time
+                        self._last_train_duration = duration
+                        self._train_start_time = 0.0
+                    self._update_train_duration_display(False)
+
+                    if duration >= self._min_train_duration:
+                        # Haqiqiy poyezd — hisoblash va DB ga yozish
+                        self._train_count_today += 1
+                        self._update_train_count_display()
+                        if self.stats_db and self._train_start_dt is not None:
+                            from datetime import datetime as _dt
+                            try:
+                                self.stats_db.record_train_event(
+                                    self.crossing_id,
+                                    self._train_start_dt,
+                                    _dt.now()
+                                )
+                            except Exception as e:
+                                print(f"[CrossingCard] Train event yozish xato: {e}")
+                    else:
+                        if duration > 0:
+                            print(f"[CrossingCard] Qisqa signal ({duration:.1f}s < "
+                                  f"{self._min_train_duration}s) — e'tiborsiz")
+                        self._last_train_duration = 0.0
+                        self._update_train_duration_display(False)
+
+                    self._train_start_dt = None
+        except Exception:
+            pass  # PyQt6 abort() oldini olish
+
+    def _update_plc_ui(self, active: bool):
+        """PLC holati o'zgarganda UI ni yangilash."""
+        if self._is_destroyed:
+            return
+        try:
+            if active:
+                # Poyezd kelmoqda — QIZIL
+                color = C('status_error')
+                text = t("plc.active")
+            else:
+                # Normal — YASHIL
+                color = C('status_online')
+                text = t("plc.connected")
+            self.plc_indicator.setStyleSheet(
+                f"color: {color}; font-size: 10px; background: transparent; border: none;")
+            self.plc_status_label.setText(text)
+            self.plc_status_label.setStyleSheet(
+                f"color: {color}; font-size: 12px; font-weight: bold;"
+                " background: transparent; border: none;")
+        except RuntimeError:
+            self._is_destroyed = True
+
+    @staticmethod
+    def _fmt_duration(secs: float) -> str:
+        """Sekundni MM:SS formatga aylantirish."""
+        s = int(secs)
+        m = s // 60
+        s = s % 60
+        return f"{m}:{s:02d}"
+
+    def _update_train_count_display(self):
+        """Poyezd sonini yangilash."""
+        try:
+            if self._is_destroyed:
+                return
+            self.train_count_label.setText(f"🚂  {self._train_count_today}")
+        except Exception:
+            pass
+
+    def _update_train_elapsed(self):
+        """Har sekundda poyezd o'tish vaqtini yangilash (timer callback)."""
+        try:
+            if self._is_destroyed or not self._plc_active or self._train_start_time == 0:
+                self._train_timer.stop()
+                return
+            elapsed = time.monotonic() - self._train_start_time
+            self._update_train_duration_display(True, elapsed)
+        except Exception:
+            pass
+
+    def _update_train_duration_display(self, in_progress: bool, elapsed: float = 0.0):
+        """Poyezd vaqt labelini yangilash."""
+        try:
+            if self._is_destroyed:
+                return
+            if in_progress and elapsed > 0:
+                text = f"⏱  {self._fmt_duration(elapsed)}"
+                color = C('accent_red')
+            elif not in_progress and self._last_train_duration > 0:
+                text = f"⏱  {self._fmt_duration(self._last_train_duration)}"
+                color = C('text_muted')
+            else:
+                text = ""
+                color = C('text_muted')
+            self.train_duration_label.setText(text)
+            self.train_duration_label.setStyleSheet(
+                f"color: {color}; font-size: 10px;"
+                " background: transparent; border: none;")
+        except Exception:
+            pass
+
     def _check_midnight(self):
         """Yarim tunda hisoblagichlarni nolga qaytarish"""
-        today = date.today()
-        if today != self._current_date:
-            self._current_date = today
-            # Tracker bazasini yangilash (hozirgi kumulyativ qiymatni ayirish uchun)
-            self._tracker_base_light = self._last_tracker_light
-            self._tracker_base_heavy = self._last_tracker_heavy
-            # DB offset 0 (yangi kun — bazada hali hech narsa yo'q)
-            self._light_offset = 0
-            self._heavy_offset = 0
-            # Displayni darhol yangilash
-            self.update_stats(0, 0)
+        try:
+            today = date.today()
+            if today != self._current_date:
+                self._current_date = today
+                # Tracker bazasini yangilash (hozirgi kumulyativ qiymatni ayirish uchun)
+                self._tracker_base_light = self._last_tracker_light
+                self._tracker_base_heavy = self._last_tracker_heavy
+                # DB offset 0 (yangi kun — bazada hali hech narsa yo'q)
+                self._light_offset = 0
+                self._heavy_offset = 0
+                # Displayni darhol yangilash
+                self.update_stats(0, 0)
+        except Exception:
+            pass
 
     def _load_startup_counts(self):
         """DB dan bugungi sanashni yuklash (dastur qayta ishga tushganda davom etadi)"""
@@ -948,6 +1269,25 @@ class CrossingCard(QWidget):
         plc_row.addStretch()
         plc_inner.addLayout(plc_row)
 
+        # Poyezd soni va vaqt
+        train_row = QHBoxLayout()
+        train_row.setSpacing(4)
+        train_row.addStretch()
+        self.train_count_label = QLabel(f"🚂  0")
+        self.train_count_label.setStyleSheet(
+            f"color: {C('text_secondary')}; font-size: 11px;"
+            " background: transparent; border: none;")
+        train_row.addWidget(self.train_count_label)
+        train_row.addStretch()
+        plc_inner.addLayout(train_row)
+
+        self.train_duration_label = QLabel("")
+        self.train_duration_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.train_duration_label.setStyleSheet(
+            f"color: {C('text_muted')}; font-size: 10px;"
+            " background: transparent; border: none;")
+        plc_inner.addWidget(self.train_duration_label)
+
         return plc_frame
 
     @staticmethod
@@ -1240,34 +1580,50 @@ class CrossingCard(QWidget):
             print(f"[StartCameras] Error: {e}")
 
     def _on_main_frame(self, worker):
-        if self._is_destroyed or self.main_camera_label is None:
-            return
-        qimg = worker.take_frame()
-        if qimg is None:
-            return
         try:
+            if self._is_destroyed or self.main_camera_label is None:
+                return
+            qimg = worker.take_frame()
+            if qimg is None:
+                return
             self._display_frame(self.main_camera_label, qimg)
-        except RuntimeError:
+        except Exception:
             self._is_destroyed = True
 
     def _on_additional_frame(self, worker):
-        if self._is_destroyed or self.additional_camera_label is None:
-            return
-        qimg = worker.take_frame()
-        if qimg is None:
-            return
         try:
+            if self._is_destroyed or self.additional_camera_label is None:
+                return
+            qimg = worker.take_frame()
+            if qimg is None:
+                return
             self._display_frame(self.additional_camera_label, qimg)
             # Asosiy kamera uzilgan bo'lsa — qo'shimchani asosiy joyda ham ko'rsatish
             if self._main_camera_down and self.main_camera_label is not None:
                 self._display_frame(self.main_camera_label, qimg)
-        except RuntimeError:
+        except Exception:
             self._is_destroyed = True
 
-    def _on_main_status(self, status):
-        if self._is_destroyed:
+    def _schedule_reconnect(self):
+        """Kamera uzilganda 5 sekunddan keyin qayta ulanish (debounced)."""
+        if self._is_destroyed or self._reconnect_pending:
             return
+        self._reconnect_pending = True
+        QTimer.singleShot(5000, self._do_reconnect)
+
+    def _do_reconnect(self):
         try:
+            self._reconnect_pending = False
+            if not self._is_destroyed:
+                print(f"[{self.crossing_data.get('name','')}] Auto-reconnect...")
+                self._restart_camera_workers()
+        except Exception:
+            pass
+
+    def _on_main_status(self, status):
+        try:
+            if self._is_destroyed:
+                return
             if status == "online":
                 self._main_camera_down = False
                 self.status_indicator.setStyleSheet(
@@ -1278,24 +1634,27 @@ class CrossingCard(QWidget):
                     f"color: {C('status_error')}; font-size: 10px; background: transparent; border: none;")
                 if self.main_camera_label:
                     self._set_placeholder(self.main_camera_label, t("cam.status.main_down"))
-        except RuntimeError:
+                self._schedule_reconnect()
+        except Exception:
             self._is_destroyed = True
 
     def _on_additional_status(self, status):
-        if self._is_destroyed:
-            return
         try:
-            if status == "error" and self.additional_camera_label:
-                self._set_placeholder(self.additional_camera_label, t("cam.status.failed"))
-        except RuntimeError:
+            if self._is_destroyed:
+                return
+            if status == "error":
+                if self.additional_camera_label:
+                    self._set_placeholder(self.additional_camera_label, t("cam.status.failed"))
+                self._schedule_reconnect()
+        except Exception:
             self._is_destroyed = True
 
     def _on_stats_update(self, light_count: int, heavy_count: int,
                          in_poly_count: int, max_time: float):
         """Handle cumulative tracking stats from CameraWorker"""
-        if self._is_destroyed:
-            return
         try:
+            if self._is_destroyed:
+                return
             # Oxirgi tracker qiymatlarini saqlash (midnight reset uchun)
             self._last_tracker_light = light_count
             self._last_tracker_heavy = heavy_count
@@ -1336,6 +1695,10 @@ class CrossingCard(QWidget):
                         f"color: {C('text_muted')}; font-size: 10px; font-weight: bold;"
                         " background: transparent; border: none;")
 
+            # PLC ga mashina holati yuborish (polygon ichida bor/yo'q)
+            if self._plc_manager is not None:
+                self._plc_manager.set_has_cars(in_poly_count > 0)
+
             # DB ga yozish (asosiy kamera uchun)
             if self.stats_db and light_count + heavy_count > 0:
                 main_name = ""
@@ -1347,7 +1710,7 @@ class CrossingCard(QWidget):
                             self.crossing_id, main_name, light_count, heavy_count)
                     except Exception as e:
                         print(f"[StatsDB] Record error: {e}")
-        except RuntimeError:
+        except Exception:
             self._is_destroyed = True
 
     def _on_mouse_press(self, event):
@@ -1394,9 +1757,13 @@ class CrossingCard(QWidget):
             if hasattr(self, '_plc_title_lbl'):
                 self._plc_title_lbl.setText(t("plc.title").upper())
             if hasattr(self, 'plc_status_label'):
-                plc_enabled = self.crossing_data.get("plc", {}).get("enabled", False)
-                self.plc_status_label.setText(
-                    t("plc.connected") if plc_enabled else t("plc.disabled"))
+                if self._plc_enabled:
+                    if self._plc_active:
+                        self.plc_status_label.setText(t("plc.active"))
+                    else:
+                        self.plc_status_label.setText(t("plc.connected"))
+                else:
+                    self.plc_status_label.setText(t("plc.disabled"))
             if hasattr(self, '_stats_title_lbl'):
                 self._stats_title_lbl.setText(t("stats.panel").upper())
             if hasattr(self, 'total_label'):
@@ -1429,8 +1796,19 @@ class CrossingCard(QWidget):
                 self._midnight_timer.stop()
             if hasattr(self, '_state_timer'):
                 self._state_timer.stop()
+            if hasattr(self, '_plc_timer'):
+                self._plc_timer.stop()
+            if hasattr(self, '_train_timer'):
+                self._train_timer.stop()
         except RuntimeError:
             pass
+        # PLC threadini to'xtatish
+        if self._plc_manager is not None:
+            try:
+                self._plc_manager.stop()
+            except Exception:
+                pass
+            self._plc_manager = None
         self.stop_cameras()
         # Shared detector - to'xtatmaymiz
         self.car_detector = None

@@ -138,6 +138,14 @@ class Dashboard(QWidget):
             self.grid.setRowStretch(r, 0)
 
     def _load_crossings(self):
+        try:
+            self._load_crossings_inner()
+        except Exception as e:
+            print(f"[Dashboard] _load_crossings xato: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def _load_crossings_inner(self):
         self._clear_crossings()
         self._clear_stretch()
         crossings = self.config_manager.get_crossings()
@@ -250,5 +258,94 @@ class Dashboard(QWidget):
                 pass
 
     def refresh(self):
+        """Krossing kartalarni qayta yuklash — eski workers to'liq to'xtagandan keyin."""
+        from PyQt6.QtCore import QTimer
         self._empty_label = None
+        old_cards = list(self.crossing_cards)
+        self.crossing_cards.clear()
+        self._clear_stretch()
+
+        old_workers = []
+        for card in old_cards:
+            try:
+                card._is_destroyed = True
+
+                # Timers
+                for attr in ('_midnight_timer', '_state_timer', '_plc_timer', '_train_timer'):
+                    try:
+                        getattr(card, attr).stop()
+                    except Exception:
+                        pass
+
+                # PLC (non-blocking)
+                plc = getattr(card, '_plc_manager', None)
+                if plc:
+                    plc._running = False
+                    card._plc_manager = None
+
+                # Camera signals uzish + stop signali
+                for w in getattr(card, 'camera_workers', []):
+                    for sig in ('frame_ready', 'status_changed', 'stats_updated'):
+                        try:
+                            getattr(w, sig).disconnect()
+                        except Exception:
+                            pass
+                    try:
+                        w._running = False
+                        w.quit()
+                        old_workers.append(w)
+                    except Exception:
+                        pass
+                card.camera_workers.clear()
+
+                card.setParent(None)
+                card.deleteLater()
+            except Exception:
+                pass
+
+        # Eski workers to'liq to'xtaguncha kutish (heap corruption oldini olish)
+        running = [w for w in old_workers if w.isRunning()]
+        if not running:
+            QTimer.singleShot(100, self._load_crossings)
+            return
+
+        self._refresh_pending = len(running)
+        # Fallback: 5 soniyadan keyin majburiy yuklash
+        self._refresh_fallback = QTimer(self)
+        self._refresh_fallback.setSingleShot(True)
+        self._refresh_fallback.timeout.connect(self._do_refresh_load)
+        self._refresh_fallback.start(5000)
+
+        for w in running:
+            try:
+                w.finished.connect(self._on_old_worker_finished)
+            except Exception:
+                pass
+
+    def _on_old_worker_finished(self):
+        try:
+            self._refresh_pending = getattr(self, '_refresh_pending', 1) - 1
+            if self._refresh_pending <= 0:
+                try:
+                    self._refresh_fallback.stop()
+                except Exception:
+                    pass
+                self._do_refresh_load()
+        except Exception:
+            pass
+
+    def _do_refresh_load(self):
+        try:
+            if hasattr(self, '_refresh_fallback'):
+                try:
+                    self._refresh_fallback.stop()
+                    self._refresh_fallback.deleteLater()
+                except Exception:
+                    pass
+                del self._refresh_fallback
+            else:
+                return  # Ikkinchi marta chaqirilmasin
+            self._refresh_pending = 0
+        except Exception:
+            pass
         self._load_crossings()

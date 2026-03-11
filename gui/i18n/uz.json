@@ -1,13 +1,11 @@
 {
   "app.title": "RailSafe",
-
   "nav.dashboard": "Boshqaruv paneli",
   "nav.analytics": "Tahlil",
   "nav.settings": "Sozlamalar",
   "nav.about": "Tizim haqida",
   "nav.add_crossing": "+ Pereezd Qo'shish",
   "nav.refresh": "Yangilash",
-
   "crossing.back": "< Orqaga",
   "crossing.add_camera": "+ Kamera",
   "crossing.settings_btn": "Sozlamalar",
@@ -16,7 +14,6 @@
   "crossing.type.additional": "Qo'shimcha",
   "crossing.no_cameras": "Kameralar yo'q. '+ Kamera' tugmasini bosing.",
   "crossing.camera_settings": "Sozlamalar",
-
   "cam.status.connecting": "Ulanmoqda...",
   "cam.status.reconnecting": "Qayta ulanmoqda...",
   "cam.status.failed": "Ulanmadi",
@@ -26,7 +23,6 @@
   "cam.pause": "To'xtatish",
   "cam.resume": "Davom ettirish",
   "cam.paused": "To'xtatilgan",
-
   "stats.panel": "Statistika",
   "stats.cameras": "Kameralar",
   "stats.light": "Yengil transport",
@@ -40,19 +36,18 @@
   "stats.avg": "O'rt: {v:.0f}s",
   "stats.trains_today": "Bugun: {count} ta",
   "stats.no_cameras": "Kamera yo'q",
-
   "plc.title": "PLC Holati",
   "plc.status_label": "Holat",
   "plc.connected": "ULANGAN",
+  "plc.active": "POYEZD KELMOQDA",
+  "plc.no_connection": "ALOQA YO'Q",
   "plc.disabled": "O'CHIRILGAN",
   "plc.ip": "IP",
   "plc.port": "Port",
-
   "analytics.title": "Tahlil",
   "analytics.updated": "Yangilangan: {dt}",
   "analytics.report_btn": "Hisobot yuklash",
   "analytics.no_crossings": "Pereezdlar yo'q. Boshqaruv paneliga qaytib pereezd qo'shing.",
-
   "chart.today_dist": "Bugungi taqsimot",
   "chart.weekly": "Haftalik statistika (7 kun)",
   "chart.yearly": "Yillik trend (12 oy)",
@@ -66,14 +61,12 @@
   "chart.cameras_section": "Kameralar",
   "chart.weekly_section": "Haftalik (7 kun)",
   "chart.heatmap_section": "Bandlik xaritasi (7 kun x 24 soat)",
-
   "legend.light": "Yengil",
   "legend.heavy": "Og'ir",
   "legend.low": "Kam",
   "legend.medium": "O'rtacha",
   "legend.high": "Ko'p",
   "legend.trains": "Poyezd soni",
-
   "summary.total_transport": "Jami transport",
   "summary.today": "bugungi",
   "summary.light": "Yengil",
@@ -83,9 +76,7 @@
   "summary.cameras": "Kameralar",
   "summary.active": "faol",
   "summary.connected": "ulangan",
-
   "statusbar": "Pereezdlar: {total} | Kameralar: {cams}",
-
   "dlg.add_crossing.title_add": "Yangi Pereezd Qo'shish",
   "dlg.add_crossing.title_edit": "Pereezdni Tahrirlash",
   "dlg.add_crossing.tab_main": "Asosiy Ma'lumotlar",
@@ -109,7 +100,6 @@
   "dlg.add_crossing.placeholder_name": "Masalan: Pereezd 1",
   "dlg.add_crossing.placeholder_loc": "Masalan: Toshkent, Chilonzor tumani",
   "dlg.add_crossing.placeholder_desc": "Qo'shimcha ma'lumot",
-
   "dlg.add_camera.title_add": "Yangi Kamera Qo'shish",
   "dlg.add_camera.title_edit": "Kamerani Tahrirlash",
   "dlg.add_camera.name": "Nomi:*",
@@ -131,7 +121,6 @@
   "dlg.add_camera.type_main_info": "Bu kamera asosiy (katta) sifatida ko'rsatiladi",
   "dlg.add_camera.type_additional_info": "Bu kamera qo'shimcha (kichik) sifatida ko'rsatiladi",
   "dlg.add_camera.type_main_warn": "Diqqat: Avvalgi asosiy kamera qo'shimchaga o'zgaradi",
-
   "settings.title": "Sozlamalar",
   "settings.interface": "Interfeys",
   "settings.language": "Til:",
@@ -154,7 +143,6 @@
   "settings.model.default_sub": "80 klass, imgsz=640",
   "settings.model.custom": "Maxsus model (pereezd_yolo26n.pt)",
   "settings.model.custom_sub": "2 klass (yengil/og'ir), imgsz=1088",
-
   "export.title": "TensorRT Engine Eksport",
   "export.waiting": "kutilmoqda...",
   "export.running": "eksport qilinmoqda...",
@@ -162,7 +150,6 @@
   "export.error": "xatolik",
   "export.preparing": "Tayyorlanmoqda...",
   "export.time": "Vaqt: {mins:02d}:{secs:02d}",
-
   "confirm.delete_crossing": "Bu pereezdni o'chirmoqchimisiz?",
   "confirm.exit": "Dasturdan chiqmoqchimisiz?",
   "confirm.title": "Tasdiqlash",
@@ -170,9 +157,7 @@
   "error.page_open": "Sahifani ochishda xatolik",
   "error.crossing_open": "Pereezdni ochishda xatolik: {e}",
   "error.report": "Hisobotni yaratishda xatolik yuz berdi.",
-
   "dashboard.empty": "Pereezdlar yo'q. Toolbar dan '+ Pereezd Qo'shish' bosing.",
-
   "report.title": "Hisobot yuklash",
   "report.hint": "Sana oralig'ini tanlang va Word formatida hisobot yuklang.",
   "report.today": "Bugun",
@@ -186,7 +171,6 @@
   "report.err_date": "Boshlanish sanasi tugash sanasidan keyin bo'lishi mumkin emas.",
   "report.success": "Hisobot saqlandi:\n{path}",
   "report.save_dialog": "Hisobot saqlansin",
-
   "about.title": "Tizim haqida",
   "about.nav.general": "Umumiy",
   "about.nav.architecture": "Arxitektura",
@@ -196,11 +180,9 @@
   "about.nav.forecast": "Bashorat",
   "about.nav.version": "Versiya",
   "about.version_badge": "Versiya 1.0.5 • 2025  OEM Design",
-
   "cam.loading": "Yuklanmoqda...",
   "cam.bandlik": "Bandlik: {count}",
   "cam.status.main_down": "Asosiy kamera uzildi",
-
   "cam_dlg.title": "Kamera Sozlamalari - {name}",
   "cam_dlg.subtitle": "- Kameralar",
   "cam_dlg.no_cameras": "Kameralar topilmadi",
@@ -213,27 +195,22 @@
   "cam_dlg.toggle_msg_off": "Kamera o'chirildi. Yangilash uchun sahifani qayta yuklang.",
   "cam_dlg.toggle_msg_on": "Kamera yoqildi. Yangilash uchun sahifani qayta yuklang.",
   "cam_dlg.toggle_title": "Tayyor",
-
   "confirm.delete_camera": "'{name}' kamerasini o'chirmoqchimisiz?",
-
   "dlg.add_crossing.import_err": "JSON o'qishda xatolik: {e}",
-
   "export.json_title": "JSON Eksport",
   "export.json_success": "Ma'lumotlar saqlandi:\n{path}",
   "export.json_error": "Eksport xatosi: {e}",
-
   "chart.total": "Jami",
-
   "menu.open": "Ochish",
   "menu.cam_settings": "Kamera Sozlamalari",
   "menu.info": "Pereezd Ma'lumotlari",
   "menu.export_json": "JSON Eksport",
-
   "about.section.general": "Umumiy maqsad",
   "about.section.architecture": "Tizim arxitekturasi",
   "about.section.howworks": "Qanday ishlaydi",
   "about.section.security": "Xavfsizlik darajasi",
   "about.section.analytics": "Tahlil",
   "about.section.forecast": "Bashorat",
-  "about.section.version": "Versiya va muallif"
+  "about.section.version": "Versiya va muallif",
+  "chart.trains_hourly": "Soatlik poyezdlar (bugun)"
 }

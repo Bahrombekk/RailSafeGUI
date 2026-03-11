@@ -15,6 +15,7 @@ from PyQt6.QtGui import QFont, QPainter, QPen, QColor
 
 from gui.utils.theme_colors import C
 from gui.utils.language import t, LM
+from gui.utils.plc_manager import SNAP7_AVAILABLE as _SNAP7_OK
 
 
 class StyledCheckBox(QWidget):
@@ -276,6 +277,40 @@ def _dialog_style():
     """
 
 
+class _PLCTestThread(QThread):
+    """PLC ulanishini background threadda tekshiradi — GUI freezelanmaydi."""
+    result_ready = pyqtSignal(bool, str)  # (success, message)
+
+    def __init__(self, ip: str, port: int):
+        super().__init__()
+        self.ip = ip
+        self.port = port
+
+    def run(self):
+        if not _SNAP7_OK:
+            self.result_ready.emit(False, "python-snap7 o'rnatilmagan")
+            return
+        try:
+            from snap7.client import Client
+            from snap7.util import get_int
+            from snap7.type import Areas
+            plc = Client()
+            plc.connect(self.ip, 0, 1, tcp_port=self.port)
+            try:
+                ans = plc.read_area(area=Areas.DB, db_number=5, start=0, size=2)
+                val = get_int(ans, 0)
+                plc.disconnect()
+                self.result_ready.emit(True, f"Ulanish muvaffaqiyatli!\nDB5.DBW0 = {val}")
+            except Exception as e:
+                try:
+                    plc.disconnect()
+                except Exception:
+                    pass
+                self.result_ready.emit(False, f"Ulanildi lekin o'qishda xato:\n{e}")
+        except Exception as e:
+            self.result_ready.emit(False, f"Ulanib bo'lmadi:\n{e}")
+
+
 class AddCrossingDialog(QDialog):
     """Dialog for adding/editing a railway crossing"""
 
@@ -430,13 +465,43 @@ class AddCrossingDialog(QDialog):
         self.plc_type.setEnabled(enabled)
 
     def _test_plc_connection(self):
-        """Test PLC connection"""
-        # Placeholder for testing PLC connection
-        QMessageBox.information(
-            self,
-            "Test",
-            "PLC ulanish testi hozircha mavjud emas.\nTez orada qo'shiladi."
-        )
+        """PLC ulanishini background threadda test qilish."""
+        ip = self.plc_ip.text().strip()
+        port = self.plc_port.value()
+
+        if not ip:
+            QMessageBox.warning(self, "PLC Test", "IP manzil kiritilmagan!")
+            return
+
+        if not _SNAP7_OK:
+            QMessageBox.warning(self, "PLC Test",
+                "python-snap7 o'rnatilmagan.\n"
+                "Terminalni oching va quyidagini bajaring:\n"
+                "pip install python-snap7")
+            return
+
+        # Tugma bloklash + "Tekshirilmoqda..." matni
+        sender = self.sender()
+        if sender:
+            sender.setEnabled(False)
+            sender.setText("⏳ Tekshirilmoqda...")
+
+        self._plc_test_thread = _PLCTestThread(ip, port)
+        self._plc_test_thread.result_ready.connect(
+            lambda ok, msg: self._on_plc_test_result(ok, msg, sender))
+        self._plc_test_thread.start()
+
+    def _on_plc_test_result(self, success: bool, message: str, btn=None):
+        """PLC test natijasi."""
+        # Tugmani qayta yoqish
+        if btn:
+            btn.setEnabled(True)
+            btn.setText(f"🔍 {t('dlg.add_crossing.test_btn')}")
+
+        if success:
+            QMessageBox.information(self, "PLC Test — Muvaffaqiyatli ✅", message)
+        else:
+            QMessageBox.warning(self, "PLC Test — Xato ❌", message)
 
     def _import_json(self):
         """JSON fayldan pereezd ma'lumotlarini yuklash"""

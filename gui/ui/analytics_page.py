@@ -12,7 +12,7 @@ from PyQt6.QtGui import QColor
 from datetime import datetime, date, timedelta
 
 from gui.utils.theme_colors import C
-from gui.widgets.hourly_chart import HourlyBarChart
+from gui.widgets.hourly_chart import HourlyBarChart, TrainHourlyBarChart
 from gui.widgets.charts import DonutChart, LineChart, BarChart, SparkLine, TrainBarChart
 from gui.widgets.heatmap import HeatmapChart
 from gui.utils.report_generator import generate_report
@@ -725,6 +725,25 @@ class AnalyticsPage(QWidget):
         row3.addWidget(tm_card, stretch=50)
 
         main_layout.addLayout(row3)
+
+        # ─── Poyezd soatlik grafigi ───────────────────────────
+        th_card = self._mini_card(t("chart.trains_hourly"), f"mc_th_{cid}")
+        th_legend = QHBoxLayout()
+        th_legend.addWidget(self._legend_dot(C('accent_teal'), t("legend.trains")))
+        th_legend.addStretch()
+        # Jami soni
+        train_hourly = self.stats_db.get_train_hourly_data(cid)
+        total_today = sum(train_hourly)
+        th_legend.addWidget(
+            self._legend_dot(C('accent_teal'),
+                             t("stats.trains_today", count=total_today))
+        )
+        th_card.layout().addLayout(th_legend)
+        th_chart = TrainHourlyBarChart()
+        th_chart.setMinimumHeight(120)
+        th_chart.set_data(train_hourly)
+        th_card.layout().addWidget(th_chart)
+        main_layout.addWidget(th_card)
 
         # ─── Heatmap (7 kun x 24 soat) ───────────────────────
         main_layout.addWidget(self._hdiv())

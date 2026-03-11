@@ -38,7 +38,12 @@ wheels/
 .Trashes
 ehthumbs.db
 Thumbs.db
-
+.vs/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
 # Project specific
 Keraksiz/
 runs/
