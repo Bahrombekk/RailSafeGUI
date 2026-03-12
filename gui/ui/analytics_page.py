@@ -16,11 +16,12 @@ from gui.widgets.hourly_chart import HourlyBarChart, TrainHourlyBarChart
 from gui.widgets.charts import DonutChart, LineChart, BarChart, SparkLine, TrainBarChart
 from gui.widgets.heatmap import HeatmapChart
 from gui.utils.report_generator import generate_report
+from gui.utils.report_html import build_html_report
 from gui.utils.language import t, LM
 
 
 class ReportDialog(QDialog):
-    """Hisobot yuklash dialogi — sana tanlash va Word eksport"""
+    """Hisobot yuklash dialogi — sana tanlash, Word va PDF eksport"""
 
     def __init__(self, config_manager, stats_db, parent=None):
         super().__init__(parent)
@@ -136,6 +137,23 @@ class ReportDialog(QDialog):
         cancel_btn.clicked.connect(self.reject)
         btn_row.addWidget(cancel_btn)
 
+        pdf_btn = QPushButton("🌐  PDF")
+        pdf_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {C('bg_input')};
+                color: {C('text_secondary')};
+                border: 1px solid {C('border_light')};
+                border-radius: 6px;
+                padding: 8px 18px;
+                font-size: 12px;
+                font-weight: bold;
+            }}
+            QPushButton:hover {{ background-color: {C('bg_hover')}; color: {C('text_primary')}; }}
+        """)
+        pdf_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        pdf_btn.clicked.connect(self._export_pdf)
+        btn_row.addWidget(pdf_btn)
+
         export_btn = QPushButton(t("report.download"))
         export_btn.setStyleSheet(f"""
             QPushButton {{
@@ -184,11 +202,74 @@ class ReportDialog(QDialog):
         ok = generate_report(self.config_manager, self.stats_db, d_from, d_to, file_path)
 
         if ok:
-            QMessageBox.information(self, t("cam_dlg.toggle_title"),
-                t("report.success", path=file_path))
+            import os
+            os.startfile(file_path)
             self.accept()
         else:
             QMessageBox.warning(self, t("error.title"), t("error.report"))
+
+    def _export_pdf(self):
+        """HTML dan PDF yaratib saqlash (oyna ochmasdan)."""
+        d_from = self.date_from.date().toString("yyyy-MM-dd")
+        d_to   = self.date_to.date().toString("yyyy-MM-dd")
+
+        if d_from > d_to:
+            QMessageBox.warning(self, t("error.title"), t("report.err_date"))
+            return
+
+        default_name = f"hisobot_{d_from}_{d_to}.pdf"
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "PDF saqlash", default_name, "PDF fayl (*.pdf)")
+
+        if not file_path:
+            return
+
+        self.accept()
+
+        import tempfile, os
+        from PyQt6.QtWebEngineCore import QWebEnginePage
+        from PyQt6.QtCore import QUrl, QMarginsF
+        from PyQt6.QtGui import QPageSize, QPageLayout
+
+        html = build_html_report(
+            self.config_manager, self.stats_db, d_from, d_to)
+
+        tmp = tempfile.NamedTemporaryFile(
+            delete=False, suffix=".html", mode="w", encoding="utf-8")
+        tmp.write(html)
+        tmp.close()
+
+        page = QWebEnginePage()
+
+        def _on_loaded(ok):
+            layout = QPageLayout(
+                QPageSize(QPageSize.PageSizeId.A4),
+                QPageLayout.Orientation.Portrait,
+                QMarginsF(10, 10, 10, 10)
+            )
+            page.printToPdf(file_path, layout)
+            page.pdfPrintingFinished.connect(
+                lambda path, success: _on_pdf_done(success))
+
+        def _on_pdf_done(success):
+            try:
+                os.unlink(tmp.name)
+            except Exception:
+                pass
+            if success:
+                try:
+                    os.startfile(file_path)
+                except Exception:
+                    pass
+            else:
+                QMessageBox.warning(
+                    None, t("error.title"), t("error.report"))
+            # page ni saqlab turish uchun
+            self._pdf_page = None
+
+        self._pdf_page = page
+        page.loadFinished.connect(_on_loaded)
+        page.load(QUrl.fromLocalFile(tmp.name))
 
 
 class AnalyticsPage(QWidget):

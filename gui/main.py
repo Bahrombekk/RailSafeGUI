@@ -34,6 +34,8 @@ except Exception as _e:
 from PyQt6.QtWidgets import QApplication, QMessageBox
 from PyQt6.QtGui import QIcon
 from PyQt6.QtCore import Qt
+# QWebEngineWidgets QApplication dan OLDIN import bo'lishi shart
+from PyQt6.QtWebEngineWidgets import QWebEngineView as _QWEView  # noqa: F401
 
 from gui.ui.main_window import MainWindow
 

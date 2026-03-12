@@ -596,6 +596,60 @@ class StatsDB:
                 counts[h] += 1
         return counts
 
+    def get_train_range_stats(self, crossing_id: int,
+                              date_from: str, date_to: str) -> Dict:
+        """Sana oralig'ida birlashtirilgan poyezd statistikasi.
+        Returns: {"count": N, "min": s, "max": s, "avg": s}
+        """
+        with self._lock:
+            raw = self._get_raw_events(crossing_id, date_from, date_to)
+        # Kunlik birlashtirish
+        by_day: Dict[str, list] = {}
+        for r in raw:
+            d = r[0][:10]
+            by_day.setdefault(d, []).append(r)
+        all_durations = []
+        for day_rows in by_day.values():
+            for _, _, dur in self._merge_intervals(day_rows):
+                if dur is not None:
+                    all_durations.append(dur)
+        if not all_durations:
+            return {"count": 0, "min": 0, "max": 0, "avg": 0}
+        return {
+            "count": len(all_durations),
+            "min": min(all_durations),
+            "max": max(all_durations),
+            "avg": sum(all_durations) / len(all_durations),
+        }
+
+    def get_train_events_range(self, crossing_id: int,
+                               date_from: str, date_to: str) -> List[Dict]:
+        """Sana oralig'idagi har bir birlashtirilgan poyezd o'tishi.
+        Returns: [{"date": "12.03.2026", "start": "09:30", "end": "09:36",
+                   "duration_secs": 360.0, "duration_fmt": "6 daq 0 son"}, ...]
+        """
+        with self._lock:
+            raw = self._get_raw_events(crossing_id, date_from, date_to)
+        by_day: Dict[str, list] = {}
+        for r in raw:
+            d = r[0][:10]
+            by_day.setdefault(d, []).append(r)
+        result = []
+        for ds in sorted(by_day.keys()):
+            for s_dt, e_dt, dur in self._merge_intervals(by_day[ds]):
+                if e_dt is None or dur is None:
+                    continue
+                m = int(dur) // 60
+                s = int(dur) % 60
+                result.append({
+                    "date": s_dt.strftime("%d.%m.%Y"),
+                    "start": s_dt.strftime("%H:%M"),
+                    "end": e_dt.strftime("%H:%M"),
+                    "duration_secs": dur,
+                    "duration_fmt": f"{m} daq {s} son" if m > 0 else f"{s} son",
+                })
+        return result
+
     def rename_camera(self, crossing_id: int, old_name: str, new_name: str):
         """Kamera nomi o'zgarganda barcha statslarni yangi nomga ko'chirish."""
         if old_name == new_name:
