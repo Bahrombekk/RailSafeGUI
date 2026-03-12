@@ -16,7 +16,7 @@ from PyQt6.QtCore import QUrl, pyqtSignal, QObject
 from PyQt6.QtGui import QPageSize, QPageLayout
 from PyQt6.QtCore import QMarginsF
 
-from gui.utils.report_html import build_html_report
+from app.reports.pdf import build_html_report
 
 
 class _PdfPrinter(QObject):

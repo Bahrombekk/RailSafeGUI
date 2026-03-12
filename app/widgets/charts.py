@@ -10,7 +10,7 @@ from PyQt6.QtGui import (QPainter, QColor, QPen, QFont, QBrush,
                           QLinearGradient, QPainterPath, QConicalGradient)
 from typing import List, Dict
 
-from gui.utils.theme_colors import C
+from app.utils.theme_colors import C
 
 
 # ═══════════════════════════════════════════════════════════════

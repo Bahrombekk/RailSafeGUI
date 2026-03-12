@@ -14,7 +14,7 @@ from PyQt6.QtGui import (QPainter, QColor, QFont, QPen, QBrush,
                           QPainterPath, QLinearGradient)
 from typing import List, Dict
 
-from gui.utils.theme_colors import C
+from app.utils.theme_colors import C
 
 
 class HeatmapChart(QWidget):

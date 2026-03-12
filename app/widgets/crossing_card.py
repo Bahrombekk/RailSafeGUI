@@ -17,10 +17,10 @@ import time
 import json
 import threading
 from datetime import date
-from gui.utils.theme_colors import C
-from gui.utils.polygon_tracker import PolygonTracker
-from gui.utils.language import t, LM
-from gui.utils.plc_manager import PLCManager as _PLCManager, SNAP7_AVAILABLE as _SNAP7_OK
+from app.utils.theme_colors import C
+from app.core.tracker import PolygonTracker
+from app.utils.language import t, LM
+from app.core.plc import PLCManager as _PLCManager, SNAP7_AVAILABLE as _SNAP7_OK
 
 # Car detector import (optional)
 try:

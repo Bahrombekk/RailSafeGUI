@@ -9,7 +9,7 @@ from PyQt6.QtGui import QPixmap, QImage, QFont
 import cv2
 import numpy as np
 from datetime import datetime
-from gui.utils.camera_helper import OptimizedCamera
+from app.core.camera import OptimizedCamera
 
 
 class CameraWidget(QWidget):

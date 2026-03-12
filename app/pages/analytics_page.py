@@ -11,13 +11,13 @@ from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QDate
 from PyQt6.QtGui import QColor
 from datetime import datetime, date, timedelta
 
-from gui.utils.theme_colors import C
-from gui.widgets.hourly_chart import HourlyBarChart, TrainHourlyBarChart
-from gui.widgets.charts import DonutChart, LineChart, BarChart, SparkLine, TrainBarChart
-from gui.widgets.heatmap import HeatmapChart
-from gui.utils.report_generator import generate_report
-from gui.utils.report_html import build_html_report
-from gui.utils.language import t, LM
+from app.utils.theme_colors import C
+from app.widgets.hourly_chart import HourlyBarChart, TrainHourlyBarChart
+from app.widgets.charts import DonutChart, LineChart, BarChart, SparkLine, TrainBarChart
+from app.widgets.heatmap import HeatmapChart
+from app.reports.word import generate_report
+from app.reports.pdf import build_html_report
+from app.utils.language import t, LM
 
 
 class ReportDialog(QDialog):

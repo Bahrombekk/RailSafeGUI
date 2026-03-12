@@ -9,15 +9,15 @@ from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QAction
 from pathlib import Path
 
-from gui.ui.dashboard import Dashboard
-from gui.ui.crossing_detail import CrossingDetail
-from gui.ui.dialogs import (AddCrossingDialog, AddCameraDialog, SettingsDialog,
+from app.pages.dashboard import Dashboard
+from app.pages.crossing_detail import CrossingDetail
+from app.pages.dialogs import (AddCrossingDialog, AddCameraDialog, SettingsDialog,
                              EngineExportDialog, get_models_needing_export)
-from gui.ui.about_page import AboutPage
-from gui.ui.analytics_page import AnalyticsPage
-from gui.utils.config_manager import ConfigManager
-from gui.utils.theme_colors import set_theme, C
-from gui.utils.language import t, LM
+from app.pages.about_page import AboutPage
+from app.pages.analytics_page import AnalyticsPage
+from app.core.config import ConfigManager
+from app.utils.theme_colors import set_theme, C
+from app.utils.language import t, LM
 
 
 class MainWindow(QMainWindow):

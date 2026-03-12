@@ -37,7 +37,7 @@ from PyQt6.QtCore import Qt
 # QWebEngineWidgets QApplication dan OLDIN import bo'lishi shart
 from PyQt6.QtWebEngineWidgets import QWebEngineView as _QWEView  # noqa: F401
 
-from gui.ui.main_window import MainWindow
+from app.pages.main_window import MainWindow
 
 # ─── Logging ──────────────────────────────────────────────
 _log_dir = Path(__file__).parent / "data"

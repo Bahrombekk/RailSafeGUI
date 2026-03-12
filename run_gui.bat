@@ -26,7 +26,7 @@ echo ▶️  Dastur ishga tushirilmoqda...
 echo.
 
 REM Run the application
-cd gui
+cd app
 python main.py
 
 REM Deactivate virtual environment

@@ -1,7 +1,7 @@
 """
 Language Manager — theme_colors.C() ga o'xshash pattern.
 Ishlatish:
-    from gui.utils.language import t, LM
+    from app.utils.language import t, LM
     label.setText(t("crossing.back"))
     label.setText(t("cam.detection", light=3, heavy=1, total=4, fps=25.0))
     LM.set_language("ru", config_manager)

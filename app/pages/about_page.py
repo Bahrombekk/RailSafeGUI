@@ -8,8 +8,8 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont, QPixmap
 from pathlib import Path
 
-from gui.utils.theme_colors import C
-from gui.utils.language import t, LM
+from app.utils.theme_colors import C
+from app.utils.language import t, LM
 
 
 # Nav items: (section_key, icon, nav_t_key, section_t_key)

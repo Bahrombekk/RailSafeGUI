@@ -15,10 +15,10 @@ import time
 import json
 import threading
 
-from gui.utils.theme_colors import C
-from gui.utils.language import t, LM
-from gui.utils.polygon_tracker import PolygonTracker
-from gui.widgets.hourly_chart import HourlyChartPanel
+from app.utils.theme_colors import C
+from app.utils.language import t, LM
+from app.core.tracker import PolygonTracker
+from app.widgets.hourly_chart import HourlyChartPanel
 
 # RTSP ultra-low-latency: UDP transport (TCP dan tezroq), minimal buffer
 os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = (
@@ -1200,7 +1200,7 @@ class CrossingDetail(QWidget):
         self.camera_workers_dict[cam_id] = worker
 
     def _open_camera_settings(self, camera_id):
-        from gui.ui.dialogs import AddCameraDialog
+        from app.pages.dialogs import AddCameraDialog
         dialog = AddCameraDialog(self.config_manager, self.crossing_id, camera_id,
                                   stats_db=self.stats_db)
         if dialog.exec():

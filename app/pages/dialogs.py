@@ -13,9 +13,9 @@ from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QThread
 from PyQt6.QtGui import QFont, QPainter, QPen, QColor
 
-from gui.utils.theme_colors import C
-from gui.utils.language import t, LM
-from gui.utils.plc_manager import SNAP7_AVAILABLE as _SNAP7_OK
+from app.utils.theme_colors import C
+from app.utils.language import t, LM
+from app.core.plc import SNAP7_AVAILABLE as _SNAP7_OK
 
 
 class StyledCheckBox(QWidget):
@@ -1126,7 +1126,7 @@ def _calculate_export_batch() -> int:
     """Konfiguratsiyadan kameralar sonini hisoblash → engine batch size.
     Minimum 4, 4 ga yaxlitlash, maksimum 16. Sub-batch detektor overflow ni hal qiladi."""
     try:
-        from gui.utils.config_manager import ConfigManager
+        from app.core.config import ConfigManager
         cm = ConfigManager()
         crossings = cm.get_crossings()
         total_cameras = sum(len(c.get("cameras", [])) for c in crossings)

@@ -7,10 +7,10 @@ import os
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QScrollArea,
                               QGridLayout, QSizePolicy)
 from PyQt6.QtCore import Qt, pyqtSignal
-from gui.widgets.crossing_card import CrossingCard
-from gui.utils.theme_colors import C
-from gui.utils.stats_db import StatsDB
-from gui.utils.language import t, LM
+from app.widgets.crossing_card import CrossingCard
+from app.utils.theme_colors import C
+from app.core.database import StatsDB
+from app.utils.language import t, LM
 
 try:
     from detectors import RealtimeMultiCameraDetector

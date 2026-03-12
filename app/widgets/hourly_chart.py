@@ -9,7 +9,7 @@ from PyQt6.QtGui import QPainter, QColor, QPen, QFont, QBrush
 from datetime import datetime
 from typing import List, Dict
 
-from gui.utils.theme_colors import C
+from app.utils.theme_colors import C
 
 
 class HourlyBarChart(QWidget):
