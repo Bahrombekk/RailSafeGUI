@@ -212,5 +212,7 @@
   "about.section.analytics": "Tahlil",
   "about.section.forecast": "Bashorat",
   "about.section.version": "Versiya va muallif",
-  "chart.trains_hourly": "Soatlik poyezdlar (bugun)"
+  "chart.trains_hourly": "Soatlik poyezdlar (bugun)",
+  "chart.trains_today_list": "Bugungi o'tishlar",
+  "train.no_events_today": "Bugun poyezd o'tmadi"
 }

@@ -335,6 +335,45 @@ class StatsDB:
 
     # ─── TRAIN EVENTS ────────────────────────────────────────
 
+    @staticmethod
+    def _merge_intervals(rows: list, gap_secs: float = 180.0) -> list:
+        """Yaqin joylashgan eventlarni birlashtirish.
+
+        rows: [(start_str, end_str, duration), ...]  — start_time bo'yicha ASC tartibda.
+        gap_secs: ikki event orasidagi maksimal bo'shliq (sek). Bu dan kichik bo'lsa — birlashadi.
+        Returns: [(start_dt, end_dt, duration_secs), ...]
+        """
+        parsed = []
+        for start_str, end_str, _dur in rows:
+            try:
+                s = datetime.fromisoformat(start_str)
+                e = datetime.fromisoformat(end_str) if end_str else None
+                parsed.append([s, e])
+            except Exception:
+                pass
+        if not parsed:
+            return []
+
+        merged = [list(parsed[0])]
+        for cur_s, cur_e in parsed[1:]:
+            prev_e = merged[-1][1]
+            if prev_e is not None and cur_s is not None:
+                gap = (cur_s - prev_e).total_seconds()
+                if gap < gap_secs:
+                    # Birlashtirish: yangi end ni kattaroq qilib olish
+                    if cur_e is None:
+                        merged[-1][1] = None
+                    elif prev_e is None or cur_e > prev_e:
+                        merged[-1][1] = cur_e
+                    continue
+            merged.append([cur_s, cur_e])
+
+        result = []
+        for s, e in merged:
+            dur = (e - s).total_seconds() if e else None
+            result.append((s, e, dur))
+        return result
+
     def record_train_event(self, crossing_id: int,
                            start_dt: datetime, end_dt: datetime):
         """Tugallangan poyezd o'tishini bir vaqtda yozish (start + end birgalikda).
@@ -387,42 +426,58 @@ class StatsDB:
                 self._conn.commit()
 
     def get_train_today_stats(self, crossing_id: int) -> Dict:
-        """Bugungi poyezd statistikasi.
+        """Bugungi poyezd statistikasi (birlashtirilgan).
         Returns: {"count": 5, "min": 45.2, "max": 120.5, "avg": 78.3}"""
         today = date.today().isoformat()
         with self._lock:
-            row = self._conn.execute("""
-                SELECT COUNT(*),
-                       COALESCE(MIN(duration_seconds), 0),
-                       COALESCE(MAX(duration_seconds), 0),
-                       COALESCE(AVG(duration_seconds), 0)
+            rows = self._conn.execute("""
+                SELECT start_time, end_time, duration_seconds
                 FROM train_events
                 WHERE crossing_id = ? AND event_date = ?
-                  AND duration_seconds IS NOT NULL
-            """, (crossing_id, today)).fetchone()
+                  AND end_time IS NOT NULL
+                ORDER BY start_time ASC
+            """, (crossing_id, today)).fetchall()
+        merged = self._merge_intervals(rows)
+        durations = [d for _, _, d in merged if d is not None]
+        if not durations:
+            return {"count": 0, "min": 0, "max": 0, "avg": 0}
         return {
-            "count": row[0] if row else 0,
-            "min": row[1] if row else 0,
-            "max": row[2] if row else 0,
-            "avg": row[3] if row else 0,
+            "count": len(durations),
+            "min": min(durations),
+            "max": max(durations),
+            "avg": sum(durations) / len(durations),
         }
 
+    def _get_raw_events(self, crossing_id: int,
+                        date_from: str, date_to: str) -> list:
+        """Berilgan sana oralig'idagi xom eventlarni qaytarish (ASC tartib)."""
+        rows = self._conn.execute("""
+            SELECT start_time, end_time, duration_seconds
+            FROM train_events
+            WHERE crossing_id = ?
+              AND event_date >= ? AND event_date <= ?
+            ORDER BY start_time ASC
+        """, (crossing_id, date_from, date_to)).fetchall()
+        return rows
+
     def get_train_weekly(self, crossing_id: int) -> List[Dict]:
-        """Oxirgi 7 kun poyezd soni + o'rtacha vaqt, hafta kuni tartibi (Du→Ya).
-        Returns: [{"date": "...", "day": "Du", "count": 3, "avg": 65.0}, ...]"""
+        """Oxirgi 7 kun poyezd soni (birlashtirilgan), hafta kuni tartibi (Du→Ya)."""
         days_uz = ["Du", "Se", "Cho", "Pa", "Ju", "Sha", "Ya"]
         today = date.today()
         date_from = (today - timedelta(days=6)).isoformat()
         with self._lock:
-            rows = self._conn.execute("""
-                SELECT event_date, COUNT(*), COALESCE(AVG(duration_seconds), 0)
-                FROM train_events
-                WHERE crossing_id = ?
-                  AND event_date >= ? AND event_date <= ?
-                  AND duration_seconds IS NOT NULL
-                GROUP BY event_date
-            """, (crossing_id, date_from, today.isoformat())).fetchall()
-        db_map = {r[0]: (r[1], r[2]) for r in rows}
+            raw = self._get_raw_events(crossing_id, date_from, today.isoformat())
+        # Har kun uchun alohida birlashtirish
+        by_day: Dict[str, list] = {}
+        for r in raw:
+            d = r[0][:10]
+            by_day.setdefault(d, []).append(r)
+        db_map = {}
+        for ds, day_rows in by_day.items():
+            merged = self._merge_intervals(day_rows)
+            durations = [d for _, _, d in merged if d is not None]
+            avg = sum(durations) / len(durations) if durations else 0
+            db_map[ds] = (len(merged), avg)
         data = []
         for i in range(6, -1, -1):
             d = today - timedelta(days=i)
@@ -433,20 +488,21 @@ class StatsDB:
         return data
 
     def get_train_monthly(self, crossing_id: int) -> List[Dict]:
-        """Oxirgi 30 kun poyezd soni.
-        Returns: [{"date": "...", "day": 13, "count": 3, "avg": 65.0}, ...]"""
+        """Oxirgi 30 kun poyezd soni (birlashtirilgan)."""
         today = date.today()
         date_from = (today - timedelta(days=29)).isoformat()
         with self._lock:
-            rows = self._conn.execute("""
-                SELECT event_date, COUNT(*), COALESCE(AVG(duration_seconds), 0)
-                FROM train_events
-                WHERE crossing_id = ?
-                  AND event_date >= ? AND event_date <= ?
-                  AND duration_seconds IS NOT NULL
-                GROUP BY event_date
-            """, (crossing_id, date_from, today.isoformat())).fetchall()
-        db_map = {r[0]: (r[1], r[2]) for r in rows}
+            raw = self._get_raw_events(crossing_id, date_from, today.isoformat())
+        by_day: Dict[str, list] = {}
+        for r in raw:
+            d = r[0][:10]
+            by_day.setdefault(d, []).append(r)
+        db_map = {}
+        for ds, day_rows in by_day.items():
+            merged = self._merge_intervals(day_rows)
+            durations = [d for _, _, d in merged if d is not None]
+            avg = sum(durations) / len(durations) if durations else 0
+            db_map[ds] = (len(merged), avg)
         data = []
         for i in range(29, -1, -1):
             d = today - timedelta(days=i)
@@ -456,44 +512,88 @@ class StatsDB:
         return data
 
     def get_all_train_today(self) -> Dict[int, int]:
-        """Barcha pereezdlar bugungi poyezd soni.
-        Returns: {crossing_id: count, ...}"""
+        """Barcha pereezdlar bugungi poyezd soni (birlashtirilgan)."""
         today = date.today().isoformat()
         with self._lock:
-            rows = self._conn.execute("""
-                SELECT crossing_id, COUNT(*)
-                FROM train_events
-                WHERE event_date = ? AND duration_seconds IS NOT NULL
-                GROUP BY crossing_id
-            """, (today,)).fetchall()
-        return {r[0]: r[1] for r in rows}
+            cids = [r[0] for r in self._conn.execute(
+                "SELECT DISTINCT crossing_id FROM train_events WHERE event_date = ?",
+                (today,)).fetchall()]
+        result = {}
+        for cid in cids:
+            result[cid] = self.get_train_today_stats(cid)["count"]
+        return result
 
     def get_train_today_count(self, crossing_id: int) -> int:
-        """Bugungi poyezdlar soni (jarayondagilari ham bilan)."""
-        today = date.today().isoformat()
-        with self._lock:
-            row = self._conn.execute("""
-                SELECT COUNT(*) FROM train_events
-                WHERE crossing_id = ? AND event_date = ?
-            """, (crossing_id, today)).fetchone()
-        return row[0] if row else 0
+        """Bugungi birlashtirilgan poyezdlar soni."""
+        return self.get_train_today_stats(crossing_id)["count"]
 
-    def get_train_hourly_data(self, crossing_id: int,
-                              target_date: Optional[str] = None) -> List[int]:
-        """24 soatlik poyezd soni (grafik uchun). Returns: [0]*24 list."""
+    def get_train_events_today(self, crossing_id: int,
+                               target_date: Optional[str] = None) -> List[Dict]:
+        """Bugungi har bir poyezd o'tishini birlashtirilib qaytarish.
+        Returns: [{"start": "12:00", "end": "12:06", "duration": 360.0, "in_progress": False}, ...]
+        Oxirgi event birinchi (teskari tartib).
+        """
         if target_date is None:
             target_date = date.today().isoformat()
         with self._lock:
             rows = self._conn.execute("""
-                SELECT CAST(strftime('%H', start_time) AS INTEGER) as hour, COUNT(*)
+                SELECT start_time, end_time, duration_seconds
                 FROM train_events
                 WHERE crossing_id = ? AND event_date = ?
-                GROUP BY hour
+                ORDER BY start_time ASC
             """, (crossing_id, target_date)).fetchall()
+
+        # Ochiq (jarayondagi) eventni ajratish
+        closed = [r for r in rows if r[1] is not None]
+        open_ev = [r for r in rows if r[1] is None]
+
+        merged = self._merge_intervals(closed)
+
+        result = []
+        # Ochiq event (hozir o'tayotgan) — eng birinchi
+        for start_str, _, _ in open_ev:
+            try:
+                s = datetime.fromisoformat(start_str)
+                result.append({
+                    "start": s.strftime("%H:%M"),
+                    "end": "...",
+                    "duration": 0.0,
+                    "in_progress": True,
+                })
+            except Exception:
+                pass
+
+        for s_dt, e_dt, dur in reversed(merged):
+            try:
+                result.append({
+                    "start": s_dt.strftime("%H:%M"),
+                    "end": e_dt.strftime("%H:%M") if e_dt else "...",
+                    "duration": dur or 0.0,
+                    "in_progress": False,
+                })
+            except Exception:
+                pass
+        return result
+
+    def get_train_hourly_data(self, crossing_id: int,
+                              target_date: Optional[str] = None) -> List[int]:
+        """24 soatlik poyezd soni (grafik uchun, birlashtirilgan). Returns: [0]*24 list."""
+        if target_date is None:
+            target_date = date.today().isoformat()
+        with self._lock:
+            rows = self._conn.execute("""
+                SELECT start_time, end_time, duration_seconds
+                FROM train_events
+                WHERE crossing_id = ? AND event_date = ?
+                  AND end_time IS NOT NULL
+                ORDER BY start_time ASC
+            """, (crossing_id, target_date)).fetchall()
+        merged = self._merge_intervals(rows)
         counts = [0] * 24
-        for hour, count in rows:
-            if 0 <= hour < 24:
-                counts[hour] = count
+        for s_dt, _e, _d in merged:
+            h = s_dt.hour
+            if 0 <= h < 24:
+                counts[h] += 1
         return counts
 
     def rename_camera(self, crossing_id: int, old_name: str, new_name: str):

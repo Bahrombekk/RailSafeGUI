@@ -212,5 +212,7 @@
   "about.section.analytics": "Аналитика",
   "about.section.forecast": "Прогноз",
   "about.section.version": "Версия и авторы",
-  "chart.trains_hourly": "Поезда по часам (сегодня)"
+  "chart.trains_hourly": "Поезда по часам (сегодня)",
+  "chart.trains_today_list": "Проезды сегодня",
+  "train.no_events_today": "Сегодня поездов не было"
 }

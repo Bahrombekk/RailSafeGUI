@@ -212,5 +212,7 @@
   "about.section.analytics": "Analytics",
   "about.section.forecast": "Forecast",
   "about.section.version": "Version and author",
-  "chart.trains_hourly": "Hourly trains (today)"
+  "chart.trains_hourly": "Hourly trains (today)",
+  "chart.trains_today_list": "Today's passages",
+  "train.no_events_today": "No trains today"
 }

@@ -698,7 +698,10 @@ class CrossingCard(QWidget):
         self._train_start_dt = None       # datetime — DB ga yozish uchun
         self._last_train_duration = 0.0   # Oxirgi poyezd davomiyligi (sekund)
         # Minimal haqiqiy poyezd davomiyligi (sek) — qisqa yolg'on signallarni o'tkazib yuborish
-        self._min_train_duration = 120.0
+        self._min_train_duration = 60.0
+        # Grace period: PLC "yo'q" desa shu qancha sek kutiladi (yolg'on yo'q signal uchun)
+        self._plc_in_grace = False        # Grace period ichidamizmi?
+        self._plc_grace_secs = 10         # 10 soniya kutish
 
         # Car detector - SHARED instance (GPU maksimal ishlatish)
         self.car_detector = car_detector
@@ -734,6 +737,10 @@ class CrossingCard(QWidget):
         self._train_timer = QTimer(self)
         self._train_timer.setInterval(1000)
         self._train_timer.timeout.connect(self._update_train_elapsed)
+        # Grace timer: PLC "yo'q" signali kelganda to'xtatmasdan kutish
+        self._grace_timer = QTimer(self)
+        self._grace_timer.setSingleShot(True)
+        self._grace_timer.timeout.connect(self._on_plc_grace_expired)
         plc_cfg = crossing_data.get("plc", {})
         self._plc_enabled = plc_cfg.get("enabled", False)
         plc_ip = plc_cfg.get("ip", "").strip()
@@ -786,8 +793,8 @@ class CrossingCard(QWidget):
     def _poll_plc_state(self):
         """PLC holatini 500ms da bir tekshirish (GUI thread da xavfsiz).
 
-        Hisoblash FAQAT PLC o'chganda va signal davomiyligi >= _min_train_duration
-        bo'lganda amalga oshiriladi — qisqa yolg'on signallar e'tiborsiz qoldiriladi.
+        Grace period: PLC "yo'q" desa darhol to'xtatmaydi — _plc_grace_secs soniya kutadi.
+        Agar shu vaqt ichida yana "bor" kelsa, timer uzluksiz davom etadi.
         """
         try:
             if self._is_destroyed or self._plc_manager is None:
@@ -800,56 +807,79 @@ class CrossingCard(QWidget):
                 self._plc_active = active
                 self._update_plc_ui(active)
                 if active:
-                    # Refresh paytida poyezd allaqachon o'tmoqda — timer boshlash
                     self._train_start_time = time.monotonic()
-                    self._train_start_dt = None  # Aniq start vaqti noma'lum
+                    self._train_start_dt = None
                     self._train_timer.start()
                 self._update_train_count_display()
                 return
 
-            if active != self._plc_active:
-                self._plc_active = active
-                self._update_plc_ui(active)
-                if active:
-                    # PLC yondi — timer boshlash, LEKIN hisob yo'q (hali yolg'on bo'lishi mumkin)
+            if active:
+                # PLC aktiv signal keldi
+                if self._plc_in_grace:
+                    # Grace period ichida yana "bor" — yolg'on "yo'q" edi, davom etamiz
+                    self._plc_in_grace = False
+                    self._grace_timer.stop()
+                    self._plc_active = True
+                    self._update_plc_ui(True)
+                    # Timer to'xtatilmagan edi, davom etaveradi
+                elif not self._plc_active:
+                    # Yangi poyezd — timer boshlash
+                    self._plc_active = True
+                    self._update_plc_ui(True)
                     self._train_start_time = time.monotonic()
                     from datetime import datetime as _dt
                     self._train_start_dt = _dt.now()
                     self._train_timer.start()
-                else:
-                    # PLC o'chdi — davomiylikni tekshirish
-                    self._train_timer.stop()
-                    duration = 0.0
-                    if self._train_start_time > 0:
-                        duration = time.monotonic() - self._train_start_time
-                        self._last_train_duration = duration
-                        self._train_start_time = 0.0
-                    self._update_train_duration_display(False)
-
-                    if duration >= self._min_train_duration:
-                        # Haqiqiy poyezd — hisoblash va DB ga yozish
-                        self._train_count_today += 1
-                        self._update_train_count_display()
-                        if self.stats_db and self._train_start_dt is not None:
-                            from datetime import datetime as _dt
-                            try:
-                                self.stats_db.record_train_event(
-                                    self.crossing_id,
-                                    self._train_start_dt,
-                                    _dt.now()
-                                )
-                            except Exception as e:
-                                print(f"[CrossingCard] Train event yozish xato: {e}")
-                    else:
-                        if duration > 0:
-                            print(f"[CrossingCard] Qisqa signal ({duration:.1f}s < "
-                                  f"{self._min_train_duration}s) — e'tiborsiz")
-                        self._last_train_duration = 0.0
-                        self._update_train_duration_display(False)
-
-                    self._train_start_dt = None
+            else:
+                # PLC "yo'q" signali
+                if self._plc_active and not self._plc_in_grace:
+                    # Birinchi "yo'q" — grace period boshlash
+                    self._plc_in_grace = True
+                    self._plc_active = False
+                    self._update_plc_ui(False)
+                    self._grace_timer.start(self._plc_grace_secs * 1000)
+                    # Timer va display — o'zgartirilmaydi (davom etadi)
         except Exception:
             pass  # PyQt6 abort() oldini olish
+
+    def _on_plc_grace_expired(self):
+        """Grace period tugadi — PLC haqiqatan ham o'chdi."""
+        try:
+            if self._is_destroyed:
+                return
+            self._plc_in_grace = False
+            self._train_timer.stop()
+
+            duration = 0.0
+            if self._train_start_time > 0:
+                duration = time.monotonic() - self._train_start_time
+                self._last_train_duration = duration
+                self._train_start_time = 0.0
+            self._update_train_duration_display(False)
+
+            if duration >= self._min_train_duration:
+                self._train_count_today += 1
+                self._update_train_count_display()
+                if self.stats_db and self._train_start_dt is not None:
+                    from datetime import datetime as _dt
+                    try:
+                        self.stats_db.record_train_event(
+                            self.crossing_id,
+                            self._train_start_dt,
+                            _dt.now()
+                        )
+                    except Exception as e:
+                        print(f"[CrossingCard] Train event yozish xato: {e}")
+            else:
+                if duration > 0:
+                    print(f"[CrossingCard] Qisqa signal ({duration:.1f}s < "
+                          f"{self._min_train_duration}s) — e'tiborsiz")
+                self._last_train_duration = 0.0
+                self._update_train_duration_display(False)
+
+            self._train_start_dt = None
+        except Exception:
+            pass
 
     def _update_plc_ui(self, active: bool):
         """PLC holati o'zgarganda UI ni yangilash."""
@@ -1800,6 +1830,8 @@ class CrossingCard(QWidget):
                 self._plc_timer.stop()
             if hasattr(self, '_train_timer'):
                 self._train_timer.stop()
+            if hasattr(self, '_grace_timer'):
+                self._grace_timer.stop()
         except RuntimeError:
             pass
         # PLC threadini to'xtatish

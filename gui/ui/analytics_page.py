@@ -696,7 +696,7 @@ class AnalyticsPage(QWidget):
 
         main_layout.addLayout(train_header)
 
-        # Qator 3: Poyezd haftalik + oylik
+        # Qator 3: haftalik (50%) | oylik (50%)
         row3 = QHBoxLayout()
         row3.setSpacing(12)
 
@@ -726,24 +726,31 @@ class AnalyticsPage(QWidget):
 
         main_layout.addLayout(row3)
 
-        # ─── Poyezd soatlik grafigi ───────────────────────────
+        # Qator 4: soatlik grafik (50%) | bugungi o'tishlar ro'yxati (50%)
+        row4 = QHBoxLayout()
+        row4.setSpacing(12)
+
         th_card = self._mini_card(t("chart.trains_hourly"), f"mc_th_{cid}")
         th_legend = QHBoxLayout()
         th_legend.addWidget(self._legend_dot(C('accent_teal'), t("legend.trains")))
         th_legend.addStretch()
-        # Jami soni
-        train_hourly = self.stats_db.get_train_hourly_data(cid)
-        total_today = sum(train_hourly)
-        th_legend.addWidget(
-            self._legend_dot(C('accent_teal'),
-                             t("stats.trains_today", count=total_today))
-        )
         th_card.layout().addLayout(th_legend)
         th_chart = TrainHourlyBarChart()
-        th_chart.setMinimumHeight(120)
-        th_chart.set_data(train_hourly)
+        th_chart.setMinimumHeight(100)
+        th_chart.set_data(self.stats_db.get_train_hourly_data(cid))
         th_card.layout().addWidget(th_chart)
-        main_layout.addWidget(th_card)
+        row4.addWidget(th_card, stretch=70)
+
+        train_events = self.stats_db.get_train_events_today(cid)
+        total_today = len(train_events)
+        ev_card = self._mini_card(
+            t("chart.trains_today_list") + "  —  " + t("stats.trains_today", count=total_today),
+            f"mc_ev_{cid}"
+        )
+        ev_card.layout().addWidget(self._build_train_event_list(train_events))
+        row4.addWidget(ev_card, stretch=30)
+
+        main_layout.addLayout(row4)
 
         # ─── Heatmap (7 kun x 24 soat) ───────────────────────
         main_layout.addWidget(self._hdiv())
@@ -824,6 +831,92 @@ class AnalyticsPage(QWidget):
         lbl = QLabel(f"● {text}")
         lbl.setStyleSheet(f"color: {color}; font-size: 10px;")
         return lbl
+
+    def _build_train_event_list(self, events: list) -> QWidget:
+        """Bugungi poyezd o'tishlar ro'yxati: 'HH:MM – HH:MM  (N daq N son)'"""
+        from PyQt6.QtWidgets import QScrollArea
+
+        outer = QWidget()
+        outer.setStyleSheet("background: transparent;")
+        outer_v = QVBoxLayout(outer)
+        outer_v.setContentsMargins(0, 4, 0, 0)
+        outer_v.setSpacing(0)
+
+        if not events:
+            lbl = QLabel(t("train.no_events_today"))
+            lbl.setStyleSheet(f"color: {C('text_muted')}; font-size: 11px; padding: 8px 0;")
+            outer_v.addWidget(lbl)
+            return outer
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setFixedHeight(min(len(events) * 26 + 6, 150))
+        scroll.setStyleSheet("""
+            QScrollArea { border: none; background: transparent; }
+            QScrollBar:vertical { width: 5px; background: transparent; }
+            QScrollBar::handle:vertical { background: #444; border-radius: 2px; }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+        """)
+
+        inner = QWidget()
+        inner.setStyleSheet("background: transparent;")
+        vbox = QVBoxLayout(inner)
+        vbox.setContentsMargins(0, 0, 4, 0)
+        vbox.setSpacing(2)
+
+        for ev in events:
+            row = QFrame()
+            row.setObjectName("trainEvRow")
+            row.setStyleSheet(f"""
+                #trainEvRow {{
+                    background: {C('bg_panel_dark')};
+                    border-radius: 4px;
+                    border: none;
+                }}
+                #trainEvRow QLabel {{ border: none; background: transparent; }}
+            """)
+            rl = QHBoxLayout(row)
+            rl.setContentsMargins(8, 2, 8, 2)
+            rl.setSpacing(6)
+
+            # Vaqt oralig'i: "12:00 – 12:06"
+            if ev["in_progress"]:
+                time_str = f"🚂  {ev['start']} – hozir"
+                t_color = C('accent_red')
+            else:
+                time_str = f"🚂  {ev['start']} – {ev['end']}"
+                t_color = C('text_primary')
+
+            time_lbl = QLabel(time_str)
+            time_lbl.setStyleSheet(f"color: {t_color}; font-size: 12px; font-weight: bold;")
+            rl.addWidget(time_lbl)
+
+            rl.addStretch()
+
+            # Davomiylik: "6 daq 23 son"
+            dur = ev["duration"]
+            if dur and dur > 0:
+                m = int(dur) // 60
+                s = int(dur) % 60
+                if m > 0:
+                    dur_str = f"{m} daq {s} son"
+                else:
+                    dur_str = f"{s} son"
+                dur_lbl = QLabel(f"⏱  {dur_str}")
+                dur_lbl.setStyleSheet(f"color: {C('accent_teal')}; font-size: 11px;")
+                rl.addWidget(dur_lbl)
+            elif ev["in_progress"]:
+                dur_lbl = QLabel("⏱  ...")
+                dur_lbl.setStyleSheet(f"color: {C('accent_red')}; font-size: 11px;")
+                rl.addWidget(dur_lbl)
+
+            vbox.addWidget(row)
+
+        vbox.addStretch()
+        scroll.setWidget(inner)
+        outer_v.addWidget(scroll)
+        return outer
 
     def _hdiv(self):
         d = QFrame()
