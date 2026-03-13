@@ -617,17 +617,21 @@ class RealtimeMultiCameraDetector:
         detections: List[Detection],
         thickness: int = 2,
         font_scale: float = 0.5,
-        in_polygon_bboxes: set = None
+        in_polygon_bboxes: set = None,
+        danger_mode: bool = False
     ) -> np.ndarray:
         """Detection boxlarni chizish. Polygon ichidagi objectlar ko'k rangda."""
         result = frame.copy()
         h, w = result.shape[:2]
 
         IN_POLY_COLOR = (255, 80, 0)   # Ko'k (BGR)
+        DANGER_COLOR  = (0, 0, 255)    # QIZIL — poyezd + mashina (BGR)
 
         for det in detections:
             x1, y1, x2, y2 = det.bbox
-            if in_polygon_bboxes and det.bbox in in_polygon_bboxes:
+            if danger_mode and in_polygon_bboxes and det.bbox in in_polygon_bboxes:
+                color = DANGER_COLOR
+            elif in_polygon_bboxes and det.bbox in in_polygon_bboxes:
                 color = IN_POLY_COLOR
             else:
                 color = self.COLORS.get(det.class_id, self.DEFAULT_COLOR)

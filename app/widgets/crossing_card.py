@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                               QPushButton, QDialog, QFormLayout, QLineEdit,
                               QComboBox, QCheckBox, QFileDialog, QMessageBox,
                               QToolButton)
-from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QThread, QMutex, QPoint
+from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QThread, QMutex, QPoint, QObject, QEvent
 from PyQt6.QtGui import QFont, QPixmap, QImage, QAction
 import cv2
 import numpy as np
@@ -17,7 +17,7 @@ import time
 import json
 import threading
 from datetime import date
-from app.utils.theme_colors import C
+from app.utils.theme_colors import C, TM
 from app.core.tracker import PolygonTracker
 from app.utils.language import t, LM
 from app.core.plc import PLCManager as _PLCManager, SNAP7_AVAILABLE as _SNAP7_OK
@@ -155,6 +155,7 @@ class CameraWorker(QThread):
         self.is_custom_model = is_custom_model
         self._poly_pts = None
         self._poly_mask = None
+        self.plc_danger = False  # PLC aktiv + polygon ichida mashina → qizil
 
     def take_frame(self):
         """Eng oxirgi kadrni olish - eski framelar avtomatik tashlanadi"""
@@ -290,14 +291,17 @@ class CameraWorker(QThread):
                             frame = self.car_detector.draw_detections(
                                 draw_on, detections,
                                 thickness=2, font_scale=0.5,
-                                in_polygon_bboxes=in_poly_bboxes)
+                                in_polygon_bboxes=in_poly_bboxes,
+                                danger_mode=self.plc_danger and in_poly_count > 0)
                             h, w = frame.shape[:2]
                     except Exception as e:
                         print(f"[{self.camera_name}] Detection error: {e}")
 
                 # Polygon chizish (yashil→sariq→apelsin→qizil)
                 if self._poly_pts is not None:
-                    if in_poly_count == 0:
+                    if self.plc_danger and in_poly_count > 0:
+                        color = (0, 0, 255)    # QIZIL — xavf: poyezd + mashina!
+                    elif in_poly_count == 0:
                         color = (0, 255, 0)    # YASHIL — bo'sh
                     elif max_time < self.warning_threshold:
                         color = (0, 255, 255)  # SARIQ — mashina bor
@@ -649,6 +653,18 @@ class CameraSettingsDialog(QDialog):
             self.accept()
 
 
+class _PlcResizeFilter(QObject):
+    """PLC panelining resize hodisasini ushlab font o'lchamlarini yangilaydi."""
+    def __init__(self, update_fn, parent=None):
+        super().__init__(parent)
+        self._fn = update_fn
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Type.Resize:
+            self._fn(obj.height(), obj.width())
+        return False
+
+
 class CrossingCard(QWidget):
     """
     Crossing card with two layout modes:
@@ -697,6 +713,7 @@ class CrossingCard(QWidget):
         self._train_start_time = 0.0      # monotonic time, PLC active bo'lganda
         self._train_start_dt = None       # datetime — DB ga yozish uchun
         self._last_train_duration = 0.0   # Oxirgi poyezd davomiyligi (sekund)
+        self._last_train_end_dt = None    # Oxirgi poyezd tugagan vaqt (datetime)
         # Minimal haqiqiy poyezd davomiyligi (sek) — qisqa yolg'on signallarni o'tkazib yuborish
         self._min_train_duration = 60.0
         # Grace period: PLC "yo'q" desa shu qancha sek kutiladi (yolg'on yo'q signal uchun)
@@ -760,6 +777,7 @@ class CrossingCard(QWidget):
                 pass
 
         LM.language_changed.connect(self._retranslate)
+        TM.theme_changed.connect(self._restyle)
         QTimer.singleShot(100, self._start_cameras)
 
     def _check_camera_state_change(self):
@@ -800,18 +818,38 @@ class CrossingCard(QWidget):
             if self._is_destroyed or self._plc_manager is None:
                 return
             active = self._plc_manager.get_plc_active()
+            connected = self._plc_manager.is_connected()
 
             # Birinchi poll — faqat holatni boshlash, hisob yo'q
             if self._plc_first_poll:
                 self._plc_first_poll = False
                 self._plc_active = active
-                self._update_plc_ui(active)
+                self._plc_was_connected = connected
+                self._update_plc_ui(active, connected)
                 if active:
                     self._train_start_time = time.monotonic()
                     self._train_start_dt = None
                     self._train_timer.start()
                 self._update_train_count_display()
                 return
+
+            # Aloqa holati o'zgardimi?
+            was_connected = getattr(self, '_plc_was_connected', True)
+            if connected != was_connected:
+                self._plc_was_connected = connected
+                if not connected:
+                    # Aloqa uzildi — grace/timer to'xtatish
+                    self._plc_in_grace = False
+                    self._grace_timer.stop()
+                    self._plc_active = False
+                    self._update_plc_ui(False, connected=False)
+                    return
+                else:
+                    # Aloqa qayta tiklandi
+                    self._update_plc_ui(False, connected=True)
+
+            if not connected:
+                return  # Aloqa yo'q — qolgan logika ishlamaydi
 
             if active:
                 # PLC aktiv signal keldi
@@ -836,9 +874,12 @@ class CrossingCard(QWidget):
                     # Birinchi "yo'q" — grace period boshlash
                     self._plc_in_grace = True
                     self._plc_active = False
-                    self._update_plc_ui(False)
+                    self._update_plc_ui(False, connected=True)
                     self._grace_timer.start(self._plc_grace_secs * 1000)
                     # Timer va display — o'zgartirilmaydi (davom etadi)
+                elif not self._plc_active and not self._plc_in_grace:
+                    # Idle holat — connected lekin poyezd yo'q, UI tasdiqlash
+                    self._update_plc_ui(False, connected=True)
         except Exception:
             pass  # PyQt6 abort() oldini olish
 
@@ -852,6 +893,8 @@ class CrossingCard(QWidget):
 
             duration = 0.0
             if self._train_start_time > 0:
+                from datetime import datetime as _dt
+                self._last_train_end_dt = _dt.now()
                 duration = time.monotonic() - self._train_start_time
                 self._last_train_duration = duration
                 self._train_start_time = 0.0
@@ -881,25 +924,29 @@ class CrossingCard(QWidget):
         except Exception:
             pass
 
-    def _update_plc_ui(self, active: bool):
-        """PLC holati o'zgarganda UI ni yangilash."""
+    def _update_plc_ui(self, active: bool, connected: bool = True):
+        """PLC holati o'zgarganda UI ni yangilash.
+        active=True              → poyezd kelmoqda (qizil)
+        active=False, connected  → ulangan, kutmoqda (yashil)
+        active=False, !connected → qurilma bilan aloqa yo'q (kulrang)
+        """
         if self._is_destroyed:
             return
         try:
             if active:
-                # Poyezd kelmoqda — QIZIL
-                color = C('status_error')
-                text = t("plc.active")
+                self._plc_current_color = C('status_error')
+                self.plc_status_label.setText(t("plc.active"))
+            elif connected:
+                self._plc_current_color = C('status_online')
+                self.plc_status_label.setText(t("plc.connected"))
             else:
-                # Normal — YASHIL
-                color = C('status_online')
-                text = t("plc.connected")
-            self.plc_indicator.setStyleSheet(
-                f"color: {color}; font-size: 10px; background: transparent; border: none;")
-            self.plc_status_label.setText(text)
-            self.plc_status_label.setStyleSheet(
-                f"color: {color}; font-size: 12px; font-weight: bold;"
-                " background: transparent; border: none;")
+                self._plc_current_color = C('status_offline')
+                self.plc_status_label.setText(t("plc.no_connection"))
+            self._apply_plc_frame_style(self._plc_current_color)
+            self._on_plc_resize(self._plc_frame.height(), self._plc_frame.width())
+            # Camera workerlarga xavf holatini uzatish
+            for _w in self.camera_workers:
+                _w.plc_danger = active
         except RuntimeError:
             self._is_destroyed = True
 
@@ -923,7 +970,11 @@ class CrossingCard(QWidget):
     def _update_train_elapsed(self):
         """Har sekundda poyezd o'tish vaqtini yangilash (timer callback)."""
         try:
-            if self._is_destroyed or not self._plc_active or self._train_start_time == 0:
+            if self._is_destroyed or self._train_start_time == 0:
+                self._train_timer.stop()
+                return
+            # Grace period ichida ham taymer davom etadi (yolg'on signal bo'lishi mumkin)
+            if not self._plc_active and not self._plc_in_grace:
                 self._train_timer.stop()
                 return
             elapsed = time.monotonic() - self._train_start_time
@@ -932,23 +983,24 @@ class CrossingCard(QWidget):
             pass
 
     def _update_train_duration_display(self, in_progress: bool, elapsed: float = 0.0):
-        """Poyezd vaqt labelini yangilash."""
+        """PLC bottom strip yangilash: faol → taymer; tugagan → vaqt + davomiylik."""
         try:
             if self._is_destroyed:
                 return
             if in_progress and elapsed > 0:
                 text = f"⏱  {self._fmt_duration(elapsed)}"
-                color = C('accent_red')
+                self._plc_duration_color = C('accent_red')
             elif not in_progress and self._last_train_duration > 0:
-                text = f"⏱  {self._fmt_duration(self._last_train_duration)}"
-                color = C('text_muted')
+                time_str = ""
+                if self._last_train_end_dt is not None:
+                    time_str = self._last_train_end_dt.strftime("%H:%M") + "  •  "
+                text = f"🕐  {time_str}{self._fmt_duration(self._last_train_duration)}"
+                self._plc_duration_color = C('text_muted')
             else:
                 text = ""
-                color = C('text_muted')
-            self.train_duration_label.setText(text)
-            self.train_duration_label.setStyleSheet(
-                f"color: {color}; font-size: 10px;"
-                " background: transparent; border: none;")
+                self._plc_duration_color = C('text_muted')
+            self._plc_last_info_lbl.setText(text)
+            self._on_plc_resize(self._plc_frame.height(), self._plc_frame.width())
         except Exception:
             pass
 
@@ -1024,8 +1076,8 @@ class CrossingCard(QWidget):
         frame_layout.setSpacing(0)
 
         # ── HEADER ──
-        header_frame = QFrame()
-        header_frame.setStyleSheet(f"""
+        self._header_frame = QFrame()
+        self._header_frame.setStyleSheet(f"""
             QFrame {{
                 background-color: {C('bg_card_header')};
                 border-top-left-radius: 6px;
@@ -1033,14 +1085,14 @@ class CrossingCard(QWidget):
                 border-bottom: 1px solid {C('bg_card_border')};
             }}
         """)
-        header_layout = QHBoxLayout(header_frame)
+        header_layout = QHBoxLayout(self._header_frame)
         header_layout.setContentsMargins(12, 6, 8, 6)
         header_layout.setSpacing(8)
 
-        name_label = QLabel(self.crossing_data.get("name", "Pereezd"))
-        name_label.setStyleSheet(
+        self._name_label = QLabel(self.crossing_data.get("name", "Pereezd"))
+        self._name_label.setStyleSheet(
             f"color: {C('text_primary')}; font-size: 14px; font-weight: bold; background: transparent; border: none;")
-        header_layout.addWidget(name_label)
+        header_layout.addWidget(self._name_label)
         header_layout.addStretch()
 
         self.menu_btn = QToolButton()
@@ -1057,7 +1109,7 @@ class CrossingCard(QWidget):
         self.menu_btn.clicked.connect(self._show_menu)
         header_layout.addWidget(self.menu_btn)
 
-        frame_layout.addWidget(header_frame)
+        frame_layout.addWidget(self._header_frame)
 
         # Find cameras
         cameras = self.crossing_data.get("cameras", [])
@@ -1091,8 +1143,8 @@ class CrossingCard(QWidget):
         self._set_placeholder(self.main_camera_label, t("cam.loading"))
 
         # Bottom bar: status + kamera nomi + bandlik + polygon + vaqt
-        main_bottom = QFrame()
-        main_bottom.setStyleSheet(f"""
+        self._main_bottom_frame = QFrame()
+        self._main_bottom_frame.setStyleSheet(f"""
             QFrame {{
                 background-color: {C('bg_camera_bar')};
                 border: 1px solid {C('border_light')};
@@ -1101,7 +1153,7 @@ class CrossingCard(QWidget):
                 border-bottom-right-radius: 6px;
             }}
         """)
-        main_bottom_layout = QHBoxLayout(main_bottom)
+        main_bottom_layout = QHBoxLayout(self._main_bottom_frame)
         main_bottom_layout.setContentsMargins(8, 3, 8, 3)
         main_bottom_layout.setSpacing(6)
 
@@ -1110,10 +1162,10 @@ class CrossingCard(QWidget):
             f"color: {C('status_online')}; font-size: 8px; background: transparent; border: none;")
         main_bottom_layout.addWidget(self.status_indicator)
 
-        main_name_lbl = QLabel(main_name)
-        main_name_lbl.setStyleSheet(
+        self._main_name_lbl = QLabel(main_name)
+        self._main_name_lbl.setStyleSheet(
             f"color: {C('text_secondary')}; font-size: 10px; background: transparent; border: none;")
-        main_bottom_layout.addWidget(main_name_lbl)
+        main_bottom_layout.addWidget(self._main_name_lbl)
 
         main_bottom_layout.addStretch()
 
@@ -1144,8 +1196,8 @@ class CrossingCard(QWidget):
         self._set_placeholder(self.additional_camera_label, add_name)
 
         # Additional camera bottom bar
-        add_bottom = QFrame()
-        add_bottom.setStyleSheet(f"""
+        self._add_bottom_frame = QFrame()
+        self._add_bottom_frame.setStyleSheet(f"""
             QFrame {{
                 background-color: {C('bg_camera_bar')};
                 border: 1px solid {C('border_light')}; border-top: none;
@@ -1153,13 +1205,13 @@ class CrossingCard(QWidget):
                 border-bottom-right-radius: 4px;
             }}
         """)
-        add_bottom_layout = QHBoxLayout(add_bottom)
+        add_bottom_layout = QHBoxLayout(self._add_bottom_frame)
         add_bottom_layout.setContentsMargins(8, 3, 8, 3)
-        add_name_lbl = QLabel(add_name)
-        add_name_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        add_name_lbl.setStyleSheet(
+        self._add_name_lbl = QLabel(add_name)
+        self._add_name_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._add_name_lbl.setStyleSheet(
             f"color: {C('text_secondary')}; font-size: 10px; background: transparent; border: none;")
-        add_bottom_layout.addWidget(add_name_lbl)
+        add_bottom_layout.addWidget(self._add_name_lbl)
 
         # PLC panel
         plc_frame = self._create_plc_panel()
@@ -1195,7 +1247,7 @@ class CrossingCard(QWidget):
             cam2_layout.setContentsMargins(0, 0, 0, 0)
             cam2_layout.setSpacing(0)
             cam2_layout.addWidget(self.additional_camera_label, stretch=1)
-            cam2_layout.addWidget(add_bottom)
+            cam2_layout.addWidget(self._add_bottom_frame)
             right_col_layout.addWidget(cam2_widget, stretch=3)
 
             # PLC + Stats
@@ -1226,7 +1278,7 @@ class CrossingCard(QWidget):
             cam2_layout.setContentsMargins(0, 0, 0, 0)
             cam2_layout.setSpacing(0)
             cam2_layout.addWidget(self.additional_camera_label, stretch=1)
-            cam2_layout.addWidget(add_bottom)
+            cam2_layout.addWidget(self._add_bottom_frame)
             bottom_row_layout.addWidget(cam2_widget, stretch=65)
 
             # PLC + Stats stacked
@@ -1244,7 +1296,7 @@ class CrossingCard(QWidget):
         frame_layout.addWidget(content_widget, stretch=1)
 
         # Bottom bar: kamera nomi + bandlik + polygon vaqt
-        frame_layout.addWidget(main_bottom)
+        frame_layout.addWidget(self._main_bottom_frame)
 
         main_layout.addWidget(self.frame)
         self.frame.mousePressEvent = self._on_mouse_press
@@ -1255,70 +1307,143 @@ class CrossingCard(QWidget):
     def _create_plc_panel(self):
         plc_data = self.crossing_data.get("plc", {})
         plc_enabled = plc_data.get("enabled", False)
-        plc_color = C('status_online') if plc_enabled else C('text_muted')
+        plc_color = C('status_online') if plc_enabled else C('status_offline')
         plc_status_text = t("plc.connected") if plc_enabled else t("plc.disabled")
 
-        plc_frame = QFrame()
-        plc_frame.setStyleSheet(f"""
-            QFrame {{
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 {C('bg_panel')}, stop:1 {C('bg_panel_dark')});
-                border: 1px solid {C('bg_panel_border')};
-                border-radius: 5px;
-            }}
-        """)
-        plc_inner = QVBoxLayout(plc_frame)
-        plc_inner.setContentsMargins(8, 5, 8, 5)
-        plc_inner.setSpacing(2)
+        self._plc_current_color = plc_color
+        self._plc_duration_color = C('text_muted')
+
+        self._plc_frame = QFrame()
+        self._apply_plc_frame_style(plc_color)
+
+        # ── Vertikal: [asosiy qator (30/40/30)] + [bottom info strip] ──
+        outer_v = QVBoxLayout(self._plc_frame)
+        outer_v.setContentsMargins(0, 0, 0, 0)
+        outer_v.setSpacing(0)
+
+        _row_w = QWidget()
+        _row_w.setStyleSheet("background: transparent;")
+        outer = QHBoxLayout(_row_w)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        # ── Chap (30%): PLC sarlavha ──
+        part1 = QWidget()
+        part1.setStyleSheet("background: transparent;")
+        p1 = QVBoxLayout(part1)
+        p1.setContentsMargins(8, 4, 4, 4)
+        p1.setSpacing(2)
+        p1.addStretch()
 
         self._plc_title_lbl = QLabel(t("plc.title").upper())
         self._plc_title_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._plc_title_lbl.setStyleSheet(
-            f"color: {C('text_dim')}; font-size: 9px; font-weight: bold; letter-spacing: 1px;"
-            " background: transparent; border: none;")
-        plc_inner.addWidget(self._plc_title_lbl)
+            f"color: {C('text_dim')}; font-size: 9px; font-weight: bold;"
+            " letter-spacing: 1px; background: transparent; border: none;")
+        self._plc_title_lbl.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
+        p1.addWidget(self._plc_title_lbl)
+        p1.addStretch()
+        outer.addWidget(part1, stretch=3)
 
-        plc_row = QHBoxLayout()
-        plc_row.setSpacing(5)
-        plc_row.addStretch()
+        # ── O'rta (40%): holat indikator + status matn ──
+        part2 = QWidget()
+        part2.setStyleSheet("background: transparent;")
+        p2 = QVBoxLayout(part2)
+        p2.setContentsMargins(4, 4, 4, 4)
+        p2.setSpacing(2)
+        p2.addStretch()
 
-        plc_icon = QLabel("🔌")
-        plc_icon.setStyleSheet("font-size: 12px; background: transparent; border: none;")
-        plc_row.addWidget(plc_icon)
-
+        dot_row = QHBoxLayout()
+        dot_row.setSpacing(5)
+        dot_row.addStretch()
         self.plc_indicator = QLabel("●")
         self.plc_indicator.setStyleSheet(
             f"color: {plc_color}; font-size: 10px; background: transparent; border: none;")
-        plc_row.addWidget(self.plc_indicator)
-
+        dot_row.addWidget(self.plc_indicator)
         self.plc_status_label = QLabel(plc_status_text)
         self.plc_status_label.setStyleSheet(
-            f"color: {plc_color}; font-size: 12px; font-weight: bold; background: transparent; border: none;")
-        plc_row.addWidget(self.plc_status_label)
+            f"color: {plc_color}; font-size: 8px; font-weight: bold;"
+            " background: transparent; border: none;")
+        dot_row.addWidget(self.plc_status_label)
+        dot_row.addStretch()
+        p2.addLayout(dot_row)
+        p2.addStretch()
+        outer.addWidget(part2, stretch=4)
 
-        plc_row.addStretch()
-        plc_inner.addLayout(plc_row)
+        # ── O'ng (30%): poyezd soni ──
+        part3 = QWidget()
+        part3.setStyleSheet("background: transparent;")
+        p3 = QVBoxLayout(part3)
+        p3.setContentsMargins(4, 4, 8, 4)
+        p3.setSpacing(0)
+        p3.addStretch()
 
-        # Poyezd soni va vaqt
-        train_row = QHBoxLayout()
-        train_row.setSpacing(4)
-        train_row.addStretch()
-        self.train_count_label = QLabel(f"🚂  0")
+        self.train_count_label = QLabel("🚂  0")
+        self.train_count_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.train_count_label.setStyleSheet(
             f"color: {C('text_secondary')}; font-size: 11px;"
             " background: transparent; border: none;")
-        train_row.addWidget(self.train_count_label)
-        train_row.addStretch()
-        plc_inner.addLayout(train_row)
+        p3.addWidget(self.train_count_label)
+        p3.addStretch()
+        outer.addWidget(part3, stretch=3)
 
-        self.train_duration_label = QLabel("")
-        self.train_duration_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.train_duration_label.setStyleSheet(
-            f"color: {C('text_muted')}; font-size: 10px;"
-            " background: transparent; border: none;")
-        plc_inner.addWidget(self.train_duration_label)
+        outer_v.addWidget(_row_w, stretch=1)
 
-        return plc_frame
+        # ── Bottom strip: oxirgi poyezd vaqti + davomiyligi ──
+        self._plc_last_info_lbl = QLabel("")
+        self._plc_last_info_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._plc_last_info_lbl.setStyleSheet(
+            f"color: {C('text_muted')}; font-size: 14px;"
+            " background: transparent; border: none; padding-bottom: 2px;")
+        outer_v.addWidget(self._plc_last_info_lbl)
+
+        # Resize filter o'rnatish
+        self._plc_rf = _PlcResizeFilter(self._on_plc_resize, self._plc_frame)
+        self._plc_frame.installEventFilter(self._plc_rf)
+
+        return self._plc_frame
+
+    def _on_plc_resize(self, h: int, w: int = 0):
+        """Panel o'lchamiga mos font o'lchamlarini yangilash.
+        Balandlik: 30px=kichik, 38px=normal, 70px=katta.
+        Kenglik: 150px=normal; kichik bo'lsa fontlar kichrayadi."""
+        if self._is_destroyed:
+            return
+        try:
+            sh = max(0.7, min(1.8, h / 38.0))
+            # Kenglik asosida kichraytirish: 150px = normal, 90px = min
+            sw = max(0.65, min(1.0, w / 150.0)) if w > 30 else 1.0
+            s = min(sh, sh * sw)
+
+            self._plc_title_lbl.setStyleSheet(
+                f"color: {C('text_dim')}; font-size: {max(6, int(7*s))}px; font-weight: bold;"
+                " letter-spacing: 1px; background: transparent; border: none;")
+            sc = self._plc_current_color
+            self.plc_indicator.setStyleSheet(
+                f"color: {sc}; font-size: {max(6, int(8*s))}px; background: transparent; border: none;")
+            self.plc_status_label.setStyleSheet(
+                f"color: {sc}; font-size: {max(5, int(7*s))}px; font-weight: bold;"
+                " background: transparent; border: none;")
+            self.train_count_label.setStyleSheet(
+                f"color: {C('text_secondary')}; font-size: {max(7, int(10*s))}px;"
+                " background: transparent; border: none;")
+            self._plc_last_info_lbl.setStyleSheet(
+                f"color: {self._plc_duration_color}; font-size: {max(10, int(12*sw))}px;"
+                " background: transparent; border: none; padding-bottom: 2px;")
+        except Exception:
+            pass
+
+    def _apply_plc_frame_style(self, color: str):
+        self._plc_frame.setStyleSheet(f"""
+            QFrame {{
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 {C('bg_panel')}, stop:1 {C('bg_panel_dark')});
+                border: 1px solid {C('bg_panel_border')};
+                border-left: 3px solid {color};
+                border-radius: 5px;
+            }}
+        """)
 
     @staticmethod
     def _format_count(n):
@@ -1351,7 +1476,8 @@ class CrossingCard(QWidget):
             " background: transparent; border: none;")
 
     def _create_stats_panel(self):
-        stats_frame = QFrame()
+        self._stats_frame = QFrame()
+        stats_frame = self._stats_frame
         stats_frame.setStyleSheet(f"""
             QFrame {{
                 background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
@@ -1375,7 +1501,8 @@ class CrossingCard(QWidget):
         counts_row.setSpacing(4)
 
         # Car badge
-        car_badge = QFrame()
+        self._car_badge = QFrame()
+        car_badge = self._car_badge
         car_badge.setStyleSheet(f"""
             QFrame {{
                 background-color: {C('bg_panel_dark')};
@@ -1398,7 +1525,8 @@ class CrossingCard(QWidget):
         counts_row.addWidget(car_badge, stretch=1)
 
         # Truck badge
-        truck_badge = QFrame()
+        self._truck_badge = QFrame()
+        truck_badge = self._truck_badge
         truck_badge.setStyleSheet(f"""
             QFrame {{
                 background-color: {C('bg_panel_dark')};
@@ -1778,6 +1906,123 @@ class CrossingCard(QWidget):
         info_action.triggered.connect(lambda: self.clicked.emit(self.crossing_id))
 
         menu.exec(self.frame.mapToGlobal(pos))
+
+    def _restyle(self, _theme=None):
+        """Mavzu o'zgarganida barcha hardcoded C() ranglarni qayta qo'llash."""
+        if self._is_destroyed:
+            return
+        try:
+            # Card frame
+            self.frame.setStyleSheet(f"""
+                QFrame#cardFrame {{
+                    background-color: {C('bg_card')};
+                    border: 2px solid {C('bg_card_border')};
+                    border-radius: 8px;
+                }}
+                QFrame#cardFrame:hover {{
+                    border-color: {C('accent_blue')};
+                }}
+            """)
+            # Header
+            self._header_frame.setStyleSheet(f"""
+                QFrame {{
+                    background-color: {C('bg_card_header')};
+                    border-top-left-radius: 6px;
+                    border-top-right-radius: 6px;
+                    border-bottom: 1px solid {C('bg_card_border')};
+                }}
+            """)
+            self._name_label.setStyleSheet(
+                f"color: {C('text_primary')}; font-size: 14px; font-weight: bold;"
+                " background: transparent; border: none;")
+            self.menu_btn.setStyleSheet(f"""
+                QToolButton {{
+                    color: {C('text_muted')}; font-size: 18px; font-weight: bold;
+                    background: transparent; border: none;
+                    border-radius: 4px; padding: 2px 6px;
+                }}
+                QToolButton:hover {{ background-color: {C('bg_panel_border')}; color: {C('text_primary')}; }}
+            """)
+            # Main camera area
+            self.main_camera_label.setStyleSheet(f"""
+                background-color: {C('bg_camera')}; border: 1px solid {C('border_light')};
+                border-top-left-radius: 4px; border-top-right-radius: 4px;
+                border-bottom: none;
+            """)
+            self._main_bottom_frame.setStyleSheet(f"""
+                QFrame {{
+                    background-color: {C('bg_camera_bar')};
+                    border: 1px solid {C('border_light')};
+                    border-top: none;
+                    border-bottom-left-radius: 6px;
+                    border-bottom-right-radius: 6px;
+                }}
+            """)
+            self._main_name_lbl.setStyleSheet(
+                f"color: {C('text_secondary')}; font-size: 10px; background: transparent; border: none;")
+            # Additional camera area
+            self.additional_camera_label.setStyleSheet(f"""
+                background-color: {C('bg_camera')}; border: 1px solid {C('border_light')};
+                border-top-left-radius: 4px; border-top-right-radius: 4px;
+                border-bottom: none;
+            """)
+            self._add_bottom_frame.setStyleSheet(f"""
+                QFrame {{
+                    background-color: {C('bg_camera_bar')};
+                    border: 1px solid {C('border_light')}; border-top: none;
+                    border-bottom-left-radius: 4px;
+                    border-bottom-right-radius: 4px;
+                }}
+            """)
+            self._add_name_lbl.setStyleSheet(
+                f"color: {C('text_secondary')}; font-size: 10px; background: transparent; border: none;")
+            # PLC panel
+            self._apply_plc_frame_style(self._plc_current_color)
+            self._plc_title_lbl.setStyleSheet(
+                f"color: {C('text_dim')}; font-size: 9px; font-weight: bold;"
+                " letter-spacing: 1px; background: transparent; border: none;")
+            self.train_count_label.setStyleSheet(
+                f"color: {C('text_secondary')}; font-size: 13px; background: transparent; border: none;")
+            self._plc_last_info_lbl.setStyleSheet(
+                f"color: {C('text_muted')}; font-size: 14px; background: transparent; border: none; padding-bottom: 2px;")
+            # Stats panel
+            self._stats_frame.setStyleSheet(f"""
+                QFrame {{
+                    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                        stop:0 {C('bg_panel')}, stop:1 {C('bg_panel_dark')});
+                    border: 1px solid {C('bg_panel_border')};
+                    border-radius: 5px;
+                }}
+            """)
+            self._stats_title_lbl.setStyleSheet(
+                f"color: {C('text_dim')}; font-size: 9px; font-weight: bold; letter-spacing: 1px;"
+                " background: transparent; border: none;")
+            self._car_badge.setStyleSheet(f"""
+                QFrame {{
+                    background-color: {C('bg_panel_dark')};
+                    border: 1px solid {C('bg_panel_border')};
+                    border-radius: 4px;
+                }}
+            """)
+            self._truck_badge.setStyleSheet(f"""
+                QFrame {{
+                    background-color: {C('bg_panel_dark')};
+                    border: 1px solid {C('bg_panel_border')};
+                    border-radius: 4px;
+                }}
+            """)
+            self._update_stat_label(self.car_count, self._last_display_light, C('accent_blue'))
+            self._update_stat_label(self.truck_count, self._last_display_heavy, C('accent_orange'))
+            total = self._last_display_light + self._last_display_heavy
+            total_text = self._format_count(total)
+            total_size = self._count_font_size(total_text)
+            self.total_label.setStyleSheet(
+                f"font-size: {total_size}px; font-weight: bold; color: {C('accent_green')};"
+                f" background-color: {C('bg_panel_dark')};"
+                f" border: 1px solid {C('bg_panel_border')};"
+                " border-radius: 4px; padding: 2px 0px;")
+        except Exception:
+            pass
 
     def _retranslate(self, _lang=None):
         """Til o'zgarganida statik label textlarni yangilash"""

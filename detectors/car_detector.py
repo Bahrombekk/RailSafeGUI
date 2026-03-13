@@ -252,7 +252,9 @@ class CarDetector:
         show_labels: bool = True,
         show_confidence: bool = True,
         thickness: int = 2,
-        font_scale: float = 0.6
+        font_scale: float = 0.6,
+        in_polygon_bboxes=None,
+        danger_mode: bool = False
     ) -> np.ndarray:
         """
         Aniqlangan obyektlarni kadrga chizish
@@ -264,15 +266,23 @@ class CarDetector:
             show_confidence: Ishonch foizini ko'rsatish
             thickness: Chiziq qalinligi
             font_scale: Shrift o'lchami
+            in_polygon_bboxes: Polygon ichidagi bbox to'plami
+            danger_mode: PLC aktiv + polygon ichida mashina — qizil bbox
 
         Returns:
             Chizilgan rasm
         """
         result = frame.copy()
+        _in_poly = in_polygon_bboxes or set()
 
         for det in detections:
             x1, y1, x2, y2 = det.bbox
-            color = self.COLORS.get(det.class_id, self.DEFAULT_COLOR)
+            if danger_mode and det.bbox in _in_poly:
+                color = (0, 0, 255)   # QIZIL — xavf: poyezd kelmoqda
+            elif det.bbox in _in_poly:
+                color = (0, 165, 255) # APELSIN — polygon ichida
+            else:
+                color = self.COLORS.get(det.class_id, self.DEFAULT_COLOR)
 
             # Bounding box chizish
             cv2.rectangle(result, (x1, y1), (x2, y2), color, thickness)

@@ -79,12 +79,15 @@ class PLCManager:
         self._lock = threading.Lock()
         self._plc_active = False   # Poyezd kelmoqdami?
         self._has_cars = False     # Polygon ichida mashina bormi?
+        self._connected = False    # Qurilma bilan aloqa bormi?
         self._running = False
         self._thread = None
         self._last_poll = 0.0
         self._last_send = 0.0
+        self._last_ok_time = 0.0   # Oxirgi muvaffaqiyatli poll vaqti
         self._consecutive_errors = 0
         self._send_errors = 0      # Send xato hisoblagichi
+        self._offline_after_errors = 5  # Necha xatodan keyin offline (≈2.5s)
 
     def start(self):
         """PLC polling threadini ishga tushirish."""
@@ -121,6 +124,11 @@ class PLCManager:
         """snap7 o'rnatilgan va thread ishlamoqdami?"""
         return SNAP7_AVAILABLE and self._running
 
+    def is_connected(self) -> bool:
+        """Qurilma bilan aloqa bormi? (thread-safe)"""
+        with self._lock:
+            return self._connected
+
     def _worker(self):
         while self._running:
             now = time.monotonic()
@@ -130,17 +138,22 @@ class PLCManager:
                 self._last_poll = now
                 try:
                     new_state = _plc_get_state(self.device_ip, self.device_port)
+                    self._last_ok_time = now
+                    self._consecutive_errors = 0
                     with self._lock:
                         self._plc_active = new_state
-                    self._consecutive_errors = 0
+                        self._connected = True
                 except Exception as e:
                     self._consecutive_errors += 1
                     # Birinchi xato va har 60-chi xatoda log (spam oldini olish)
                     if self._consecutive_errors == 1 or self._consecutive_errors % 60 == 0:
                         print(f"[PLCManager {self.device_ip}] Ulanish yo'q (#{self._consecutive_errors}): {e}")
-                    # Ulanish yo'q bo'lsa — off holatga o'tkazish + send ham kechiktiriladi
                     with self._lock:
                         self._plc_active = False
+                        # N xatodan keyin yoki 2 daqiqa signal bo'lmasa — offline
+                        if (self._consecutive_errors >= self._offline_after_errors or
+                                (self._last_ok_time > 0 and now - self._last_ok_time > 120)):
+                            self._connected = False
                     self._last_send = now  # Send ni ham keyinroq qilish
 
             # Mashina holati yuborish (faqat PLC aktiv bo'lganda)

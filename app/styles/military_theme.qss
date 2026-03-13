@@ -99,11 +99,11 @@ QPushButton:disabled {
 }
 
 QPushButton#dangerButton {
-    background-color: #8b3a3a;
+    background-color: #c84848;
 }
 
 QPushButton#dangerButton:hover {
-    background-color: #a04545;
+    background-color: #d85555;
 }
 
 QPushButton#successButton {
@@ -493,21 +493,21 @@ QLabel#cameraLabel {
 }
 
 QLabel#statusOK {
-    color: #6d7e46;
+    color: #6d9e40;
     font-weight: bold;
 }
 
 QLabel#statusWarning {
-    color: #a09045;
+    color: #b89a40;
     font-weight: bold;
 }
 
 QLabel#statusError {
-    color: #8b3a3a;
+    color: #c84848;
     font-weight: bold;
 }
 
 QLabel#statusOffline {
-    color: #5a5e50;
+    color: #606858;
     font-weight: bold;
 }

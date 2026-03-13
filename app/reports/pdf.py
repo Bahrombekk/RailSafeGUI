@@ -289,7 +289,7 @@ def build_html_report(config_manager, stats_db,
   .highlight {{ color:#1d4ed8; font-weight:700; }}
   .badge {{ background:#dbeafe; color:#1d4ed8; font-size:10px; padding:2px 8px; border-radius:20px; font-weight:600; }}
   .no-data {{ text-align:center; color:#9ca3af; padding:16px; background:#f9fafb; border-radius:8px; font-size:12px; }}
-  .footer {{ text-align:center; margin-top:28px; color:#9ca3af; font-size:11px; line-height:1.8; }}
+  .footer {{ display:none; }}
 
   @media print {{
     @page {{ size:A4; margin:12mm 10mm; }}
@@ -303,23 +303,32 @@ def build_html_report(config_manager, stats_db,
     .cards {{ gap:8px; }}
     .card {{ padding:10px 12px; min-width:80px; }}
     .card-val {{ font-size:18px; }}
-    .section {{ padding:12px 14px; margin-bottom:10px; }}
-    tr {{ page-break-inside:avoid; }}
+    /* --- Sahifa uzilish nazorati --- */
+    .section {{
+      padding:12px 14px; margin-bottom:10px;
+      break-inside:auto;
+    }}
+    .section-header {{
+      margin-bottom:10px;
+      break-inside:avoid;
+      break-after:avoid;
+    }}
+    .stat-row {{
+      gap:6px;
+      break-inside:avoid;
+    }}
+    .sub-title {{ break-after:avoid; }}
+    .cards {{ break-inside:avoid; }}
+    .card {{ break-inside:avoid; }}
+    table {{ break-inside:auto; }}
+    tr {{ break-inside:avoid; page-break-inside:avoid; }}
     thead {{ display:table-header-group; }}
-    .section-header {{ margin-bottom:10px; }}
     .section-title {{ font-size:13px; }}
     .mini-stat {{ padding:6px 8px; min-width:70px; }}
     .ms-val {{ font-size:13px; }}
     th, td {{ padding:5px 8px; font-size:11px; }}
-    .stat-row {{ gap:6px; }}
-    .sec-title {{ margin:14px 0 8px; }}
-    .footer {{
-      position:fixed; bottom:0; left:0; right:0;
-      text-align:center; font-size:10px; color:#9ca3af;
-      line-height:1.8; padding:6px 0; background:#fff;
-      border-top:1px solid #e5e7eb;
-    }}
-    .content {{ padding-bottom:40px; }}
+    .sec-title {{ margin:14px 0 8px; break-after:avoid; }}
+    .content {{ padding-bottom:10px; }}
   }}
 </style>
 </head>
