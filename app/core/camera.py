@@ -52,8 +52,12 @@ class OptimizedCamera:
                     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
                     cap.set(cv2.CAP_PROP_FPS, 25)
 
-                    # Try to read first frame
-                    ret, frame = cap.read()
+                    # Try to read first valid frame (skip corrupted frames)
+                    ret = False
+                    for _ in range(10):
+                        ret, frame = cap.read()
+                        if ret:
+                            break
                     if ret:
                         cap_result[0] = cap
                         result[0] = True

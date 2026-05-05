@@ -8,8 +8,9 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                               QPushButton, QDialog, QFormLayout, QLineEdit,
                               QComboBox, QCheckBox, QFileDialog, QMessageBox,
                               QToolButton)
-from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QThread, QMutex, QPoint, QObject, QEvent
-from PyQt6.QtGui import QFont, QPixmap, QImage, QAction
+from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QThread, QMutex, QPoint, QObject, QEvent, QByteArray
+from PyQt6.QtGui import QFont, QPixmap, QImage, QAction, QPainter
+from PyQt6.QtSvg import QSvgRenderer
 import cv2
 import numpy as np
 import os
@@ -103,6 +104,34 @@ def _open_camera(source: str, camera_name: str = "") -> tuple:
         return cap, "ffmpeg"
 
     return None, None
+
+
+_ICONS_DIR = os.path.join(os.path.dirname(__file__), '..', 'assets', 'icons')
+
+def _svg_pixmap(name: str, size: int, color: str) -> QPixmap:
+    """SVG fayldan rangli QPixmap yaratish."""
+    path = os.path.join(_ICONS_DIR, f"{name}.svg")
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            data = f.read().replace('FILL', color)
+        renderer = QSvgRenderer(QByteArray(data.encode()))
+        pixmap = QPixmap(size, size)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(pixmap)
+        renderer.render(painter)
+        painter.end()
+        return pixmap
+    except Exception:
+        return QPixmap()
+
+
+def _icon_label(name: str, size: int, color: str) -> QLabel:
+    """SVG icondan QLabel yaratish."""
+    lbl = QLabel()
+    lbl.setFixedSize(size, size)
+    lbl.setPixmap(_svg_pixmap(name, size, color))
+    lbl.setStyleSheet("background: transparent; border: none;")
+    return lbl
 
 
 def _load_polygon(polygon_file: str, frame_w: int, frame_h: int):
@@ -963,7 +992,7 @@ class CrossingCard(QWidget):
         try:
             if self._is_destroyed:
                 return
-            self.train_count_label.setText(f"🚂  {self._train_count_today}")
+            self.train_count_label.setText(f"{self._train_count_today}")
         except Exception:
             pass
 
@@ -1016,6 +1045,9 @@ class CrossingCard(QWidget):
                 # DB offset 0 (yangi kun — bazada hali hech narsa yo'q)
                 self._light_offset = 0
                 self._heavy_offset = 0
+                # Poyezd hisoblagichini nolga qaytarish
+                self._train_count_today = 0
+                self._update_train_count_display()
                 # Displayni darhol yangilash
                 self.update_stats(0, 0)
         except Exception:
@@ -1379,12 +1411,20 @@ class CrossingCard(QWidget):
         p3.setSpacing(0)
         p3.addStretch()
 
-        self.train_count_label = QLabel("🚂  0")
-        self.train_count_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        train_row = QHBoxLayout()
+        train_row.setSpacing(4)
+        train_row.setContentsMargins(0, 0, 0, 0)
+        train_row.addStretch()
+        train_ic = _icon_label('train', 16, C('text_secondary'))
+        train_row.addWidget(train_ic)
+        self.train_count_label = QLabel("0")
+        self.train_count_label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
         self.train_count_label.setStyleSheet(
-            f"color: {C('text_secondary')}; font-size: 11px;"
+            f"color: {C('text_secondary')}; font-size: 13px;"
             " background: transparent; border: none;")
-        p3.addWidget(self.train_count_label)
+        train_row.addWidget(self.train_count_label)
+        train_row.addStretch()
+        p3.addLayout(train_row)
         p3.addStretch()
         outer.addWidget(part3, stretch=3)
 
@@ -1513,9 +1553,7 @@ class CrossingCard(QWidget):
         car_lay = QHBoxLayout(car_badge)
         car_lay.setContentsMargins(5, 3, 5, 3)
         car_lay.setSpacing(3)
-        car_ic = QLabel("🚗")
-        car_ic.setStyleSheet("font-size: 16px; background: transparent; border: none;")
-        car_ic.setFixedWidth(20)
+        car_ic = _icon_label('car', 18, C('accent_blue'))
         car_lay.addWidget(car_ic)
         self.car_count = QLabel("0")
         self.car_count.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -1537,9 +1575,7 @@ class CrossingCard(QWidget):
         truck_lay = QHBoxLayout(truck_badge)
         truck_lay.setContentsMargins(5, 3, 5, 3)
         truck_lay.setSpacing(3)
-        truck_ic = QLabel("🚚")
-        truck_ic.setStyleSheet("font-size: 16px; background: transparent; border: none;")
-        truck_ic.setFixedWidth(20)
+        truck_ic = _icon_label('truck', 18, C('accent_orange'))
         truck_lay.addWidget(truck_ic)
         self.truck_count = QLabel("0")
         self.truck_count.setAlignment(Qt.AlignmentFlag.AlignCenter)

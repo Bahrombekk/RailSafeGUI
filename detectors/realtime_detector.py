@@ -367,8 +367,12 @@ class RealtimeMultiCameraDetector:
 
     def _start_worker(self):
         self._running = True
+        # TensorRT + CUDA operations need more stack space than Windows default (1 MB).
+        # 8 MB prevents "stack overflow" fatal exceptions during inference.
+        _old_stack = threading.stack_size(8 * 1024 * 1024)
         self._worker_thread = threading.Thread(target=self._batch_worker, daemon=True)
         self._worker_thread.start()
+        threading.stack_size(_old_stack)
 
     def _batch_worker(self):
         """ASOSIY WORKER - GPU 100% ishlatish"""

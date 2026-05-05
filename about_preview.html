@@ -1,0 +1,1402 @@
+<!DOCTYPE html>
+<html lang="uz" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RailSafe AI — Foydalanuvchi Qo'llanmasi</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#1e1e2e;--bg2:#181825;--card:#1a1a2e;--input:#313244;--hover:#2a2a40;
+  --tp:#cdd6f4;--ts:#a6adc8;--tm:#6c7086;--acc:#89b4fa;--brd:#2a2a40;
+  --ok:#22c55e;--err:#ef4444;--warn:#f59e0b;--purple:#cba6f7;--orange:#fab387;
+}
+[data-theme=military]{
+  --bg:#1c2118;--bg2:#171d13;--card:#1c2118;--input:#2a3324;--hover:#2a3324;
+  --tp:#c8ccb5;--ts:#a0a878;--tm:#6a7060;--acc:#8ba65a;--brd:#2e3a24;
+  --ok:#6d9e40;--err:#c84848;--warn:#b89a40;
+}
+[data-theme=light]{
+  --bg:#f0f2f8;--bg2:#e4e6f0;--card:#fff;--input:#e8eaf2;--hover:#dde0ee;
+  --tp:#1e1e2e;--ts:#313244;--tm:#7c7c9a;--acc:#1a5fd6;--brd:#d0d4e8;
+  --ok:#16a34a;--err:#dc2626;--warn:#d97706;
+}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--tp);font-size:14px;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+
+/* TOOLBAR */
+.toolbar{height:40px;background:var(--bg2);border-bottom:1px solid var(--brd);display:flex;align-items:center;padding:0 14px;gap:12px;flex-shrink:0;z-index:100}
+.toolbar-logo{display:flex;align-items:center;gap:8px;font-weight:700;font-size:14px;color:var(--acc);letter-spacing:.5px}
+.toolbar-logo span{font-size:18px}
+.toolbar-spacer{flex:1}
+.theme-switcher{display:flex;gap:3px;background:var(--input);border-radius:7px;padding:3px}
+.th-btn{background:none;border:none;cursor:pointer;color:var(--tm);font-size:11px;padding:3px 9px;border-radius:5px;transition:all .2s;font-family:inherit;font-weight:600}
+.th-btn:hover{color:var(--tp)}
+.th-btn.active{background:var(--acc);color:#fff}
+.clock{font-size:12px;color:var(--ts);font-weight:600;min-width:58px;text-align:right}
+
+/* APP BODY */
+.app-body{display:flex;flex:1;overflow:hidden}
+
+/* SIDEBAR */
+.sidebar{width:220px;background:var(--bg2);border-right:1px solid var(--brd);display:flex;flex-direction:column;flex-shrink:0;overflow:hidden}
+.sidebar-hdr{height:70px;border-bottom:1px solid var(--brd);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;background:color-mix(in srgb,var(--acc) 6%,var(--bg2))}
+.sidebar-hdr .s-icon{font-size:24px}
+.sidebar-hdr .s-title{font-size:12px;font-weight:700;color:var(--acc);letter-spacing:1px}
+.sidebar-hdr .s-sub{font-size:10px;color:var(--tm)}
+.sidebar-nav-label{font-size:9px;font-weight:700;color:var(--tm);letter-spacing:2px;padding:14px 16px 6px;text-transform:uppercase}
+.nav-items{display:flex;flex-direction:column;gap:2px;padding:0 8px;flex:1}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:7px;cursor:pointer;transition:all .18s;border-left:3px solid transparent;color:var(--ts);font-size:13px;font-weight:500;user-select:none}
+.nav-item:hover{background:var(--hover);color:var(--tp)}
+.nav-item.active{background:color-mix(in srgb,var(--acc) 12%,transparent);color:var(--acc);border-left-color:var(--acc)}
+.nav-item .nav-icon{font-size:16px;width:20px;text-align:center;flex-shrink:0}
+.nav-item .nav-badge{margin-left:auto;background:var(--acc);color:#fff;font-size:9px;font-weight:700;padding:2px 6px;border-radius:10px}
+.sidebar-footer{padding:12px 14px;border-top:1px solid var(--brd);font-size:10px;color:var(--tm);text-align:center}
+
+/* CONTENT */
+.content-area{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.content-hdr{height:52px;background:var(--bg2);border-bottom:1px solid var(--brd);display:flex;align-items:center;padding:0 24px;gap:12px;flex-shrink:0}
+.content-hdr h2{font-size:16px;font-weight:700;color:var(--tp)}
+.content-hdr .section-sub{font-size:12px;color:var(--tm)}
+.version-badge{margin-left:auto;background:color-mix(in srgb,var(--acc) 15%,transparent);color:var(--acc);font-size:10px;font-weight:700;padding:3px 10px;border-radius:10px;border:1px solid color-mix(in srgb,var(--acc) 30%,transparent)}
+.content-scroll{flex:1;overflow-y:auto;padding:24px;display:flex;flex-direction:column;gap:20px}
+.content-scroll::-webkit-scrollbar{width:6px}
+.content-scroll::-webkit-scrollbar-track{background:var(--bg2)}
+.content-scroll::-webkit-scrollbar-thumb{background:var(--brd);border-radius:3px}
+
+/* SECTIONS */
+.section{display:none;flex-direction:column;gap:20px;animation:fadeIn .25s ease}
+.section.active{display:flex}
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+
+/* HERO */
+.hero{background:linear-gradient(135deg,color-mix(in srgb,var(--acc) 12%,var(--card)),var(--card));border-top:3px solid var(--acc);border-radius:10px;padding:24px;display:flex;gap:20px;align-items:center;border:1px solid var(--brd)}
+.hero-icon{font-size:52px;flex-shrink:0}
+.hero h2{font-size:22px;font-weight:700;color:var(--tp);margin-bottom:6px}
+.hero p{font-size:13px;color:var(--ts);line-height:1.6;max-width:600px}
+
+/* CALLOUTS */
+.tip{background:color-mix(in srgb,var(--ok) 10%,transparent);border-left:3px solid var(--ok);border-radius:6px;padding:10px 14px;color:var(--ok);font-size:13px;line-height:1.5}
+.tip strong,.warn strong,.info strong,.danger strong{font-weight:700}
+.warn{background:color-mix(in srgb,var(--warn) 10%,transparent);border-left:3px solid var(--warn);border-radius:6px;padding:10px 14px;color:var(--warn);font-size:13px;line-height:1.5}
+.info{background:color-mix(in srgb,var(--acc) 10%,transparent);border-left:3px solid var(--acc);border-radius:6px;padding:10px 14px;color:var(--acc);font-size:13px;line-height:1.5}
+.danger{background:color-mix(in srgb,var(--err) 10%,transparent);border-left:3px solid var(--err);border-radius:6px;padding:10px 14px;color:var(--err);font-size:13px;line-height:1.5}
+
+/* CARDS */
+.card{background:var(--card);border:1px solid var(--brd);border-radius:10px;overflow:hidden}
+.card-hdr{background:var(--bg2);padding:12px 18px;border-bottom:1px solid var(--brd);display:flex;align-items:center;gap:8px}
+.card-hdr h4{color:var(--acc);font-size:13px;font-weight:700;margin:0}
+.card-hdr span{font-size:16px}
+.card-body{padding:16px 18px;display:flex;flex-direction:column;gap:12px}
+
+/* GRIDS */
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+.g4{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+
+/* STAT CARDS */
+.stat-card{background:var(--card);border:1px solid var(--brd);border-radius:9px;padding:16px;text-align:center}
+.stat-val{font-size:28px;font-weight:700;color:var(--acc)}
+.stat-lbl{font-size:11px;color:var(--tm);margin-top:3px;text-transform:uppercase;letter-spacing:.5px}
+
+/* STEPS */
+.step{display:flex;gap:14px;align-items:flex-start;background:var(--card);border:1px solid var(--brd);border-radius:9px;padding:14px 16px}
+.step-num{background:var(--acc);color:#fff;font-size:13px;font-weight:700;width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px}
+.step-content h4{font-size:13px;font-weight:700;color:var(--tp);margin-bottom:4px}
+.step-content p{font-size:12px;color:var(--ts);line-height:1.5}
+
+/* TABLE */
+.tbl{width:100%;border-collapse:collapse;font-size:12px}
+.tbl th{background:var(--bg2);color:var(--acc);text-align:left;padding:9px 12px;font-weight:700;border-bottom:1px solid var(--brd)}
+.tbl td{padding:8px 12px;border-bottom:1px solid color-mix(in srgb,var(--brd) 60%,transparent);color:var(--ts);vertical-align:top}
+.tbl tr:last-child td{border-bottom:none}
+.tbl tr:hover td{background:color-mix(in srgb,var(--hover) 40%,transparent)}
+.req{color:var(--err);font-weight:700;margin-left:2px}
+
+/* MOCK WINDOW */
+.mock-win{background:var(--card);border:1px solid var(--brd);border-radius:10px;overflow:hidden;font-size:12px}
+.mock-titlebar{background:color-mix(in srgb,var(--acc) 8%,var(--bg2));border-bottom:1px solid var(--brd);height:34px;display:flex;align-items:center;padding:0 12px;gap:6px}
+.mock-dot{width:12px;height:12px;border-radius:50%;display:inline-block;flex-shrink:0}
+.mock-title{color:var(--tp);font-size:11px;font-weight:700;margin-left:6px}
+.mock-body{padding:14px 16px}
+
+/* FORM MOCK */
+.form-row{margin-bottom:10px}
+.form-label{font-size:11px;color:var(--ts);margin-bottom:4px;display:block;font-weight:600}
+.form-input{background:var(--input);border:1px solid var(--brd);border-radius:5px;padding:7px 10px;color:var(--tp);font-size:12px;width:100%;font-family:inherit}
+.form-tabs{display:flex;gap:4px;margin-bottom:12px;border-bottom:1px solid var(--brd)}
+.form-tab{padding:6px 14px;font-size:11px;font-weight:700;color:var(--tm);border-radius:5px 5px 0 0;border-bottom:2px solid transparent;cursor:default}
+.form-tab.active{color:var(--acc);border-bottom-color:var(--acc);background:color-mix(in srgb,var(--acc) 8%,transparent)}
+.form-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px;padding-top:12px;border-top:1px solid var(--brd)}
+.btn-mock{padding:7px 16px;border-radius:6px;font-size:11px;font-weight:700;cursor:default;border:none;font-family:inherit}
+.btn-prim{background:var(--acc);color:#fff}
+.btn-sec{background:var(--input);color:var(--ts);border:1px solid var(--brd)}
+
+/* CROSSING CARD MOCK */
+.crossing-card-mock{background:var(--card);border:1px solid var(--brd);border-radius:10px;overflow:hidden}
+.cc-hdr{background:var(--bg2);padding:10px 14px;border-bottom:1px solid var(--brd);display:flex;align-items:center;gap:8px}
+.status-dot{width:10px;height:10px;border-radius:50%;background:var(--ok);flex-shrink:0}
+.status-dot.red{background:var(--err)}
+.cc-title{font-weight:700;font-size:13px;color:var(--tp)}
+.cc-badge{margin-left:auto;background:color-mix(in srgb,var(--ok) 15%,transparent);color:var(--ok);font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;border:1px solid color-mix(in srgb,var(--ok) 30%,transparent)}
+.cc-badge.red{background:color-mix(in srgb,var(--err) 15%,transparent);color:var(--err);border-color:color-mix(in srgb,var(--err) 30%,transparent)}
+.cc-body{padding:12px 14px;display:flex;gap:10px}
+.cam-placeholder{background:var(--bg2);border:1px solid var(--brd);border-radius:6px;flex:1;height:70px;display:flex;align-items:center;justify-content:center;font-size:22px;flex-direction:column;gap:4px}
+.cam-placeholder span{font-size:9px;color:var(--tm)}
+.cc-stats{display:flex;gap:8px;padding:8px 14px;border-top:1px solid var(--brd);background:color-mix(in srgb,var(--bg2) 50%,transparent)}
+.cc-stat{font-size:10px;color:var(--tm)}
+.cc-stat strong{color:var(--acc)}
+
+/* PLC SCHEMA */
+.plc-schema{display:flex;align-items:center;justify-content:center;gap:0;flex-wrap:wrap;padding:20px}
+.plc-node{display:flex;flex-direction:column;align-items:center;gap:6px}
+.plc-box{background:color-mix(in srgb,var(--acc) 10%,var(--card));border:2px solid var(--acc);border-radius:10px;padding:14px 18px;text-align:center;min-width:100px}
+.plc-box .p-icon{font-size:28px;margin-bottom:4px}
+.plc-box .p-label{font-size:11px;font-weight:700;color:var(--acc)}
+.plc-box .p-sub{font-size:9px;color:var(--tm);margin-top:2px}
+.plc-conn{display:flex;flex-direction:column;align-items:center;gap:3px;padding:0 8px}
+.plc-lbl{font-size:9px;color:var(--tm);font-weight:600}
+.plc-arrow-r{color:var(--acc);font-size:18px}
+
+/* STATUS */
+.status-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid color-mix(in srgb,var(--brd) 50%,transparent)}
+.status-row:last-child{border-bottom:none}
+.status-indicator{width:14px;height:14px;border-radius:50%;flex-shrink:0}
+.s-green{background:var(--ok)}
+.s-red{background:var(--err)}
+.s-gray{background:var(--tm)}
+
+/* TECH TABLE */
+.tech-row{display:flex;align-items:center;gap:14px;padding:10px 0;border-bottom:1px solid color-mix(in srgb,var(--brd) 60%,transparent)}
+.tech-row:last-child{border-bottom:none}
+.tech-icon{font-size:22px;width:32px;text-align:center;flex-shrink:0}
+.tech-name{font-size:13px;font-weight:700;color:var(--tp);min-width:120px}
+.tech-ver{background:var(--input);color:var(--ts);font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600}
+.tech-desc{font-size:12px;color:var(--tm);flex:1}
+
+/* CHARTS */
+.chart-container{background:var(--card);border:1px solid var(--brd);border-radius:10px;overflow:hidden}
+.chart-hdr{background:var(--bg2);padding:10px 16px;border-bottom:1px solid var(--brd);font-size:12px;font-weight:700;color:var(--acc)}
+.bar-chart{padding:16px 16px 28px;display:flex;align-items:flex-end;gap:8px;height:120px}
+.bar{background:linear-gradient(180deg,var(--acc),color-mix(in srgb,var(--acc) 60%,transparent));border-radius:4px 4px 0 0;flex:1;min-width:20px;position:relative}
+.bar-lbl{position:absolute;bottom:-18px;left:50%;transform:translateX(-50%);font-size:9px;color:var(--tm);white-space:nowrap}
+.bar-val{position:absolute;top:-16px;left:50%;transform:translateX(-50%);font-size:9px;color:var(--acc);font-weight:700;white-space:nowrap}
+.donut-mock{display:flex;align-items:center;justify-content:center;padding:16px;gap:20px}
+.donut-svg{width:80px;height:80px;flex-shrink:0}
+.donut-legend{display:flex;flex-direction:column;gap:6px}
+.donut-item{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--ts)}
+.donut-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+
+/* THEME CARDS */
+.theme-card{border-radius:8px;overflow:hidden;border:2px solid var(--brd);cursor:default}
+.theme-card.selected{border-color:var(--acc)}
+.theme-preview{height:50px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700}
+.theme-name{padding:6px;text-align:center;font-size:11px;font-weight:700;color:var(--ts)}
+
+/* LANG CARDS */
+.lang-card{background:var(--card);border:1px solid var(--brd);border-radius:8px;padding:14px;text-align:center;cursor:default}
+.lang-card.active-lang{border-color:var(--acc);background:color-mix(in srgb,var(--acc) 8%,var(--card))}
+.lang-flag{font-size:28px;margin-bottom:6px}
+.lang-name{font-size:13px;font-weight:700;color:var(--tp)}
+.lang-native{font-size:11px;color:var(--tm)}
+
+/* SYS REQ */
+.req-item{display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid color-mix(in srgb,var(--brd) 50%,transparent)}
+.req-item:last-child{border-bottom:none}
+.req-bar-bg{flex:1;background:var(--input);border-radius:4px;height:8px;overflow:hidden}
+.req-bar-fill{height:100%;border-radius:4px;background:linear-gradient(90deg,var(--acc),color-mix(in srgb,var(--acc) 70%,var(--ok)))}
+.req-label{min-width:140px;font-size:12px;color:var(--ts);font-weight:600}
+.req-val{min-width:90px;font-size:11px;color:var(--tm);text-align:right}
+
+/* CODE */
+.code-block{background:var(--bg2);border:1px solid var(--brd);border-radius:7px;padding:12px 14px;font-family:'Courier New',monospace;font-size:12px;color:var(--ok);overflow-x:auto;white-space:pre}
+.code-comment{color:var(--tm)}
+
+/* DEFINITIONS */
+.def-item{padding:8px 0;border-bottom:1px solid color-mix(in srgb,var(--brd) 50%,transparent)}
+.def-item:last-child{border-bottom:none}
+.def-term{font-size:12px;font-weight:700;color:var(--acc);margin-bottom:3px}
+.def-desc{font-size:12px;color:var(--ts);line-height:1.5}
+
+/* TOGGLE */
+.toggle-mock{display:flex;align-items:center;gap:10px;padding:6px 0}
+.toggle-track{width:38px;height:20px;border-radius:10px;position:relative;flex-shrink:0;transition:background .2s}
+.toggle-track.on{background:var(--acc)}
+.toggle-track.off{background:var(--input);border:1px solid var(--brd)}
+.toggle-thumb{position:absolute;top:3px;width:14px;height:14px;border-radius:50%;background:#fff}
+.toggle-track.on .toggle-thumb{right:3px;left:auto}
+.toggle-track.off .toggle-thumb{left:3px}
+.toggle-label{font-size:12px;color:var(--ts)}
+
+/* REPORT */
+.report-step{display:flex;gap:12px;align-items:flex-start;padding:12px 0;border-bottom:1px solid color-mix(in srgb,var(--brd) 50%,transparent)}
+.report-step:last-child{border-bottom:none}
+.rs-num{background:var(--purple);color:#fff;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;min-width:26px}
+
+/* DATE CHIPS */
+.date-chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+.date-chip{background:var(--input);border:1px solid var(--brd);border-radius:20px;padding:5px 14px;font-size:11px;font-weight:600;color:var(--ts);cursor:default}
+.date-chip.active-chip{background:color-mix(in srgb,var(--acc) 15%,transparent);border-color:var(--acc);color:var(--acc)}
+
+/* SECTION TITLE */
+.sec-title{font-size:13px;font-weight:700;color:var(--tp);display:flex;align-items:center;gap:10px}
+.sec-title::after{content:'';flex:1;height:1px;background:var(--brd)}
+
+/* MONITORING ZONES */
+.mon-zones{display:flex;border-radius:8px;overflow:hidden;border:1px solid var(--brd)}
+.mz{flex:1;padding:10px 8px;text-align:center;font-size:11px;font-weight:700}
+.mz-g{background:color-mix(in srgb,var(--ok) 15%,transparent);color:var(--ok)}
+.mz-y{background:color-mix(in srgb,var(--warn) 15%,transparent);color:var(--warn)}
+.mz-r{background:color-mix(in srgb,var(--err) 15%,transparent);color:var(--err)}
+.mz-a{background:color-mix(in srgb,var(--acc) 15%,transparent);color:var(--acc)}
+.mz-label{font-size:9px;opacity:.7;margin-top:2px}
+
+/* VERSION CARDS */
+.ver-card{background:var(--card);border:1px solid var(--brd);border-radius:10px;padding:20px 16px;text-align:center}
+.ver-icon{font-size:32px;margin-bottom:8px}
+.ver-val{font-size:18px;font-weight:700;color:var(--acc);margin-bottom:3px}
+.ver-lbl{font-size:11px;color:var(--tm);text-transform:uppercase;letter-spacing:.5px}
+
+/* FLOW */
+.flow{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:4px}
+.flow-node{background:color-mix(in srgb,var(--acc) 12%,var(--card));border:1px solid var(--acc);border-radius:8px;padding:10px 16px;text-align:center;font-size:11px;font-weight:700;color:var(--acc);min-width:90px}
+.flow-arrow{color:var(--tm);font-size:20px;padding:0 4px;flex-shrink:0}
+</style>
+</head>
+<body>
+
+<!-- TOOLBAR -->
+<div class="toolbar">
+  <div class="toolbar-logo"><span>&#x1F686;</span> RailSafe AI</div>
+  <div style="width:1px;height:20px;background:var(--brd);margin:0 4px"></div>
+  <span style="font-size:11px;color:var(--tm)">Foydalanuvchi Qo'llanmasi</span>
+  <div class="toolbar-spacer"></div>
+  <div class="theme-switcher">
+    <button class="th-btn active" onclick="setTheme('dark',this)">Qorong'u</button>
+    <button class="th-btn" onclick="setTheme('military',this)">Harbiy</button>
+    <button class="th-btn" onclick="setTheme('light',this)">Yorug'</button>
+  </div>
+  <div style="width:1px;height:20px;background:var(--brd);margin:0 4px"></div>
+  <div class="clock" id="clock">--:--:--</div>
+</div>
+
+<!-- APP BODY -->
+<div class="app-body">
+
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <div class="sidebar-hdr">
+      <div class="s-icon">&#x1F6E1;&#xFE0F;</div>
+      <div class="s-title">RAILSAFE AI</div>
+      <div class="s-sub">v1.0.5 &mdash; Monitoring</div>
+    </div>
+    <div class="sidebar-nav-label">Navigatsiya</div>
+    <div class="nav-items">
+      <div class="nav-item active" onclick="showSection('umumiy',this)">
+        <span class="nav-icon">&#x1F3E0;</span> Umumiy
+        <span class="nav-badge">1</span>
+      </div>
+      <div class="nav-item" onclick="showSection('arxitektura',this)">
+        <span class="nav-icon">&#x2699;&#xFE0F;</span> Pereezd
+      </div>
+      <div class="nav-item" onclick="showSection('kamera',this)">
+        <span class="nav-icon">&#x1F4F7;</span> Kamera
+      </div>
+      <div class="nav-item" onclick="showSection('plc',this)">
+        <span class="nav-icon">&#x1F50C;</span> PLC Sozlash
+      </div>
+      <div class="nav-item" onclick="showSection('sozlamalar',this)">
+        <span class="nav-icon">&#x2699;</span> Sozlamalar
+      </div>
+      <div class="nav-item" onclick="showSection('analitika',this)">
+        <span class="nav-icon">&#x1F4CA;</span> Tahlil
+      </div>
+      <div class="nav-item" onclick="showSection('versiya',this)">
+        <span class="nav-icon">&#x2139;&#xFE0F;</span> Versiya
+      </div>
+    </div>
+    <div class="sidebar-footer">
+      &copy; 2025 RailSafe AI<br>
+      Barcha huquqlar himoyalangan
+    </div>
+  </div>
+
+  <!-- CONTENT -->
+  <div class="content-area">
+    <div class="content-hdr">
+      <h2 id="sec-title">Tizim haqida umumiy ma'lumot</h2>
+      <span class="section-sub" id="sec-sub">Asosiy ma'lumotlar va tushunchalar</span>
+      <div class="version-badge">v1.0.5</div>
+    </div>
+    <div class="content-scroll" id="content-scroll">
+
+      <!-- ===== SECTION 1: UMUMIY ===== -->
+      <div class="section active" id="sec-umumiy">
+
+        <div class="hero">
+          <div class="hero-icon">&#x1F686;</div>
+          <div>
+            <h2>RailSafe AI &mdash; Temir Yo'l Monitoring Tizimi</h2>
+            <p>RailSafe AI real-vaqt rejimida temir yo'l kesishmalarini kuzatuvchi zamonaviy intellektual tizim. Sun'iy intellekt (YOLOv8) yordamida poyezdlar va transport vositalarini aniqlab, xavfli vaziyatlarni oldini oladi va PLC orqali avtomatik signallar beradi.</p>
+          </div>
+        </div>
+
+        <div class="g3">
+          <div class="stat-card">
+            <div class="stat-val">2</div>
+            <div class="stat-lbl">Pereezdlar</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-val">4</div>
+            <div class="stat-lbl">Kameralar</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-val" style="color:var(--ok)">98%</div>
+            <div class="stat-lbl">AI Aniqlik</div>
+          </div>
+        </div>
+
+        <div class="sec-title">Dashboard ko'rinishi</div>
+        <div class="mock-win">
+          <div class="mock-titlebar">
+            <span class="mock-dot" style="background:#ff5f57"></span>
+            <span class="mock-dot" style="background:#ffbd2e"></span>
+            <span class="mock-dot" style="background:#28c840"></span>
+            <span class="mock-title">RailSafe AI &mdash; Bosh Panel</span>
+          </div>
+          <div style="background:var(--bg);padding:14px;display:flex;gap:12px">
+            <div class="crossing-card-mock" style="flex:1">
+              <div class="cc-hdr">
+                <div class="status-dot"></div>
+                <span class="cc-title">Pereezd 8</span>
+                <span class="cc-badge">ULANGAN</span>
+              </div>
+              <div class="cc-body">
+                <div class="cam-placeholder">&#x1F4F9;<br><span>Asosiy kamera</span></div>
+                <div class="cam-placeholder">&#x1F4F9;<br><span>Qo'shimcha</span></div>
+              </div>
+              <div class="cc-stats">
+                <span class="cc-stat">Poyezd: <strong>3</strong></span>
+                <span class="cc-stat" style="margin-left:10px">Bugun: <strong>14</strong></span>
+                <span class="cc-stat" style="margin-left:10px;color:var(--ok)">&#x2713; Normal</span>
+              </div>
+            </div>
+            <div class="crossing-card-mock" style="flex:1">
+              <div class="cc-hdr">
+                <div class="status-dot red"></div>
+                <span class="cc-title">Pereezd 9</span>
+                <span class="cc-badge red">POYEZD!</span>
+              </div>
+              <div class="cc-body">
+                <div class="cam-placeholder" style="background:color-mix(in srgb,var(--err) 8%,var(--bg2));border-color:color-mix(in srgb,var(--err) 30%,var(--brd))">
+                  &#x1F534;<br><span style="color:var(--err)">Xavf aniqlandi</span>
+                </div>
+                <div class="cam-placeholder">&#x1F4F9;<br><span>Qo'shimcha</span></div>
+              </div>
+              <div class="cc-stats">
+                <span class="cc-stat">Poyezd: <strong>1</strong></span>
+                <span class="cc-stat" style="margin-left:10px">Bugun: <strong>7</strong></span>
+                <span class="cc-stat" style="margin-left:10px;color:var(--err)">&#x26A0; Xavf</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-hdr"><span>&#x1F4D6;</span><h4>Asosiy tushunchalar</h4></div>
+          <div class="card-body">
+            <div class="def-item">
+              <div class="def-term">Pereezd (Crossing)</div>
+              <div class="def-desc">Temir yo'l va avtomobil yo'li kesishadigan nuqta. Har bir pereezd alohida monitoring obyekti hisoblanadi va o'z kameralari, PLC ulanishi hamda statistikasiga ega.</div>
+            </div>
+            <div class="def-item">
+              <div class="def-term">Polygon zona</div>
+              <div class="def-desc">Kamera tasvirida maxsus belgilangan xavf hududi. Shu zona ichiga ob'ekt (poyezd, avtomobil) kirganida PLC signali ishga tushadi.</div>
+            </div>
+            <div class="def-item">
+              <div class="def-term">YOLOv8 AI</div>
+              <div class="def-desc">Real-vaqt ob'ekt aniqlash neyron tarmog'i. Poyezdlar, avtomobillar va kishilarni 98% aniqlik bilan topadi va har bir kadrda tahlil qiladi.</div>
+            </div>
+            <div class="def-item">
+              <div class="def-term">PLC (Siemens S7-1200)</div>
+              <div class="def-desc">Dasturlashtiriladigan mantiq kontrolleri. Tizim xavf signali berganida barrikada, chiroq yoki ovozli signal kabi qurilmalarni boshqaradi.</div>
+            </div>
+            <div class="def-item">
+              <div class="def-term">RTSP protokoli</div>
+              <div class="def-desc">Real Time Streaming Protocol &mdash; IP kameralardan video oqimini tarmoq orqali uzatish standarti. Barcha zamonaviy IP kameralar RTSP'ni qo'llab-quvvatlaydi.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="sec-title">Tizim qanday ishlaydi?</div>
+        <div class="card">
+          <div class="card-body" style="padding:20px">
+            <div class="flow">
+              <div class="flow-node">&#x1F4F7;<br><span style="font-size:10px;font-weight:400">Kamera</span></div>
+              <div class="flow-arrow">&#x2192;</div>
+              <div class="flow-node">&#x1F916;<br><span style="font-size:10px;font-weight:400">YOLOv8 AI</span></div>
+              <div class="flow-arrow">&#x2192;</div>
+              <div class="flow-node">&#x1F4D0;<br><span style="font-size:10px;font-weight:400">Polygon</span></div>
+              <div class="flow-arrow">&#x2192;</div>
+              <div class="flow-node">&#x1F50C;<br><span style="font-size:10px;font-weight:400">PLC Signal</span></div>
+              <div class="flow-arrow">&#x2192;</div>
+              <div class="flow-node">&#x1F4BE;<br><span style="font-size:10px;font-weight:400">Qayd etish</span></div>
+            </div>
+            <div class="g3" style="margin-top:16px">
+              <div class="info" style="text-align:center;font-size:11px">
+                <div style="font-size:20px;margin-bottom:4px">1&#xFE0F;&#x20E3;</div>
+                IP kameradan RTSP orqali real-vaqt video oqimi qabul qilinadi
+              </div>
+              <div class="info" style="text-align:center;font-size:11px">
+                <div style="font-size:20px;margin-bottom:4px">2&#xFE0F;&#x20E3;</div>
+                YOLOv8 har kadrda poyezd, avto va kishilarni aniqlaydi
+              </div>
+              <div class="info" style="text-align:center;font-size:11px">
+                <div style="font-size:20px;margin-bottom:4px">3&#xFE0F;&#x20E3;</div>
+                Polygon zonaga ob'ekt kirsa PLC'ga signal, statistika saqlanadi
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="tip">
+          <strong>&#x1F4A1; Maslahat:</strong> Tizim birinchi ishga tushganda AI model yuklanishiga 10&ndash;30 soniya ketishi mumkin. Bu normal holat &mdash; sabr bilan kuting.
+        </div>
+
+      </div>
+
+      <!-- ===== SECTION 2: ARXITEKTURA ===== -->
+      <div class="section" id="sec-arxitektura">
+
+        <div class="hero">
+          <div class="hero-icon">&#x2699;&#xFE0F;</div>
+          <div>
+            <h2>Yangi Pereezd Qo'shish</h2>
+            <p>Tizimga yangi temir yo'l kesishmasini qo'shish uchun quyidagi bosqichlarni bajaring. Har bir pereezd o'z identifikatori, kameralari va PLC sozlamalariga ega bo'ladi.</p>
+          </div>
+        </div>
+
+        <div class="sec-title">Bosqichma-bosqich qo'llanma</div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div class="step">
+            <div class="step-num">1</div>
+            <div class="step-content">
+              <h4>Bosh menyudan "Pereezd qo'shish" ni tanlang</h4>
+              <p>Asosiy oynaning yuqori qismidagi toolbar'da joylashgan "+" tugmasini bosing yoki Fayl &#x2192; Yangi Pereezd menyusiga kiring. Dialog oynasi avtomatik ochiladi.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">2</div>
+            <div class="step-content">
+              <h4>Asosiy ma'lumotlarni to'ldiring</h4>
+              <p>Pereezd nomi, manzili va tavsifini kiriting. Nom majburiy maydon hisoblanadi &mdash; bu nom hisobotlarda va statistikada ishlatiladi.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">3</div>
+            <div class="step-content">
+              <h4>PLC sozlamalarini kiriting (ixtiyoriy)</h4>
+              <p>"PLC" tabiga o'ting va Siemens S7-1200 kontrollerning IP manzili, port va rack/slot raqamlarini kiriting. PLC bo'lmasa, bu qadamni o'tkazib yuborish mumkin.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">4</div>
+            <div class="step-content">
+              <h4>"Saqlash" tugmasini bosing</h4>
+              <p>Barcha ma'lumotlar to'g'ri bo'lsa pereezd tizimga qo'shiladi va Dashboard'da ko'rinadi. Keyingi qadam &mdash; kamera qo'shish.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="sec-title">Dialog oynasi ko'rinishi</div>
+        <div class="mock-win" style="max-width:430px">
+          <div class="mock-titlebar">
+            <span class="mock-dot" style="background:#ff5f57"></span>
+            <span class="mock-dot" style="background:#ffbd2e"></span>
+            <span class="mock-dot" style="background:#28c840"></span>
+            <span class="mock-title">Yangi Pereezd Qo'shish</span>
+          </div>
+          <div class="mock-body">
+            <div class="form-tabs">
+              <div class="form-tab active">&#x1F4CB; Asosiy</div>
+              <div class="form-tab">&#x1F50C; PLC</div>
+            </div>
+            <div class="form-row">
+              <label class="form-label">Nomi <span class="req">*</span></label>
+              <div class="form-input" style="color:var(--ts)">Pereezd 10</div>
+            </div>
+            <div class="form-row">
+              <label class="form-label">Manzil</label>
+              <div class="form-input" style="color:var(--ts)">Toshkent vil., 102-km</div>
+            </div>
+            <div class="form-row">
+              <label class="form-label">Tavsif</label>
+              <div class="form-input" style="color:var(--ts);height:52px;display:flex;align-items:flex-start;padding-top:8px">Asosiy magistral yo'l...</div>
+            </div>
+            <div class="form-actions">
+              <div class="btn-mock btn-sec">Bekor qilish</div>
+              <div class="btn-mock btn-prim">&#x2713; Saqlash</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="sec-title">Maydonlar jadvali</div>
+        <div class="card">
+          <table class="tbl">
+            <thead><tr><th>Maydon</th><th>Majburiy</th><th>Tavsif</th></tr></thead>
+            <tbody>
+              <tr><td>Nomi</td><td><span class="req">*</span> Ha</td><td>Pereezd identifikator nomi, maks. 50 belgi</td></tr>
+              <tr><td>Manzil</td><td style="color:var(--tm)">Yo'q</td><td>Geografik joylashuv, km belgisi bilan</td></tr>
+              <tr><td>Tavsif</td><td style="color:var(--tm)">Yo'q</td><td>Qo'shimcha ma'lumot, izohlar</td></tr>
+              <tr><td>PLC IP</td><td style="color:var(--tm)">Yo'q</td><td>Siemens PLC tarmoq manzili (192.168.x.x)</td></tr>
+              <tr><td>PLC Port</td><td style="color:var(--tm)">Yo'q</td><td>Odatda 102 &mdash; Siemens standart port</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="g2">
+          <div class="card">
+            <div class="card-hdr"><span>&#x270F;&#xFE0F;</span><h4>Pereezdni tahrirlash</h4></div>
+            <div class="card-body">
+              <p style="font-size:12px;color:var(--ts);line-height:1.6">Dashboard'dagi pereezd kartasida <strong style="color:var(--acc)">tishli g'ildirak</strong> ikonasini bosing. Xuddi shu dialog ochiladi va barcha ma'lumotlarni o'zgartirishingiz mumkin.</p>
+              <div class="info">Tahrirlash vaqtida monitoring va kameralar to'xtatilmaydi.</div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-hdr"><span>&#x1F5D1;&#xFE0F;</span><h4>Pereezdni o'chirish</h4></div>
+            <div class="card-body">
+              <p style="font-size:12px;color:var(--ts);line-height:1.6">Pereezdni o'chirish uchun sozlamalar dialogidan "O'chirish" tugmasini tanlang. Tasdiqlash so'raladi. <strong style="color:var(--err)">Bu amalni qaytarib bo'lmaydi!</strong></p>
+              <div class="danger">&#x26A0; O'chirilgan pereezdning statistikasi ham yo'qoladi.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="warn">
+          <strong>&#x26A0; Diqqat:</strong> Pereezdni o'chirishdan avval unga bog'liq barcha kameralar va statistikani zaxiralang. Ushbu amalni ortga qaytarib bo'lmaydi va ma'lumotlar butunlay o'chirilib ketadi.
+        </div>
+
+      </div>
+
+      <!-- ===== SECTION 3: KAMERA ===== -->
+      <div class="section" id="sec-kamera">
+
+        <div class="hero">
+          <div class="hero-icon">&#x1F4F7;</div>
+          <div>
+            <h2>Kamera Qo'shish va Sozlash</h2>
+            <p>Har bir pereezdga bir nechta IP kamera ulashingiz mumkin. Kameralar RTSP protokoli orqali ulangach, YOLOv8 AI avtomatik ravishda videoni real-vaqtda tahlil qilishni boshlaydi.</p>
+          </div>
+        </div>
+
+        <div class="sec-title">Kamera qo'shish bosqichlari</div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div class="step">
+            <div class="step-num">1</div>
+            <div class="step-content">
+              <h4>Pereezd sozlamalarini oching</h4>
+              <p>Dashboard'da kerakli pereezd kartasidagi tishli g'ildirak tugmasini bosib "Kamera qo'shish" bandini tanlang. Yoki pereezd sahifasida "+" tugmasidan foydalaning.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">2</div>
+            <div class="step-content">
+              <h4>Kamera ma'lumotlarini to'ldiring</h4>
+              <p>Kamera nomi, turi (Asosiy / Qo'shimcha) va RTSP manzilini kiriting. Polygon fayli ixtiyoriy &mdash; keyinchalik ham qo'shish mumkin.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">3</div>
+            <div class="step-content">
+              <h4>Ulanishni sinab ko'ring</h4>
+              <p>"Test" tugmasini bosib kameraga ulanishni tekshiring. Yashil belgi muvaffaqiyatli ulanishni ko'rsatadi. Xato bo'lsa RTSP manzilni qayta tekshiring.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">4</div>
+            <div class="step-content">
+              <h4>Polygon xavf zonasini belgilang</h4>
+              <p>Kamera ko'rinishi bo'limida "Zona chizish" tugmasini bosib, poyezd o'tadigan yo'l ustida xavf hududini belgilang. Bu qadam AI aniqligini oshiradi.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="sec-title">Kamera qo'shish formasi</div>
+        <div class="mock-win" style="max-width:440px">
+          <div class="mock-titlebar">
+            <span class="mock-dot" style="background:#ff5f57"></span>
+            <span class="mock-dot" style="background:#ffbd2e"></span>
+            <span class="mock-dot" style="background:#28c840"></span>
+            <span class="mock-title">Kamera Qo'shish &mdash; Pereezd 8</span>
+          </div>
+          <div class="mock-body">
+            <div class="form-row">
+              <label class="form-label">Kamera nomi <span class="req">*</span></label>
+              <div class="form-input" style="color:var(--ts)">Asosiy kamera #1</div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+              <div>
+                <label class="form-label">Turi <span class="req">*</span></label>
+                <div class="form-input" style="color:var(--acc)">&#x25BC; Asosiy</div>
+              </div>
+              <div>
+                <label class="form-label">FPS chegarasi</label>
+                <div class="form-input" style="color:var(--ts)">30</div>
+              </div>
+            </div>
+            <div class="form-row">
+              <label class="form-label">RTSP Manzil <span class="req">*</span></label>
+              <div class="form-input" style="color:var(--ok);font-family:'Courier New',monospace;font-size:11px">rtsp://admin:1q2w3e4r5t@192.168.170.160:554/</div>
+            </div>
+            <div class="form-row">
+              <label class="form-label">Polygon fayli</label>
+              <div style="display:flex;gap:6px">
+                <div class="form-input" style="color:var(--tm);flex:1">polygon_cam1.json</div>
+                <div class="btn-mock btn-sec" style="white-space:nowrap;font-size:11px;padding:6px 10px">&#x1F4C2; Tanlash</div>
+              </div>
+            </div>
+            <div style="padding:10px 0;border-top:1px solid var(--brd);border-bottom:1px solid var(--brd);margin-bottom:10px;display:flex;flex-direction:column;gap:5px">
+              <div class="toggle-mock">
+                <div class="toggle-track on"><div class="toggle-thumb"></div></div>
+                <span class="toggle-label">Kamera yoqilgan</span>
+              </div>
+              <div class="toggle-mock">
+                <div class="toggle-track on"><div class="toggle-thumb"></div></div>
+                <span class="toggle-label">AI aniqlash yoqilgan</span>
+              </div>
+              <div class="toggle-mock">
+                <div class="toggle-track off"><div class="toggle-thumb"></div></div>
+                <span class="toggle-label">Video yozib olish (ixtiyoriy)</span>
+              </div>
+            </div>
+            <div class="form-actions">
+              <div class="btn-mock btn-sec">&#x1F517; Test</div>
+              <div class="btn-mock btn-sec">Bekor</div>
+              <div class="btn-mock btn-prim">&#x2713; Saqlash</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="sec-title">RTSP manzil formatlari</div>
+        <div class="card">
+          <div class="card-hdr"><span>&#x1F4E1;</span><h4>RTSP Ulanish Namunalari</h4></div>
+          <div class="card-body">
+            <div class="code-block"><span class="code-comment"># Hikvision kamera (asosiy kanal)</span>
+rtsp://admin:parol@192.168.1.64:554/Streaming/Channels/101
+
+<span class="code-comment"># Dahua kamera</span>
+rtsp://admin:parol@192.168.1.64:554/cam/realmonitor?channel=1&amp;subtype=0
+
+<span class="code-comment"># Uniview / NVR</span>
+rtsp://admin:parol@192.168.1.64:554/unicast/c1/s0/live
+
+<span class="code-comment"># Lokal video fayl (test uchun)</span>
+C:/Users/User/Videos/test_video.mp4</div>
+          </div>
+        </div>
+
+        <div class="g2">
+          <div class="card">
+            <div class="card-hdr"><span>&#x1F534;</span><h4>Asosiy Kamera</h4></div>
+            <div class="card-body">
+              <p style="font-size:12px;color:var(--ts);line-height:1.7">
+                &#x2022; Har bir pereezdda <strong style="color:var(--acc)">faqat 1 ta</strong> asosiy kamera<br>
+                &#x2022; AI aniqlash asosiy kamera orqali ishlaydi<br>
+                &#x2022; PLC signali shu kamera natijasiga asoslanadi<br>
+                &#x2022; Polygon zonasi <strong>majburiy</strong> belgilanishi shart
+              </p>
+              <div class="tip">Asosiy kamera poyezdning kirish tomoniga yo'naltirilsin.</div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-hdr"><span>&#x1F7E1;</span><h4>Qo'shimcha Kamera</h4></div>
+            <div class="card-body">
+              <p style="font-size:12px;color:var(--ts);line-height:1.7">
+                &#x2022; Cheksiz miqdorda qo'shimcha kamera<br>
+                &#x2022; Faqat ko'rish va monitoring uchun<br>
+                &#x2022; AI aniqlash ixtiyoriy ravishda yoqiladi<br>
+                &#x2022; Polygon zonasi majburiy emas
+              </p>
+              <div class="info">Qo'shimcha kameralar poyezdning chiqish tomonini kuzatish uchun qulay.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="g3">
+          <div class="card">
+            <div class="card-hdr"><span>&#x23F8;</span><h4>To'xtatish</h4></div>
+            <div class="card-body"><p style="font-size:12px;color:var(--ts)">Kamera kartasidagi "To'xtatish" tugmasi video oqimini vaqtincha to'xtatadi. AI aniqlash ham to'xtaydi, lekin kamera sozlamalari saqlanib qoladi.</p></div>
+          </div>
+          <div class="card">
+            <div class="card-hdr"><span>&#x25B6;</span><h4>Davom ettirish</h4></div>
+            <div class="card-body"><p style="font-size:12px;color:var(--ts)">To'xtatilgan kamera "Qayta ulash" tugmasi bilan qayta yoqiladi. Ulanish uzilsa tizim 30 soniyada avtomatik qayta urishga harakat qiladi.</p></div>
+          </div>
+          <div class="card">
+            <div class="card-hdr"><span>&#x2699;</span><h4>Sozlamalar</h4></div>
+            <div class="card-body"><p style="font-size:12px;color:var(--ts)">Har bir kameraning o'z sozlamalari bor: sifat, FPS cheklov, AI ishonch darajasi (confidence threshold 0.3&ndash;0.9).</p></div>
+          </div>
+        </div>
+
+        <div class="warn">
+          <strong>&#x26A0; Muhim:</strong> Har bir pereezdda faqat bitta "Asosiy" kamera bo'lishi mumkin. Ikkinchi asosiy kamera qo'shishga urinilsa tizim xato xabari beradi va saqlash bloklanadi.
+        </div>
+
+      </div>
+
+      <!-- ===== SECTION 4: PLC ===== -->
+      <div class="section" id="sec-plc">
+
+        <div class="hero">
+          <div class="hero-icon">&#x1F50C;</div>
+          <div>
+            <h2>PLC Sozlash &mdash; Siemens S7-1200</h2>
+            <p>PLC (Programmable Logic Controller) tizimning avtomatik boshqaruv qismi. Poyezd aniqlanganda RailSafe AI kompyuterdan tarmoq orqali PLC'ga signal yuboradi va u darvoza yoki chiroqni boshqaradi.</p>
+          </div>
+        </div>
+
+        <div class="sec-title">Ulanish sxemasi</div>
+        <div class="card">
+          <div class="plc-schema">
+            <div class="plc-node">
+              <div class="plc-box">
+                <div class="p-icon">&#x1F4BB;</div>
+                <div class="p-label">Kompyuter</div>
+                <div class="p-sub">RailSafe AI</div>
+              </div>
+            </div>
+            <div class="plc-conn">
+              <div style="width:40px;height:2px;background:var(--acc);opacity:.5"></div>
+              <div class="plc-arrow-r">&#x2192;</div>
+              <div class="plc-lbl">Ethernet</div>
+            </div>
+            <div class="plc-node">
+              <div class="plc-box">
+                <div class="p-icon">&#x1F310;</div>
+                <div class="p-label">Tarmoq</div>
+                <div class="p-sub">IP + Port 102</div>
+              </div>
+            </div>
+            <div class="plc-conn">
+              <div style="width:40px;height:2px;background:var(--acc);opacity:.5"></div>
+              <div class="plc-arrow-r">&#x2192;</div>
+              <div class="plc-lbl">S7 Protocol</div>
+            </div>
+            <div class="plc-node">
+              <div class="plc-box" style="border-color:var(--ok)">
+                <div class="p-icon">&#x2699;&#xFE0F;</div>
+                <div class="p-label" style="color:var(--ok)">PLC S7-1200</div>
+                <div class="p-sub">Siemens</div>
+              </div>
+            </div>
+            <div class="plc-conn">
+              <div style="width:40px;height:2px;background:var(--ok);opacity:.5"></div>
+              <div class="plc-arrow-r" style="color:var(--ok)">&#x2192;</div>
+              <div class="plc-lbl">Output</div>
+            </div>
+            <div class="plc-node">
+              <div class="plc-box" style="border-color:var(--warn)">
+                <div class="p-icon">&#x1F6A7;</div>
+                <div class="p-label" style="color:var(--warn)">Barrikada</div>
+                <div class="p-sub">Chiroq / Ovoz</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="sec-title">PLC sozlash bosqichlari</div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div class="step">
+            <div class="step-num">1</div>
+            <div class="step-content">
+              <h4>Pereezd sozlamalarini oching</h4>
+              <p>Dashboard &#x2192; Pereezd kartasi &#x2192; Sozlamalar &#x2192; "PLC" tabiga o'ting.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">2</div>
+            <div class="step-content">
+              <h4>PLC IP manzilini kiriting</h4>
+              <p>Siemens S7-1200 kontrollerining tarmoqdagi IP manzilini kiriting. Bu manzil kompyuter bilan bir subnet'da bo'lishi kerak (masalan: 192.168.1.100).</p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">3</div>
+            <div class="step-content">
+              <h4>Port va turini tekshiring</h4>
+              <p>Standart port: <strong style="color:var(--acc)">102</strong>. PLC turi: S7-1200 (yoki S7-300/S7-400 eski modellari uchun). Rack va Slot odatda 0/0.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">4</div>
+            <div class="step-content">
+              <h4>Ulanishni sinab ko'ring</h4>
+              <p>"Test ulanish" tugmasini bosing. 3&ndash;5 soniya ichida natija ko'rinadi: &#x2705; ulandi yoki &#x274C; xato xabari.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">5</div>
+            <div class="step-content">
+              <h4>Saqlang va monitoring boshlang</h4>
+              <p>Ulanish muvaffaqiyatli bo'lsa sozlamalarni saqlang. Pereezd monitoring boshlanganda PLC ham avtomatik faollashadi.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="sec-title">PLC Maydonlari</div>
+        <div class="card">
+          <table class="tbl">
+            <thead><tr><th>Maydon</th><th>Qiymat</th><th>Tavsif</th></tr></thead>
+            <tbody>
+              <tr><td>IP Manzil</td><td style="color:var(--ok);font-family:'Courier New',monospace">192.168.x.x</td><td>PLC ning tarmoqdagi IP manzili</td></tr>
+              <tr><td>Port</td><td style="color:var(--acc)">102</td><td>Siemens S7 standart porti &mdash; o'zgartirmaslik tavsiya etiladi</td></tr>
+              <tr><td>PLC Turi</td><td style="color:var(--acc)">S7-1200</td><td>Model: S7-1200, S7-300, S7-400, S7-1500</td></tr>
+              <tr><td>Rack / Slot</td><td style="color:var(--tm)">0 / 0</td><td>Aksariyat hollarda 0/0 &mdash; o'zgartirmang</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="sec-title">Ulanish holatlari va ma'nosi</div>
+        <div class="card">
+          <div class="card-body" style="gap:0">
+            <div class="status-row">
+              <div class="status-indicator s-green"></div>
+              <div>
+                <div style="font-size:13px;font-weight:700;color:var(--ok)">ULANGAN</div>
+                <div style="font-size:11px;color:var(--tm)">PLC bilan aloqa o'rnatildi. Barcha signallar yuborilmoqda. Normal holat.</div>
+              </div>
+            </div>
+            <div class="status-row">
+              <div class="status-indicator s-red" style="animation:blink 1s infinite"></div>
+              <div>
+                <div style="font-size:13px;font-weight:700;color:var(--err)">POYEZD KELMOQDA</div>
+                <div style="font-size:11px;color:var(--tm)">AI poyezdni polygon ichida aniqladi. PLC'ga faol signal yuborilmoqda, barrikada yoqiq.</div>
+              </div>
+            </div>
+            <div class="status-row">
+              <div class="status-indicator s-gray"></div>
+              <div>
+                <div style="font-size:13px;font-weight:700;color:var(--tm)">ALOQA YO'Q</div>
+                <div style="font-size:11px;color:var(--tm)">PLC bilan ulanish uzildi. Tarmoq yoki PLC holatini tekshiring. Tizim qayta urinishda.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="g2">
+          <div class="card">
+            <div class="card-hdr"><span>&#x1F50D;</span><h4>Muammo tekshirish</h4></div>
+            <div class="card-body">
+              <div class="code-block"><span class="code-comment"># PLC'ga ping yuborish (CMD)</span>
+ping 192.168.1.100
+
+<span class="code-comment"># Port ochiqmi tekshirish</span>
+telnet 192.168.1.100 102</div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-hdr"><span>&#x2705;</span><h4>Tekshirish ro'yxati</h4></div>
+            <div class="card-body">
+              <div style="display:flex;flex-direction:column;gap:7px;font-size:12px;color:var(--ts)">
+                <div>&#x2713; PLC va kompyuter bir subnet'da</div>
+                <div>&#x2713; Windows Firewall 102-portga ruxsat bergan</div>
+                <div>&#x2713; PLC'da PUT/GET funksiyasi yoqilgan</div>
+                <div>&#x2713; PLC CPU xotira himoyasi o'chirilgan</div>
+                <div>&#x2713; Ethernet kabel yoki WiFi ulangan</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="danger">
+          <strong>&#x1F525; Diqqat:</strong> Windows Defender Firewall ba'zan 102-portni bloklashi mumkin. Ulanish muammosi bo'lsa, Firewall sozlamalarida 102-portni kiruvchi TCP ulanishlar uchun qo'lda ruxsat bering.
+        </div>
+
+      </div>
+
+      <!-- ===== SECTION 5: SOZLAMALAR ===== -->
+      <div class="section" id="sec-sozlamalar">
+
+        <div class="hero">
+          <div class="hero-icon">&#x2699;</div>
+          <div>
+            <h2>Tizim Sozlamalari</h2>
+            <p>Sozlamalar sahifasi orqali interfeys tilini, vizual mavzusini, monitoring parametrlarini va AI modelini o'zgartiring. Barcha o'zgarishlar darhol kuchga kiradi &mdash; dasturni qayta ishga tushirish shart emas.</p>
+          </div>
+        </div>
+
+        <div class="sec-title">Interfeys tili</div>
+        <div class="g3">
+          <div class="lang-card active-lang">
+            <div class="lang-flag">&#x1F1FA;&#x1F1FF;</div>
+            <div class="lang-name">O'zbekcha</div>
+            <div class="lang-native">O'zbek tili (joriy)</div>
+          </div>
+          <div class="lang-card">
+            <div class="lang-flag">&#x1F1F7;&#x1F1FA;</div>
+            <div class="lang-name">Ruscha</div>
+            <div class="lang-native">&#x420;&#x443;&#x441;&#x441;&#x43A;&#x438;&#x439; &#x44F;&#x437;&#x44B;&#x43A;</div>
+          </div>
+          <div class="lang-card">
+            <div class="lang-flag">&#x1F1EC;&#x1F1E7;</div>
+            <div class="lang-name">Inglizcha</div>
+            <div class="lang-native">English language</div>
+          </div>
+        </div>
+
+        <div class="sec-title">Interfeys mavzusi</div>
+        <div class="g3">
+          <div class="theme-card selected">
+            <div class="theme-preview" style="background:#1e1e2e;color:#89b4fa">
+              &#x1F319; Qorong'u (Dark)
+            </div>
+            <div class="theme-name">&#x2713; Tanlangan</div>
+          </div>
+          <div class="theme-card">
+            <div class="theme-preview" style="background:#1c2118;color:#8ba65a">
+              &#x1F396; Harbiy (Military)
+            </div>
+            <div class="theme-name">Harbiy uslub</div>
+          </div>
+          <div class="theme-card">
+            <div class="theme-preview" style="background:#f0f2f8;color:#1a5fd6">
+              &#x2600;&#xFE0F; Yorug' (Light)
+            </div>
+            <div class="theme-name">Yorug' uslub</div>
+          </div>
+        </div>
+
+        <div class="sec-title">Monitoring sozlamalari</div>
+        <div class="card">
+          <div class="card-hdr"><span>&#x23F1;</span><h4>Poyezd aniqlanish muddati (soniya)</h4></div>
+          <div class="card-body">
+            <p style="font-size:12px;color:var(--ts);margin-bottom:12px">Poyezd qancha vaqt ko'rinmaganidan keyin "ketdi" deb hisoblansin:</p>
+            <div class="mon-zones">
+              <div class="mz mz-g">0&ndash;5 s<div class="mz-label">Juda tez</div></div>
+              <div class="mz mz-y">5&ndash;10 s<div class="mz-label">Qisqa</div></div>
+              <div class="mz mz-a">10&ndash;15 s<div class="mz-label">&#x2713; Standart</div></div>
+              <div class="mz mz-r">15+ s<div class="mz-label">Sekin</div></div>
+            </div>
+            <div class="tip" style="margin-top:12px">
+              <strong>Tavsiya:</strong> Standart 15 soniya ko'pchilik holatlarga mos keladi. O'zgartirish kerak bo'lmasa shu qiymatni qoldiring.
+            </div>
+          </div>
+        </div>
+
+        <div class="sec-title">AI model sozlamalari</div>
+        <div class="card">
+          <table class="tbl">
+            <thead><tr><th>Parametr</th><th>Standart Model</th><th>Maxsus Model</th></tr></thead>
+            <tbody>
+              <tr><td>Fayl</td><td style="color:var(--tm)">yolov8n.pt (o'rnatilgan)</td><td style="color:var(--acc)">runs/pereezd_v12/weights/best.pt</td></tr>
+              <tr><td>Aniqlik</td><td>85&ndash;90%</td><td style="color:var(--ok)">95&ndash;98%</td></tr>
+              <tr><td>Tezlik</td><td style="color:var(--ok)">Tez (umumiy)</td><td>O'rtacha (maxsus)</td></tr>
+              <tr><td>Poyezd aniqlash</td><td>Cheklangan</td><td style="color:var(--ok)">Optimallashtirilgan</td></tr>
+              <tr><td>TensorRT</td><td>Ixtiyoriy</td><td style="color:var(--acc)">Tavsiya (208 FPS)</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="sec-title">Sozlamalar interfeysi ko'rinishi</div>
+        <div class="mock-win">
+          <div class="mock-titlebar">
+            <span class="mock-dot" style="background:#ff5f57"></span>
+            <span class="mock-dot" style="background:#ffbd2e"></span>
+            <span class="mock-dot" style="background:#28c840"></span>
+            <span class="mock-title">RailSafe AI &mdash; Sozlamalar</span>
+          </div>
+          <div class="mock-body">
+            <div class="form-tabs">
+              <div class="form-tab active">&#x1F3A8; Interfeys</div>
+              <div class="form-tab">&#x23F1; Monitoring</div>
+              <div class="form-tab">&#x1F916; AI Model</div>
+              <div class="form-tab">&#x1F4BE; Ma'lumotlar</div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <div class="form-row" style="margin:0">
+                <label class="form-label">Interfeys tili</label>
+                <div class="form-input" style="color:var(--acc)">&#x25BC; O'zbek tili (uz)</div>
+              </div>
+              <div class="form-row" style="margin:0">
+                <label class="form-label">Vizual mavzu</label>
+                <div class="form-input" style="color:var(--acc)">&#x25BC; Qorong'u (Dark)</div>
+              </div>
+              <div style="border-top:1px solid var(--brd);padding-top:10px;display:flex;flex-direction:column;gap:5px">
+                <div class="toggle-mock">
+                  <div class="toggle-track on"><div class="toggle-thumb"></div></div>
+                  <span class="toggle-label">Ishga tushganda monitoringni boshlash</span>
+                </div>
+                <div class="toggle-mock">
+                  <div class="toggle-track on"><div class="toggle-thumb"></div></div>
+                  <span class="toggle-label">Xatolarni log fayliga yozish</span>
+                </div>
+                <div class="toggle-mock">
+                  <div class="toggle-track off"><div class="toggle-thumb"></div></div>
+                  <span class="toggle-label">Ovozli ogohlantirish (beep)</span>
+                </div>
+                <div class="toggle-mock">
+                  <div class="toggle-track on"><div class="toggle-thumb"></div></div>
+                  <span class="toggle-label">Tizim tepsini ko'rsatish</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="info">
+          <strong>&#x2139; Ma'lumot:</strong> Barcha sozlamalar <code style="background:color-mix(in srgb,var(--acc) 15%,transparent);padding:1px 6px;border-radius:3px;font-size:11px">config/gui_config.json</code> faylida JSON formatida saqlanadi. Zarur bo'lsa to'g'ridan-to'g'ri tahrirlash mumkin.
+        </div>
+
+      </div>
+
+      <!-- ===== SECTION 6: ANALITIKA ===== -->
+      <div class="section" id="sec-analitika">
+
+        <div class="hero">
+          <div class="hero-icon">&#x1F4CA;</div>
+          <div>
+            <h2>Tahlil va Hisobot</h2>
+            <p>Analitika sahifasi barcha pereezdlar bo'yicha to'plangan statistikani grafik ko'rinishda ko'rsatadi. Microsoft Word formatida batafsil hisobot ham yaratishingiz mumkin.</p>
+          </div>
+        </div>
+
+        <div class="sec-title">Analitika sahifasi ko'rinishi</div>
+        <div class="mock-win">
+          <div class="mock-titlebar">
+            <span class="mock-dot" style="background:#ff5f57"></span>
+            <span class="mock-dot" style="background:#ffbd2e"></span>
+            <span class="mock-dot" style="background:#28c840"></span>
+            <span class="mock-title">RailSafe AI &mdash; Tahlil va Statistika</span>
+          </div>
+          <div style="background:var(--bg);padding:14px;display:flex;gap:12px">
+            <div class="chart-container" style="flex:1">
+              <div class="chart-hdr">&#x1F369; Poyezd taqsimoti</div>
+              <div class="donut-mock">
+                <svg class="donut-svg" viewBox="0 0 36 36">
+                  <circle cx="18" cy="18" r="15.9" fill="none" stroke="var(--brd)" stroke-width="3.5"/>
+                  <circle cx="18" cy="18" r="15.9" fill="none" stroke="var(--acc)" stroke-width="3.5" stroke-dasharray="62 38" stroke-dashoffset="25" transform="rotate(-90 18 18)"/>
+                  <circle cx="18" cy="18" r="15.9" fill="none" stroke="var(--ok)" stroke-width="3.5" stroke-dasharray="25 75" stroke-dashoffset="-37" transform="rotate(-90 18 18)"/>
+                  <circle cx="18" cy="18" r="15.9" fill="none" stroke="var(--warn)" stroke-width="3.5" stroke-dasharray="13 87" stroke-dashoffset="-62" transform="rotate(-90 18 18)"/>
+                  <text x="18" y="20" text-anchor="middle" fill="var(--tp)" font-size="5.5" font-weight="bold">47</text>
+                  <text x="18" y="25" text-anchor="middle" fill="var(--tm)" font-size="3.5">jami</text>
+                </svg>
+                <div class="donut-legend">
+                  <div class="donut-item"><div class="donut-dot" style="background:var(--acc)"></div>Pereezd 8 &mdash; 62%</div>
+                  <div class="donut-item"><div class="donut-dot" style="background:var(--ok)"></div>Pereezd 9 &mdash; 25%</div>
+                  <div class="donut-item"><div class="donut-dot" style="background:var(--warn)"></div>Boshqa &mdash; 13%</div>
+                </div>
+              </div>
+            </div>
+            <div class="chart-container" style="flex:2">
+              <div class="chart-hdr">&#x1F4C8; Kunlik statistika (so'nggi 7 kun)</div>
+              <div class="bar-chart" id="barChart"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="sec-title">Mavjud grafik turlari</div>
+        <div class="card">
+          <div class="card-body" style="gap:0;padding:0">
+            <table class="tbl">
+              <thead><tr><th>Grafik turi</th><th>Tavsif</th></tr></thead>
+              <tbody>
+                <tr><td>&#x1F369; Donut (halqa) grafik</td><td>Pereezdlar bo'yicha poyezd taqsimotini foizda ko'rsatadi</td></tr>
+                <tr><td>&#x1F4CA; Ustunli (bar) grafik</td><td>Kunlik, haftalik va oylik poyezd sonini ustunlar bilan taqqoslaydi</td></tr>
+                <tr><td>&#x1F4C8; Chiziqli (line) grafik</td><td>Vaqt o'tishi bilan statistika o'zgarishini dinamik ko'rsatadi</td></tr>
+                <tr><td>&#x1F525; Issiqlik xaritasi (heatmap)</td><td>Qaysi soat va kunlarda poyezd ko'p kelishini ranglar bilan ifodalaydi</td></tr>
+                <tr><td>&#x1F4C9; Histogram</td><td>Poyezd o'tish davomiyligi taqsimotini ko'rsatadi</td></tr>
+                <tr><td>&#x1F4CB; Ma'lumotlar jadvali</td><td>Barcha voqealar ro'yxati: sana, vaqt, davomiylik, pereezd nomi</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="sec-title">Word hisobotini olish</div>
+        <div class="card">
+          <div class="card-body" style="gap:0;padding:16px 18px">
+            <div class="report-step">
+              <div class="rs-num">1</div>
+              <div>
+                <div style="font-size:13px;font-weight:700;color:var(--tp);margin-bottom:6px">Sana oralig'ini tanlang</div>
+                <div class="date-chips">
+                  <div class="date-chip active-chip">Bugun</div>
+                  <div class="date-chip">7 kun</div>
+                  <div class="date-chip">30 kun</div>
+                  <div class="date-chip">1 yil</div>
+                  <div class="date-chip">&#x1F4C5; Boshqa</div>
+                </div>
+              </div>
+            </div>
+            <div class="report-step">
+              <div class="rs-num">2</div>
+              <div>
+                <div style="font-size:13px;font-weight:700;color:var(--tp);margin-bottom:4px">Pereezdni tanlang</div>
+                <p style="font-size:12px;color:var(--ts)">Barcha pereezdlar uchun umumiy hisobot yoki bitta pereezd uchun alohida hisobot yaratasiz.</p>
+              </div>
+            </div>
+            <div class="report-step">
+              <div class="rs-num">3</div>
+              <div>
+                <div style="font-size:13px;font-weight:700;color:var(--tp);margin-bottom:4px">"Word Hisobot" tugmasini bosing</div>
+                <p style="font-size:12px;color:var(--ts)">Hisobot .docx formatida yaratiladi va saqlash joyi so'raladi. Barcha grafik, jadval va statistikalar to'liq kiritiladi.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="tip">
+          <strong>&#x1F4A1; Maslahat:</strong> .docx faylni ochish uchun Microsoft Word 2013+ yoki bepul LibreOffice Writer 6.0+ dasturi kerak. LibreOffice <em>libreoffice.org</em> saytidan yuklanadi.
+        </div>
+
+        <div class="info">
+          <strong>&#x2139; Ma'lumot:</strong> Barcha statistika <code style="background:color-mix(in srgb,var(--acc) 15%,transparent);padding:1px 6px;border-radius:3px;font-size:11px">app/data/stats.db</code> SQLite bazasida saqlanadi. Ushbu faylni muntazam zaxiralash tavsiya etiladi.
+        </div>
+
+      </div>
+
+      <!-- ===== SECTION 7: VERSIYA ===== -->
+      <div class="section" id="sec-versiya">
+
+        <div class="hero">
+          <div class="hero-icon">&#x25A3;</div>
+          <div>
+            <h2>Versiya va Texnik Ma'lumotlar</h2>
+            <p>RailSafe AI O'zbekiston uchun maxsus ishlab chiqilgan temir yo'l xavfsizlik tizimi. Zamonaviy texnologiyalar asosida qurilgan va doimiy yangilanib boradi.</p>
+          </div>
+        </div>
+
+        <div class="g4">
+          <div class="ver-card">
+            <div class="ver-icon">&#x1F3F7;&#xFE0F;</div>
+            <div class="ver-val">v1.0.5</div>
+            <div class="ver-lbl">Joriy versiya</div>
+          </div>
+          <div class="ver-card">
+            <div class="ver-icon">&#x1F4C5;</div>
+            <div class="ver-val">2025</div>
+            <div class="ver-lbl">Ishlab chiqildi</div>
+          </div>
+          <div class="ver-card">
+            <div class="ver-icon">&#x1F3ED;</div>
+            <div class="ver-val" style="font-size:15px">OEM</div>
+            <div class="ver-lbl">Dizayn turi</div>
+          </div>
+          <div class="ver-card">
+            <div class="ver-icon">&#x1F1FA;&#x1F1FF;</div>
+            <div class="ver-val" style="font-size:15px">UZ</div>
+            <div class="ver-lbl">Davlat</div>
+          </div>
+        </div>
+
+        <div class="sec-title">Ishlatilgan texnologiyalar</div>
+        <div class="card">
+          <div class="card-body" style="gap:2px">
+            <div class="tech-row">
+              <div class="tech-icon">&#x1F40D;</div>
+              <div class="tech-name">Python</div>
+              <div class="tech-ver">3.10+</div>
+              <div class="tech-desc">Asosiy dasturlash tili</div>
+            </div>
+            <div class="tech-row">
+              <div class="tech-icon">&#x1F5A5;&#xFE0F;</div>
+              <div class="tech-name">PyQt6</div>
+              <div class="tech-ver">6.5+</div>
+              <div class="tech-desc">GUI framework, Fusion uslubi va dark/military/light mavzular</div>
+            </div>
+            <div class="tech-row">
+              <div class="tech-icon">&#x1F3A5;</div>
+              <div class="tech-name">OpenCV</div>
+              <div class="tech-ver">4.8+</div>
+              <div class="tech-desc">Video qayta ishlash va RTSP stream qabul qilish</div>
+            </div>
+            <div class="tech-row">
+              <div class="tech-icon">&#x1F916;</div>
+              <div class="tech-name">YOLOv8</div>
+              <div class="tech-ver">8.0+</div>
+              <div class="tech-desc">Real-vaqt ob'ekt aniqlash neyron tarmog'i (Ultralytics)</div>
+            </div>
+            <div class="tech-row">
+              <div class="tech-icon">&#x26A1;</div>
+              <div class="tech-name">TensorRT</div>
+              <div class="tech-ver">8.6+</div>
+              <div class="tech-desc">NVIDIA GPU akseleratsiyasi &mdash; 208 FPS (batch=8)</div>
+            </div>
+            <div class="tech-row">
+              <div class="tech-icon">&#x1F5C4;&#xFE0F;</div>
+              <div class="tech-name">SQLite</div>
+              <div class="tech-ver">3.x</div>
+              <div class="tech-desc">Yengil va ishonchli statistika ma'lumotlar bazasi</div>
+            </div>
+            <div class="tech-row">
+              <div class="tech-icon">&#x1F50C;</div>
+              <div class="tech-name">python-snap7</div>
+              <div class="tech-ver">2.1.0</div>
+              <div class="tech-desc">Siemens S7-1200/300/400/1500 PLC aloqasi</div>
+            </div>
+            <div class="tech-row">
+              <div class="tech-icon">&#x1F4C4;</div>
+              <div class="tech-name">python-docx</div>
+              <div class="tech-ver">0.8+</div>
+              <div class="tech-desc">Word (.docx) formatida hisobot yaratish</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="sec-title">Tizim minimal talablari</div>
+        <div class="card">
+          <div class="card-body" style="gap:0">
+            <div class="req-item">
+              <div class="req-label">Operatsion tizim</div>
+              <div class="req-bar-bg"><div class="req-bar-fill" style="width:100%"></div></div>
+              <div class="req-val" style="color:var(--ok)">Windows 10/11</div>
+            </div>
+            <div class="req-item">
+              <div class="req-label">RAM xotira</div>
+              <div class="req-bar-bg"><div class="req-bar-fill" style="width:75%"></div></div>
+              <div class="req-val">8 GB (16 GB ideal)</div>
+            </div>
+            <div class="req-item">
+              <div class="req-label">NVIDIA GPU</div>
+              <div class="req-bar-bg"><div class="req-bar-fill" style="width:60%;background:linear-gradient(90deg,var(--warn),var(--ok))"></div></div>
+              <div class="req-val">GTX 1060+ (TensorRT)</div>
+            </div>
+            <div class="req-item">
+              <div class="req-label">Disk maydoni</div>
+              <div class="req-bar-bg"><div class="req-bar-fill" style="width:40%"></div></div>
+              <div class="req-val">10 GB + video</div>
+            </div>
+            <div class="req-item">
+              <div class="req-label">Tarmoq tezligi</div>
+              <div class="req-bar-bg"><div class="req-bar-fill" style="width:50%"></div></div>
+              <div class="req-val">100 Mbps LAN</div>
+            </div>
+            <div class="req-item">
+              <div class="req-label">Python versiyasi</div>
+              <div class="req-bar-bg"><div class="req-bar-fill" style="width:85%"></div></div>
+              <div class="req-val" style="color:var(--ok)">3.10 &ndash; 3.11</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="g2">
+          <div class="card">
+            <div class="card-hdr"><span>&#x1F4DD;</span><h4>O'zgarishlar tarixi</h4></div>
+            <div class="card-body">
+              <div style="font-size:12px;color:var(--ts);display:flex;flex-direction:column;gap:8px">
+                <div><span style="color:var(--acc);font-weight:700">v1.0.5</span> &mdash; Polygon ichiga poyezd kirishi aniqlash yaxshilandi</div>
+                <div><span style="color:var(--ts);font-weight:700">v1.0.4</span> &mdash; PDF va Word hisobotlar qo'shildi</div>
+                <div><span style="color:var(--ts);font-weight:700">v1.0.3</span> &mdash; Poyezd statistikasi va vaqt jadvali</div>
+                <div><span style="color:var(--ts);font-weight:700">v1.0.2</span> &mdash; Kamera yoq/yoqish va til sozlamalari</div>
+                <div><span style="color:var(--ts);font-weight:700">v1.0.1</span> &mdash; Windows mos sozlash va model eksport</div>
+                <div><span style="color:var(--tm);font-weight:700">v1.0.0</span> &mdash; Birinchi rasmiy reliz</div>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-hdr"><span>&#x1F4DE;</span><h4>Texnik qo'llab-quvvatlash</h4></div>
+            <div class="card-body">
+              <div style="font-size:12px;color:var(--ts);display:flex;flex-direction:column;gap:8px">
+                <div>&#x1F4CB; Log fayllar: <code style="font-size:10px;background:var(--input);padding:1px 5px;border-radius:3px">app/data/railsafe.log</code></div>
+                <div>&#x2699;&#xFE0F; Konfiguratsiya: <code style="font-size:10px;background:var(--input);padding:1px 5px;border-radius:3px">config/gui_config.json</code></div>
+                <div>&#x1F5C4;&#xFE0F; Statistika: <code style="font-size:10px;background:var(--input);padding:1px 5px;border-radius:3px">app/data/stats.db</code></div>
+                <div>&#x1F680; Ishga tushirish: <code style="font-size:10px;background:var(--input);padding:1px 5px;border-radius:3px">run_gui.bat</code></div>
+              </div>
+              <div class="info" style="margin-top:4px">Muammo bo'lsa log faylini texnik guruhga yuboring.</div>
+            </div>
+          </div>
+        </div>
+
+        <div style="background:var(--bg2);border:1px solid var(--brd);border-radius:10px;padding:24px;text-align:center;margin-top:4px">
+          <div style="font-size:36px;margin-bottom:10px">&#x1F6E1;&#xFE0F;</div>
+          <div style="font-size:18px;font-weight:700;color:var(--acc);margin-bottom:6px">RailSafe AI v1.0.5</div>
+          <div style="font-size:12px;color:var(--tm);line-height:2">
+            &copy; 2025 RailSafe AI. Barcha huquqlar himoyalangan.<br>
+            O'zbekiston Respublikasi uchun maxsus ishlab chiqildi.<br>
+            <span style="color:var(--brd)">&#x2014;</span><br>
+            <em style="font-size:11px;color:color-mix(in srgb,var(--tm) 70%,transparent)">
+              Temir yo'l xavfsizligi &mdash; bizning ustuvor vazifamiz
+            </em>
+          </div>
+        </div>
+
+      </div>
+      <!-- END SECTIONS -->
+
+    </div><!-- /content-scroll -->
+  </div><!-- /content-area -->
+</div><!-- /app-body -->
+
+<style>
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+</style>
+
+<script>
+// THEME SWITCHER
+function setTheme(theme, btn) {
+  document.documentElement.setAttribute('data-theme', theme);
+  document.querySelectorAll('.th-btn').forEach(function(b){ b.classList.remove('active'); });
+  btn.classList.add('active');
+}
+
+// NAV SECTION SWITCHER
+var sectionMeta = {
+  umumiy:      { title: "Tizim haqida umumiy ma'lumot",  sub: "Asosiy ma'lumotlar va tushunchalar" },
+  arxitektura: { title: "Yangi pereezd qo'shish",         sub: "Pereezdni sozlash va boshqarish" },
+  kamera:      { title: "Kamera qo'shish va sozlash",     sub: "IP kamera ulanishi va polygon" },
+  plc:         { title: "PLC sozlash — Siemens S7-1200",  sub: "Avtomatik boshqaruv tizimi" },
+  sozlamalar:  { title: "Tizim sozlamalari",              sub: "Til, mavzu, monitoring va AI model" },
+  analitika:   { title: "Tahlil va hisobot",              sub: "Statistika ko'rish va Word export" },
+  versiya:     { title: "Versiya va texnik ma'lumotlar",  sub: "Stack, talablar va changelog" }
+};
+
+function showSection(id, navEl) {
+  document.querySelectorAll('.section').forEach(function(s){ s.classList.remove('active'); });
+  document.querySelectorAll('.nav-item').forEach(function(n){ n.classList.remove('active'); });
+  var sec = document.getElementById('sec-' + id);
+  if (sec) sec.classList.add('active');
+  if (navEl) navEl.classList.add('active');
+  var meta = sectionMeta[id] || {};
+  document.getElementById('sec-title').textContent = meta.title || id;
+  document.getElementById('sec-sub').textContent = meta.sub || '';
+  document.getElementById('content-scroll').scrollTop = 0;
+}
+
+// CLOCK
+function updateClock() {
+  var now = new Date();
+  var h = String(now.getHours()).padStart(2, '0');
+  var m = String(now.getMinutes()).padStart(2, '0');
+  var s = String(now.getSeconds()).padStart(2, '0');
+  document.getElementById('clock').textContent = h + ':' + m + ':' + s;
+}
+updateClock();
+setInterval(updateClock, 1000);
+
+// BAR CHART RENDERER
+(function renderBarChart() {
+  var container = document.getElementById('barChart');
+  if (!container) return;
+  var data = [
+    { lbl: 'Du', val: 8 }, { lbl: 'Se', val: 12 }, { lbl: 'Ch', val: 7 },
+    { lbl: 'Pa', val: 15 }, { lbl: 'Ju', val: 11 }, { lbl: 'Sh', val: 5 },
+    { lbl: 'Ya', val: 9 }
+  ];
+  var maxVal = Math.max.apply(null, data.map(function(d){ return d.val; }));
+  var maxH = 72;
+  data.forEach(function(d) {
+    var pct = (d.val / maxVal) * maxH;
+    var bar = document.createElement('div');
+    bar.className = 'bar';
+    bar.style.height = pct + 'px';
+    var valLbl = document.createElement('div');
+    valLbl.className = 'bar-val';
+    valLbl.textContent = d.val;
+    var lbl = document.createElement('div');
+    lbl.className = 'bar-lbl';
+    lbl.textContent = d.lbl;
+    bar.appendChild(valLbl);
+    bar.appendChild(lbl);
+    container.appendChild(bar);
+  });
+})();
+</script>
+
+</body>
+</html>
