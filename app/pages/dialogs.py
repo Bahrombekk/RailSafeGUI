@@ -830,7 +830,7 @@ class SettingsDialog(QDialog):
         self.config_manager = config_manager
         self.settings = config_manager.get_settings()
         self.setWindowTitle(t("settings.title"))
-        self.setFixedSize(480, 600)
+        self.setFixedSize(520, 640)
         self.setStyleSheet(_dialog_style() + f"""
             QSpinBox {{
                 background: {C('bg_input')};
@@ -930,6 +930,10 @@ class SettingsDialog(QDialog):
         self.auto_save = QCheckBox(t("settings.autosave"))
         self.auto_save.setChecked(self.settings.get("auto_save", True))
         mon_v.addWidget(self.auto_save)
+
+        self.record_enabled = QCheckBox(t("settings.record_enabled"))
+        self.record_enabled.setChecked(self.settings.get("record_enabled", False))
+        mon_v.addWidget(self.record_enabled)
 
         layout.addWidget(mon_box)
 
@@ -1059,6 +1063,7 @@ class SettingsDialog(QDialog):
             "warning_threshold": float(self.warning_threshold.value()),
             "violation_threshold": float(self.violation_threshold.value()),
             "auto_save": self.auto_save.isChecked(),
+            "record_enabled": self.record_enabled.isChecked(),
             "model_type": model_type,
         }
 

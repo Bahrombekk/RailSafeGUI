@@ -121,7 +121,52 @@ class MainWindow(QMainWindow):
         self.toolbar_stats = QLabel("")
         self.toolbar.addWidget(self.toolbar_stats)
 
+        # Window control buttons (grouped container)
+        self._win_btns = QWidget()
+        self._win_btns.setObjectName("winBtns")
+        self._win_btns.setFixedHeight(32)
+        win_layout = QHBoxLayout(self._win_btns)
+        win_layout.setContentsMargins(2, 2, 2, 2)
+        win_layout.setSpacing(0)
+        self._win_btns.setLayout(win_layout)
+
+        self._btn_minimize = QPushButton("–")
+        self._btn_minimize.setFixedSize(34, 26)
+        self._btn_minimize.setToolTip(t("window.minimize"))
+        self._btn_minimize.setObjectName("btnMin")
+        self._btn_minimize.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._btn_minimize.clicked.connect(self.showMinimized)
+
+        self._btn_maximize = QPushButton("□")
+        self._btn_maximize.setFixedSize(34, 26)
+        self._btn_maximize.setToolTip(t("window.maximize"))
+        self._btn_maximize.setObjectName("btnMax")
+        self._btn_maximize.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._btn_maximize.clicked.connect(self._toggle_maximize)
+
+        self._btn_close = QPushButton("✕")
+        self._btn_close.setFixedSize(34, 26)
+        self._btn_close.setToolTip(t("window.close"))
+        self._btn_close.setObjectName("btnClose")
+        self._btn_close.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._btn_close.clicked.connect(self.close)
+
+        win_layout.addWidget(self._btn_minimize)
+        win_layout.addWidget(self._btn_maximize)
+        win_layout.addWidget(self._btn_close)
+        self.toolbar.addWidget(self._win_btns)
+
         self._apply_toolbar_style()
+
+    def _toggle_maximize(self):
+        if self.isMaximized():
+            self.showNormal()
+            self._btn_maximize.setText("□")
+            self._btn_maximize.setToolTip(t("window.maximize"))
+        else:
+            self.showMaximized()
+            self._btn_maximize.setText("◱")
+            self._btn_maximize.setToolTip(t("window.restore"))
 
     def _apply_toolbar_style(self):
         """Apply current theme colors to toolbar"""
@@ -149,6 +194,41 @@ class MainWindow(QMainWindow):
         """)
         self.app_label.setStyleSheet(f"color: {C('accent_brand')}; font-size: 14px; font-weight: bold;")
         self.toolbar_stats.setStyleSheet(f"color: {C('text_muted')}; font-size: 11px; padding-right: 10px;")
+
+        self._win_btns.setStyleSheet(f"""
+            QWidget#winBtns {{
+                background-color: {C('bg_secondary')};
+                border: 1px solid {C('bg_input')};
+                border-radius: 6px;
+            }}
+            QPushButton#btnMin, QPushButton#btnMax, QPushButton#btnClose {{
+                background-color: transparent;
+                color: {C('text_muted')};
+                border: none;
+                border-radius: 4px;
+                font-size: 14px;
+                font-family: Arial, sans-serif;
+                padding: 0px;
+                margin: 0px;
+            }}
+            QPushButton#btnMin:hover, QPushButton#btnMax:hover {{
+                background-color: {C('bg_input')};
+                color: {C('text_primary')};
+            }}
+            QPushButton#btnMin:pressed, QPushButton#btnMax:pressed {{
+                background-color: {C('bg_hover')};
+            }}
+            QPushButton#btnClose:hover {{
+                background-color: #e81123;
+                color: #ffffff;
+                border-top-right-radius: 5px;
+                border-bottom-right-radius: 5px;
+            }}
+            QPushButton#btnClose:pressed {{
+                background-color: #c50f1f;
+                color: #ffffff;
+            }}
+        """)
 
     def _setup_statusbar(self):
         self.statusbar = QStatusBar()

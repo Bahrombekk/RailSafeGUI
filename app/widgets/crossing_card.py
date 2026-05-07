@@ -185,6 +185,7 @@ class CameraWorker(QThread):
         self._poly_pts = None
         self._poly_mask = None
         self.plc_danger = False  # PLC aktiv + polygon ichida mashina → qizil
+        self.video_recorder = None  # VideoRecorder | None
 
     def take_frame(self):
         """Eng oxirgi kadrni olish - eski framelar avtomatik tashlanadi"""
@@ -347,6 +348,10 @@ class CameraWorker(QThread):
                 self._latest_qimg = qimg
                 self.frame_ready.emit()
                 self.frame_with_data.emit(qimg)
+
+                # Video yozish (agar yoqilgan bo'lsa)
+                if self.video_recorder is not None:
+                    self.video_recorder.write(frame)
 
             if _grab_error[0]:
                 self.status_changed.emit("error")
@@ -749,6 +754,10 @@ class CrossingCard(QWidget):
         self._plc_in_grace = False        # Grace period ichidamizmi?
         self._plc_grace_secs = 10         # 10 soniya kutish
 
+        # Video recorder
+        self._record_enabled = False  # Settings dan olinadi
+        self._active_recorders: list = []  # Hozir yozayotgan VideoRecorder lar
+
         # Car detector - SHARED instance (GPU maksimal ishlatish)
         self.car_detector = car_detector
         self._owns_detector = False  # Biz yaratmadik, biz to'xtatmaymiz
@@ -912,6 +921,35 @@ class CrossingCard(QWidget):
         except Exception:
             pass  # PyQt6 abort() oldini olish
 
+    def _start_recording(self):
+        """Poyezd aniqlanganda barcha kameralar uchun video yozishni boshlash."""
+        if not self._record_enabled or not self.camera_workers:
+            return
+        try:
+            from app.utils.video_recorder import VideoRecorder
+        except Exception:
+            return
+
+        crossing_name = self.crossing_data.get("name", f"Pereezd_{self.crossing_id}")
+        self._stop_recording()  # Avvalgisini to'xtatish (agar bo'lsa)
+
+        for worker in self.camera_workers:
+            rec = VideoRecorder()
+            rec.start(crossing_name, worker.camera_name, fps=25.0)
+            worker.video_recorder = rec
+            self._active_recorders.append(rec)
+
+    def _stop_recording(self):
+        """Barcha yozuvlarni to'xtatish."""
+        for rec in self._active_recorders:
+            try:
+                rec.stop()
+            except Exception:
+                pass
+        self._active_recorders.clear()
+        for worker in self.camera_workers:
+            worker.video_recorder = None
+
     def _on_plc_grace_expired(self):
         """Grace period tugadi — PLC haqiqatan ham o'chdi."""
         try:
@@ -919,6 +957,7 @@ class CrossingCard(QWidget):
                 return
             self._plc_in_grace = False
             self._train_timer.stop()
+            self._stop_recording()
 
             duration = 0.0
             if self._train_start_time > 0:
@@ -976,6 +1015,9 @@ class CrossingCard(QWidget):
             # Camera workerlarga xavf holatini uzatish
             for _w in self.camera_workers:
                 _w.plc_danger = active
+            # Video yozishni boshlash
+            if active:
+                self._start_recording()
         except RuntimeError:
             self._is_destroyed = True
 
@@ -1701,6 +1743,11 @@ class CrossingCard(QWidget):
     def _start_cameras(self):
         if self._is_destroyed:
             return
+
+        # Record sozlamasini yuklash
+        if self.config_manager:
+            self._record_enabled = self.config_manager.get_settings().get(
+                "record_enabled", False)
 
         try:
             cameras = self.crossing_data.get("cameras", [])
