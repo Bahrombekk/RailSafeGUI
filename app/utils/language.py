@@ -53,6 +53,10 @@ class _LangManager(QObject):
                 return val
         return val
 
+    def raw(self, key: str, default=None):
+        """Return untranslated structured value from the active language file."""
+        return self._strings.get(key, default)
+
 
 # Global singleton
 LM = _LangManager()

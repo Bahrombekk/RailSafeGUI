@@ -126,6 +126,8 @@
   "dlg.add_camera.type_additional_info": "Bu kamera qo'shimcha (kichik) sifatida ko'rsatiladi",
   "dlg.add_camera.type_main_warn": "Diqqat: Avvalgi asosiy kamera qo'shimchaga o'zgaradi",
   "settings.title": "Sozlamalar",
+  "settings.tab.main": "Asosiy",
+  "settings.tab.advanced": "Qo'shimcha",
   "settings.interface": "Interfeys",
   "settings.language": "Til:",
   "settings.theme": "Mavzu:",
@@ -134,7 +136,12 @@
   "settings.violation": "Buzilish:",
   "settings.sec": " s",
   "settings.autosave": "Avtomatik saqlash",
+  "settings.recording": "Video yozib olish",
   "settings.record_enabled": "Poyezd kelganda video yozib olish (Desktop/RailSafe_Yozuvlar)",
+  "settings.record_folder": "Saqlash joyi:",
+  "settings.record_folder_default": "Desktop/RailSafe_Yozuvlar",
+  "settings.record_format": "Format:",
+  "settings.record_quality": "Sifat:",
   "settings.ai_model": "AI Model",
   "settings.cancel": "Bekor Qilish",
   "settings.save": "Saqlash",
@@ -178,13 +185,9 @@
   "report.save_dialog": "Hisobot saqlansin",
   "about.title": "Tizim haqida",
   "about.nav.general": "Umumiy",
-  "about.nav.architecture": "Pereezd qo'shish",
-  "about.nav.howworks": "Kamera qo'shish",
-  "about.nav.security": "PLC sozlash",
-  "about.nav.analytics": "Sozlamalar",
-  "about.nav.forecast": "Tahlil va hisobot",
-  "about.nav.version": "Versiya",
-  "about.version_badge": "Versiya 1.0.5 • 2025  OEM Design",
+  "about.nav.analytics": "Tahlil / hisobot",
+  "about.nav.version": "Versiya / kontakt",
+  "about.version_badge": "Versiya 1.0.5 | 2026 | RailSafe AI",
   "cam.loading": "Yuklanmoqda...",
   "cam.bandlik": "Bandlik: {count}",
   "cam.status.main_down": "Asosiy kamera uzildi",
@@ -210,14 +213,309 @@
   "menu.cam_settings": "Kamera Sozlamalari",
   "menu.info": "Pereezd Ma'lumotlari",
   "menu.export_json": "JSON Eksport",
-  "about.section.general": "Tizim haqida umumiy ma'lumot",
-  "about.section.architecture": "Yangi pereezd qo'shish",
-  "about.section.howworks": "Kamera qo'shish va sozlash",
-  "about.section.security": "PLC ulash va sozlash",
-  "about.section.analytics": "Dastur sozlamalari",
-  "about.section.forecast": "Tahlil va hisobot olish",
-  "about.section.version": "Versiya va muallif",
+  "about.section.general": "RailSafe AI nima qiladi?",
+  "about.section.analytics": "Tahlil va hisobot olish",
+  "about.section.version": "Versiya, talablar va kontakt",
   "chart.trains_hourly": "Soatlik poyezdlar (bugun)",
   "chart.trains_today_list": "Bugungi o'tishlar",
-  "train.no_events_today": "Bugun poyezd o'tmadi"
+  "train.no_events_today": "Bugun poyezd o'tmadi",
+  "about.nav.start": "0 dan boshlash",
+  "about.nav.crossing": "Pereezd qo'shish",
+  "about.nav.camera": "Kamera qo'shish",
+  "about.nav.plc": "PLC va xavfsizlik",
+  "about.nav.polygon": "Polygon va bandlik",
+  "about.nav.troubleshooting": "Muammo yechish",
+  "about.section.start": "Dasturni 0 dan ishga tushirish",
+  "about.section.crossing": "Yangi pereezd qo'shish",
+  "about.section.camera": "Kamera qo'shish va tekshirish",
+  "about.section.plc": "PLC ulash va xavfsizlik holatlari",
+  "about.section.polygon": "Polygon, bandlik va ranglar",
+  "about.section.troubleshooting": "Tezkor muammo yechish",
+  "about.content": {
+    "general": {
+      "lead": "RailSafe AI temir yo'l kesishmalarini kamera, sun'iy intellekt va PLC signali orqali kuzatadigan desktop monitoring tizimi.",
+      "blocks": [
+        {
+          "type": "info",
+          "title": "Oddiy qilib aytganda",
+          "items": [
+            "Dastur pereezd kartalarini ko'rsatadi va har birida jonli video, transport soni, poyezd holati va statistika bo'ladi.",
+            "AI kamera tasviridan yengil va og'ir transportni aniqlaydi.",
+            "PLC ulangan bo'lsa, poyezd kelayotganini alohida xavfsizlik holati sifatida ko'rsatadi."
+          ]
+        },
+        {
+          "type": "status",
+          "title": "Asosiy ekran nimalardan iborat?",
+          "items": [
+            "Yuqori panel: Boshqaruv paneli, Pereezd qo'shish, Yangilash, Sozlamalar, Tahlil va Tizim haqida.",
+            "Pereezd kartasi: kamera tasviri, kunlik transport sanog'i, poyezdlar soni va PLC holati.",
+            "Tahlil sahifasi: kunlik, haftalik, oylik grafiklar va Word hisobot."
+          ]
+        },
+        {
+          "type": "tip",
+          "title": "Operator uchun qoida",
+          "text": "Avval pereezdni qo'shing, keyin kamerani ulang, keyin polygon va PLC sozlamalarini tekshiring. Shundan keyin tizim avtomatik kuzatishni boshlaydi."
+        }
+      ]
+    },
+    "start": {
+      "lead": "EXE faylni olgan operator dasturdan foydalanishni shu ketma-ketlikda boshlaydi.",
+      "blocks": [
+        {
+          "type": "steps",
+          "title": "Minimal ishga tushirish yo'li",
+          "items": [
+            "RailSafe.exe faylini oching va asosiy oyna chiqquncha kuting.",
+            "Birinchi yuklanishda AI model 10-30 sekund tayyorlanishi mumkin; bu normal holat.",
+            "+ Pereezd Qo'shish tugmasini bosing va pereezd nomi hamda manzilini kiriting.",
+            "Pereezd kartasiga kiring va + Kamera tugmasi orqali kamida bitta asosiy kamera qo'shing.",
+            "RTSP manzilni kiriting yoki test uchun video fayl tanlang.",
+            "Polygon fayli bo'lsa tanlang, bo'lmasa keyinroq qo'shish uchun bo'sh qoldiring.",
+            "PLC mavjud bo'lsa IP va portni kiriting; mavjud bo'lmasa PLC ni vaqtincha o'chirilgan qoldiring.",
+            "Boshqaruv paneliga qayting va kamera statusi, bandlik va transport sanog'ini tekshiring."
+          ]
+        },
+        {
+          "type": "warning",
+          "title": "Birinchi ishga tushirishda sabr qiling",
+          "text": "AI model, kamera oqimi yoki TensorRT engine tayyorlanayotganda kamera bir necha soniya ko'rinmasligi mumkin. Dastur javob bermay qolgandek tuyulsa ham, avval 1-2 daqiqa kutib ko'ring."
+        },
+        {
+          "type": "checklist",
+          "title": "Ishlashga tayyorligini tekshirish",
+          "items": [
+            "Kamera statusi Ulanmoqda emas, video tasvir ko'rinyapti.",
+            "Transport o'tganda Yengil/Og'ir/Jami sonlar o'zgaradi.",
+            "Polygon bo'lsa, transport zonaga kirganda Bandlik 0 dan katta bo'ladi.",
+            "PLC ulangan bo'lsa, PLC holati Ulangan yoki Poyezd kelmoqda deb chiqadi."
+          ]
+        }
+      ]
+    },
+    "crossing": {
+      "lead": "Pereezd - dastur kuzatadigan bitta temir yo'l kesishmasi. Har bir pereezd o'z kameralari, PLC sozlamasi va statistikasi bilan yuradi.",
+      "blocks": [
+        {
+          "type": "steps",
+          "title": "Yangi pereezd qo'shish",
+          "items": [
+            "Yuqori paneldan + Pereezd Qo'shish tugmasini bosing.",
+            "Nomi maydoniga qisqa va tushunarli nom kiriting: masalan, Pereezd 8.",
+            "Manzil maydoniga obyekt joylashuvini kiriting.",
+            "Tavsif maydoniga kerak bo'lsa izoh yozing.",
+            "PLC tayyor bo'lsa PLC Sozlamalari bo'limida yoqing; tayyor bo'lmasa hozircha o'chirilgan qoldiring.",
+            "Saqlash tugmasini bosing. Pereezd boshqaruv panelida karta sifatida paydo bo'ladi."
+          ]
+        },
+        {
+          "type": "info",
+          "title": "Qachon bir nechta pereezd qo'shiladi?",
+          "text": "Agar bir nechta real kesishma yoki bir-biridan mustaqil nazorat nuqtasi bo'lsa, har birini alohida pereezd sifatida qo'shing."
+        },
+        {
+          "type": "danger",
+          "title": "O'chirishdan oldin ehtiyot bo'ling",
+          "text": "Pereezd o'chirilsa, unga bog'langan kamera sozlamalari va statistikalar ham yo'qolishi mumkin. O'chirishdan oldin hisobot yoki JSON zaxira nusxa oling."
+        }
+      ]
+    },
+    "camera": {
+      "lead": "Kamera pereezdni ko'rish va transportni sanash uchun kerak. Eng kamida bitta asosiy kamera bo'lishi tavsiya qilinadi.",
+      "blocks": [
+        {
+          "type": "steps",
+          "title": "Kamera qo'shish",
+          "items": [
+            "Pereezd kartasini oching.",
+            "+ Kamera tugmasini bosing.",
+            "Kameraga nom bering: masalan, A1 yoki Shimoliy yo'nalish.",
+            "Turi sifatida Asosiy yoki Qo'shimcha ni tanlang. Asosiy kamera katta oynada ko'rinadi.",
+            "Manba maydoniga RTSP manzil yoki video fayl yo'lini kiriting.",
+            "Kamerani yoqish va Aniqlov yoqish belgilanganini tekshiring.",
+            "Saqlash tugmasini bosing va video chiqishini kuting."
+          ]
+        },
+        {
+          "type": "info",
+          "title": "RTSP manzil namunasi",
+          "items": [
+            "Umumiy ko'rinish: rtsp://login:parol@IP:554/kanal",
+            "Hikvision uchun ko'p uchraydigan ko'rinish: rtsp://admin:parol@192.168.1.50:554/Streaming/Channels/101",
+            "Agar kamera ochilmasa, shu RTSP manzilni VLC Media Player orqali ham tekshirib ko'ring."
+          ]
+        },
+        {
+          "type": "warning",
+          "title": "Asosiy kamera qoidasi",
+          "text": "Bir pereezdda faqat bitta asosiy kamera bo'lishi kerak. Ikkinchi kamera qo'shimcha sifatida ishlatiladi yoki mavjud asosiy kamera almashtiriladi."
+        }
+      ]
+    },
+    "plc": {
+      "lead": "PLC poyezd kelayotganini tizimga bildiradigan qurilma. U xavfsizlik holatini kameradagi transport bandligi bilan birga ko'rsatadi.",
+      "blocks": [
+        {
+          "type": "steps",
+          "title": "PLC ulash",
+          "items": [
+            "Pereezd qo'shish yoki tahrirlash oynasida PLC Sozlamalari bo'limini oching.",
+            "PLC ni yoqish katagini belgilang.",
+            "IP manzilni kiriting, masalan 192.168.170.159.",
+            "Port odatda 102 bo'ladi; IT yoki avtomatika mutaxassisi boshqa qiymat bergan bo'lsa shuni kiriting.",
+            "Ulanishni Tekshirish tugmasi bo'lsa, avval test qiling va keyin saqlang."
+          ]
+        },
+        {
+          "type": "status",
+          "title": "PLC statuslari",
+          "items": [
+            "ULANGAN - PLC bilan aloqa bor, poyezd signali kutilmoqda.",
+            "POYEZD KELMOQDA - PLC aktiv signal berdi, operator pereezd zonasiga alohida e'tibor beradi.",
+            "ALOQA YO'Q - IP, kabel, tarmoq yoki PLC sozlamalarini tekshirish kerak.",
+            "O'CHIRILGAN - bu pereezdda PLC nazorati vaqtincha ishlatilmayapti."
+          ]
+        },
+        {
+          "type": "warning",
+          "title": "Xavfsizlik eslatmasi",
+          "text": "Dastur operatorga kuzatuv va ogohlantirish beradi. Real pereezd xavfsizligi bo'yicha yakuniy qaror mahalliy qoidalar va mas'ul xodimlar tartibiga bog'liq."
+        }
+      ]
+    },
+    "polygon": {
+      "lead": "Polygon - kamera tasviridagi hisoblash zonasi. Transport shu zona ichiga kirganda bandlik va vaqt hisoblanadi.",
+      "blocks": [
+        {
+          "type": "info",
+          "title": "Polygon nima uchun kerak?",
+          "items": [
+            "Kamera keng joyni ko'rsa ham, tizim faqat kerakli yo'l qismini hisoblaydi.",
+            "Transport zonaga kirsa Bandlik soni ortadi.",
+            "Zonada uzoq turib qolgan transport sariq, apelsin yoki qizil ogohlantirishga sabab bo'ladi."
+          ]
+        },
+        {
+          "type": "status",
+          "title": "Ranglar ma'nosi",
+          "items": [
+            "Yashil - polygon bo'sh yoki xavf yo'q.",
+            "Sariq - zonada transport bor, lekin hali qisqa vaqt.",
+            "Apelsin - transport ogohlantirish chegarasidan ko'proq turibdi.",
+            "Qizil - buzilish chegarasi oshdi yoki poyezd kelayotganda zonada transport bor."
+          ]
+        },
+        {
+          "type": "tip",
+          "title": "Yaxshi polygon chizish",
+          "text": "Zonani juda katta qilmang. Faqat pereezdga tegishli yo'l qismini belgilang. Juda katta polygon noto'g'ri bandlik beradi, juda kichigi esa transportni o'tkazib yuboradi."
+        }
+      ]
+    },
+    "analytics": {
+      "lead": "Tahlil sahifasi yig'ilgan ma'lumotlarni grafik va hisobot ko'rinishida beradi.",
+      "blocks": [
+        {
+          "type": "info",
+          "title": "Nimalarni ko'rish mumkin?",
+          "items": [
+            "Bugungi yengil va og'ir transport taqsimoti.",
+            "Soatlik, haftalik, oylik va yillik harakat statistikasi.",
+            "Poyezdlar soni, o'tish vaqtlari va davomiyligi.",
+            "Eng band soatlar va kunlarni ko'rish uchun heatmap."
+          ]
+        },
+        {
+          "type": "steps",
+          "title": "Word hisobot olish",
+          "items": [
+            "Yuqori paneldan Tahlil sahifasini oching.",
+            "Chap tomondan kerakli pereezdni tanlang.",
+            "Hisobot yuklash tugmasini bosing.",
+            "Bugun, 7 kun, 30 kun, 1 yil yoki qo'lda sana oralig'ini tanlang.",
+            "Yuklash (.docx) tugmasini bosing va fayl saqlanadigan joyni tanlang."
+          ]
+        },
+        {
+          "type": "tip",
+          "title": "Rasmiy ish uchun tavsiya",
+          "text": "Oy oxirida 30 kunlik hisobotni saqlang va pereezd sozlamalarini JSON eksport orqali zaxiralab boring."
+        }
+      ]
+    },
+    "troubleshooting": {
+      "lead": "Quyidagi checklistlar operatorga eng ko'p uchraydigan muammolarni tez ajratishga yordam beradi.",
+      "blocks": [
+        {
+          "type": "checklist",
+          "title": "Kamera ko'rinmasa",
+          "items": [
+            "RTSP manzil, login va parolni tekshiring.",
+            "Kompyuter va kamera bir tarmoqda ekanini tekshiring.",
+            "VLC orqali RTSP manzil ochilishini sinang.",
+            "Yangilash tugmasini bosing yoki kamerani o'chirib-yoqing."
+          ]
+        },
+        {
+          "type": "checklist",
+          "title": "Transport sanalmay qolsa",
+          "items": [
+            "Aniqlov yoqish katagi belgilanganini tekshiring.",
+            "AI model yuklanib bo'lganini kuting.",
+            "Polygon juda kichik yoki noto'g'ri joyda emasligini tekshiring.",
+            "Kamera tasviri juda qorong'i, xira yoki noto'g'ri burchakda emasligini ko'ring."
+          ]
+        },
+        {
+          "type": "checklist",
+          "title": "PLC ulanmasa",
+          "items": [
+            "PLC IP manzili va portini tekshiring.",
+            "Tarmoq kabeli va switch ishlayotganini tekshiring.",
+            "PLC boshqa dastur tomonidan band qilinmaganini aniqlang.",
+            "Aloqa yo'q davom etsa, IT yoki avtomatika mutaxassisiga murojaat qiling."
+          ]
+        },
+        {
+          "type": "checklist",
+          "title": "Hisobot chiqmasa",
+          "items": [
+            "Tanlangan sana oralig'ida ma'lumot borligini tekshiring.",
+            "Fayl saqlanadigan papkaga yozish ruxsati borligini tekshiring.",
+            "Word fayl ochiq turgan bo'lsa yopib, qayta eksport qiling."
+          ]
+        }
+      ]
+    },
+    "version": {
+      "lead": "RailSafe AI - pereezd monitoringi uchun lokal desktop mahsulot.",
+      "blocks": [
+        {
+          "type": "info",
+          "title": "Mahsulot ma'lumotlari",
+          "items": [
+            "Dastur nomi: RailSafe AI",
+            "Versiya: 1.0.5",
+            "Yil: 2026",
+            "Tashkilot: DAS-UTY LLC",
+            "Muallif: Muhammadiyev Bahrombek",
+            "Telefon: +998 94 021 62 27 | +998 91 518 02 62"
+          ]
+        },
+        {
+          "type": "info",
+          "title": "Minimal talablar",
+          "items": [
+            "Windows 10 yoki Windows 11, 64-bit.",
+            "Intel Core i5 8-avlod yoki AMD Ryzen 5 va yuqori.",
+            "Kamida 8 GB RAM, 16 GB tavsiya etiladi.",
+            "NVIDIA GPU bo'lsa AI tezroq ishlaydi; GPU bo'lmasa ham CPU rejimida ishlashi mumkin.",
+            "Kameralar RTSP orqali ochilishi kerak.",
+            "PLC va kameralar kompyuter bilan bir lokal tarmoqda bo'lishi kerak."
+          ]
+        }
+      ]
+    }
+  }
 }

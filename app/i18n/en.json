@@ -126,6 +126,8 @@
   "dlg.add_camera.type_additional_info": "This camera will be displayed as additional (small)",
   "dlg.add_camera.type_main_warn": "Note: Previous main camera will become additional",
   "settings.title": "Settings",
+  "settings.tab.main": "Main",
+  "settings.tab.advanced": "Advanced",
   "settings.interface": "Interface",
   "settings.language": "Language:",
   "settings.theme": "Theme:",
@@ -134,7 +136,12 @@
   "settings.violation": "Violation:",
   "settings.sec": " s",
   "settings.autosave": "Auto-save",
+  "settings.recording": "Video Recording",
   "settings.record_enabled": "Record video on train arrival (Desktop/RailSafe_Yozuvlar)",
+  "settings.record_folder": "Save location:",
+  "settings.record_folder_default": "Desktop/RailSafe_Yozuvlar",
+  "settings.record_format": "Format:",
+  "settings.record_quality": "Quality:",
   "settings.ai_model": "AI Model",
   "settings.cancel": "Cancel",
   "settings.save": "Save",
@@ -177,14 +184,10 @@
   "report.success": "Report saved:\n{path}",
   "report.save_dialog": "Save Report",
   "about.title": "About",
-  "about.nav.general": "General",
-  "about.nav.architecture": "Add Crossing",
-  "about.nav.howworks": "Add Camera",
-  "about.nav.security": "PLC Setup",
-  "about.nav.analytics": "Settings",
-  "about.nav.forecast": "Analytics & Report",
-  "about.nav.version": "Version",
-  "about.version_badge": "Version 1.0.5 • 2025  OEM Design",
+  "about.nav.general": "Overview",
+  "about.nav.analytics": "Analytics / report",
+  "about.nav.version": "Version / contact",
+  "about.version_badge": "Version 1.0.5 | 2026 | RailSafe AI",
   "cam.loading": "Loading...",
   "cam.bandlik": "Occupancy: {count}",
   "cam.status.main_down": "Main camera disconnected",
@@ -210,14 +213,309 @@
   "menu.cam_settings": "Camera Settings",
   "menu.info": "Crossing Info",
   "menu.export_json": "JSON Export",
-  "about.section.general": "System overview",
-  "about.section.architecture": "Adding a new crossing",
-  "about.section.howworks": "Adding and configuring a camera",
-  "about.section.security": "Connecting and configuring PLC",
-  "about.section.analytics": "Program settings",
-  "about.section.forecast": "Analytics and reports",
-  "about.section.version": "Version and author",
+  "about.section.general": "What RailSafe AI does",
+  "about.section.analytics": "Analytics and report export",
+  "about.section.version": "Version, requirements and contact",
   "chart.trains_hourly": "Hourly trains (today)",
   "chart.trains_today_list": "Today's passages",
-  "train.no_events_today": "No trains today"
+  "train.no_events_today": "No trains today",
+  "about.nav.start": "Start from zero",
+  "about.nav.crossing": "Add crossing",
+  "about.nav.camera": "Add camera",
+  "about.nav.plc": "PLC and safety",
+  "about.nav.polygon": "Zone and occupancy",
+  "about.nav.troubleshooting": "Troubleshooting",
+  "about.section.start": "Starting the system from zero",
+  "about.section.crossing": "Adding a new crossing",
+  "about.section.camera": "Adding and checking a camera",
+  "about.section.plc": "PLC connection and safety states",
+  "about.section.polygon": "Polygon, occupancy and colors",
+  "about.section.troubleshooting": "Quick troubleshooting",
+  "about.content": {
+    "general": {
+      "lead": "RailSafe AI is a desktop monitoring system for railway crossings using cameras, AI detection and PLC signals.",
+      "blocks": [
+        {
+          "type": "info",
+          "title": "In simple words",
+          "items": [
+            "The dashboard shows each crossing as a card with live video, vehicle counts, train status and statistics.",
+            "AI detects light and heavy vehicles from the camera image.",
+            "If PLC is connected, train approach is shown as a separate safety state."
+          ]
+        },
+        {
+          "type": "status",
+          "title": "What is on the main screen?",
+          "items": [
+            "Top toolbar: Dashboard, Add Crossing, Refresh, Settings, Analytics and About.",
+            "Crossing card: video, daily vehicle count, train count and PLC state.",
+            "Analytics page: daily, weekly and monthly charts plus Word reports."
+          ]
+        },
+        {
+          "type": "tip",
+          "title": "Operator rule",
+          "text": "Add the crossing first, connect the camera, then check polygon and PLC settings. After that the system monitors automatically."
+        }
+      ]
+    },
+    "start": {
+      "lead": "An operator who receives the EXE can start with this sequence.",
+      "blocks": [
+        {
+          "type": "steps",
+          "title": "Minimum launch path",
+          "items": [
+            "Open RailSafe.exe and wait for the main window.",
+            "On first launch the AI model may prepare for 10-30 seconds; this is normal.",
+            "Click + Add Crossing and enter the crossing name and location.",
+            "Open the crossing card and add at least one main camera.",
+            "Enter the RTSP URL or choose a video file for testing.",
+            "Select a polygon file if available, or leave it empty and add it later.",
+            "If PLC exists, enter IP and port; otherwise keep PLC disabled for now.",
+            "Return to dashboard and check camera status, occupancy and vehicle count."
+          ]
+        },
+        {
+          "type": "warning",
+          "title": "Be patient on first launch",
+          "text": "While the AI model, camera stream or TensorRT engine is preparing, video may be hidden for a while. If the app looks busy, wait 1-2 minutes first."
+        },
+        {
+          "type": "checklist",
+          "title": "Ready-to-work checklist",
+          "items": [
+            "Camera is not stuck on Connecting and video is visible.",
+            "Light/Heavy/Total numbers change when vehicles pass.",
+            "If polygon exists, Occupancy becomes greater than 0 when a vehicle enters the zone.",
+            "If PLC is connected, PLC state shows Connected or Train approaching."
+          ]
+        }
+      ]
+    },
+    "crossing": {
+      "lead": "A crossing is one railway crossing monitored by the system. Each crossing has its own cameras, PLC settings and statistics.",
+      "blocks": [
+        {
+          "type": "steps",
+          "title": "Add a crossing",
+          "items": [
+            "Click + Add Crossing on the top toolbar.",
+            "Enter a short clear name, for example Crossing 8.",
+            "Enter the object location.",
+            "Add an optional description if needed.",
+            "If PLC is ready, enable it on the PLC Settings tab; otherwise keep it disabled.",
+            "Click Save. The crossing appears as a card on the dashboard."
+          ]
+        },
+        {
+          "type": "info",
+          "title": "When to add multiple crossings?",
+          "text": "If you monitor several real railway crossings or independent checkpoints, add each one as a separate crossing."
+        },
+        {
+          "type": "danger",
+          "title": "Be careful before deleting",
+          "text": "Deleting a crossing can remove its camera settings and statistics. Export reports or JSON backup first."
+        }
+      ]
+    },
+    "camera": {
+      "lead": "A camera is needed to see the crossing and count vehicles. At least one main camera is recommended.",
+      "blocks": [
+        {
+          "type": "steps",
+          "title": "Add a camera",
+          "items": [
+            "Open the crossing card.",
+            "Click + Camera.",
+            "Give the camera a name, for example A1 or North direction.",
+            "Choose Main or Additional. Main camera is shown in the large view.",
+            "Enter the RTSP URL or video file path.",
+            "Check that Enable camera and Enable detection are selected.",
+            "Click Save and wait for video."
+          ]
+        },
+        {
+          "type": "info",
+          "title": "RTSP examples",
+          "items": [
+            "Common format: rtsp://login:password@IP:554/channel",
+            "Common Hikvision format: rtsp://admin:password@192.168.1.50:554/Streaming/Channels/101",
+            "If it does not open, test the same RTSP URL in VLC Media Player."
+          ]
+        },
+        {
+          "type": "warning",
+          "title": "Main camera rule",
+          "text": "One crossing should have one main camera. Extra cameras are used as additional views or replace the current main camera."
+        }
+      ]
+    },
+    "plc": {
+      "lead": "PLC tells the system that a train is approaching. It is shown together with camera occupancy for safety awareness.",
+      "blocks": [
+        {
+          "type": "steps",
+          "title": "Connect PLC",
+          "items": [
+            "Open Add/Edit Crossing and go to PLC Settings.",
+            "Enable PLC.",
+            "Enter IP address, for example 192.168.170.159.",
+            "Port is usually 102 unless your automation specialist gives another value.",
+            "Test connection if the button is available, then save."
+          ]
+        },
+        {
+          "type": "status",
+          "title": "PLC states",
+          "items": [
+            "CONNECTED - communication works and the system waits for train signal.",
+            "TRAIN APPROACHING - PLC active signal is received; operator should watch the crossing zone.",
+            "NO CONNECTION - check IP, cable, network or PLC settings.",
+            "DISABLED - PLC monitoring is not used for this crossing."
+          ]
+        },
+        {
+          "type": "warning",
+          "title": "Safety note",
+          "text": "The application provides monitoring and warnings. Final safety decisions must follow local rules and responsible staff procedures."
+        }
+      ]
+    },
+    "polygon": {
+      "lead": "Polygon is the counting zone inside the camera image. Occupancy and waiting time are calculated when vehicles enter it.",
+      "blocks": [
+        {
+          "type": "info",
+          "title": "Why polygon is needed",
+          "items": [
+            "Even if the camera sees a wide area, the system counts only the needed road part.",
+            "When a vehicle enters the zone, Occupancy increases.",
+            "Long waiting inside the zone can produce yellow, orange or red warnings."
+          ]
+        },
+        {
+          "type": "status",
+          "title": "Color meanings",
+          "items": [
+            "Green - zone is empty or no risk.",
+            "Yellow - vehicle is in the zone for a short time.",
+            "Orange - warning time threshold was exceeded.",
+            "Red - violation threshold was exceeded, or train is approaching while a vehicle is in the zone."
+          ]
+        },
+        {
+          "type": "tip",
+          "title": "Good polygon rule",
+          "text": "Do not make the zone too large. Mark only the road part related to the crossing. Too large gives false occupancy; too small can miss vehicles."
+        }
+      ]
+    },
+    "analytics": {
+      "lead": "Analytics page turns collected data into charts and official reports.",
+      "blocks": [
+        {
+          "type": "info",
+          "title": "What you can see",
+          "items": [
+            "Today's light/heavy vehicle distribution.",
+            "Hourly, weekly, monthly and yearly traffic statistics.",
+            "Train counts, passage times and durations.",
+            "Heatmap for busiest hours and days."
+          ]
+        },
+        {
+          "type": "steps",
+          "title": "Export Word report",
+          "items": [
+            "Open Analytics from the top toolbar.",
+            "Select the needed crossing on the left.",
+            "Click Download report.",
+            "Choose Today, 7 days, 30 days, 1 year or custom dates.",
+            "Click Download (.docx) and choose where to save the file."
+          ]
+        },
+        {
+          "type": "tip",
+          "title": "Recommendation for official work",
+          "text": "At the end of each month, save a 30-day report and export crossing settings as JSON backup."
+        }
+      ]
+    },
+    "troubleshooting": {
+      "lead": "Use these checklists to quickly separate the most common operator issues.",
+      "blocks": [
+        {
+          "type": "checklist",
+          "title": "Camera is not visible",
+          "items": [
+            "Check RTSP URL, login and password.",
+            "Check that PC and camera are on the same network.",
+            "Test RTSP URL in VLC.",
+            "Click Refresh or disable/enable the camera."
+          ]
+        },
+        {
+          "type": "checklist",
+          "title": "Vehicles are not counted",
+          "items": [
+            "Check that detection is enabled.",
+            "Wait until AI model is loaded.",
+            "Check that polygon is not too small or in the wrong place.",
+            "Check that camera image is not too dark, blurry or badly angled."
+          ]
+        },
+        {
+          "type": "checklist",
+          "title": "PLC does not connect",
+          "items": [
+            "Check PLC IP and port.",
+            "Check network cable and switch.",
+            "Make sure PLC is not locked by another program.",
+            "If no connection continues, call IT or automation specialist."
+          ]
+        },
+        {
+          "type": "checklist",
+          "title": "Report is not exported",
+          "items": [
+            "Check that selected date range has data.",
+            "Check write permission for the target folder.",
+            "Close the Word file if it is already open, then export again."
+          ]
+        }
+      ]
+    },
+    "version": {
+      "lead": "RailSafe AI is a local desktop product for railway crossing monitoring.",
+      "blocks": [
+        {
+          "type": "info",
+          "title": "Product information",
+          "items": [
+            "Product: RailSafe AI",
+            "Version: 1.0.5",
+            "Year: 2026",
+            "Organization: DAS-UTY LLC",
+            "Author: Muhammadiyev Bahrombek",
+            "Phone: +998 94 021 62 27 | +998 91 518 02 62"
+          ]
+        },
+        {
+          "type": "info",
+          "title": "Minimum requirements",
+          "items": [
+            "Windows 10 or Windows 11, 64-bit.",
+            "Intel Core i5 8th gen or AMD Ryzen 5 and newer.",
+            "At least 8 GB RAM, 16 GB recommended.",
+            "NVIDIA GPU makes AI faster; CPU mode may work without GPU.",
+            "Cameras must be available by RTSP.",
+            "PLC and cameras must be on the same local network as the computer."
+          ]
+        }
+      ]
+    }
+  }
 }

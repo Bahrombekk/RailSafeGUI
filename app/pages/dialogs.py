@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                               QLineEdit, QPushButton, QGroupBox, QFormLayout,
                               QSpinBox, QCheckBox, QFileDialog, QComboBox,
                               QMessageBox, QTabWidget, QWidget, QRadioButton,
-                              QButtonGroup, QProgressBar, QFrame)
+                              QButtonGroup, QProgressBar, QFrame, QScrollArea)
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QThread
 from PyQt6.QtGui import QFont, QPainter, QPen, QColor
 
@@ -823,122 +823,267 @@ class AddCameraDialog(QDialog):
 
 
 class SettingsDialog(QDialog):
-    """Application settings dialog - compact centered design"""
+    """Application settings dialog - improved tabbed design"""
 
     def __init__(self, config_manager, parent=None):
         super().__init__(parent)
         self.config_manager = config_manager
         self.settings = config_manager.get_settings()
         self.setWindowTitle(t("settings.title"))
-        self.setFixedSize(520, 640)
+        self.setFixedSize(520, 680)
         self.setStyleSheet(_dialog_style() + f"""
+            QFrame#stgHeader {{
+                background: {C('bg_secondary')};
+                border-bottom: 1px solid {C('border_light')};
+            }}
+            QFrame#stgFooter {{
+                background: {C('bg_secondary')};
+                border-top: 1px solid {C('border_light')};
+            }}
+            QFrame#stgFooter QPushButton {{
+                background: {C('bg_input')};
+                color: {C('text_primary')};
+                border: 1px solid {C('border_light')};
+                border-radius: 6px;
+                font-size: 13px;
+                padding: 0px;
+            }}
+            QFrame#stgFooter QPushButton:hover {{
+                background: {C('bg_hover')};
+            }}
+            QFrame#stgFooter QPushButton#successButton {{
+                background: {C('accent_brand')};
+                color: {C('bg_secondary')};
+                border: none;
+                font-weight: bold;
+            }}
+            QFrame#stgFooter QPushButton#successButton:hover {{
+                background: {C('accent_teal')};
+            }}
+            QTabWidget#stgTabs::pane {{
+                border: none;
+                border-top: 1px solid {C('border_light')};
+                background: transparent;
+                top: 0px;
+            }}
+            QTabWidget#stgTabs QTabBar::tab {{
+                background: transparent;
+                color: {C('text_muted')};
+                border: none;
+                border-bottom: 2px solid transparent;
+                padding: 12px 0;
+                font-size: 13px;
+                font-weight: 500;
+                min-width: 228px;
+            }}
+            QTabWidget#stgTabs QTabBar::tab:selected {{
+                color: {C('accent_brand')};
+                border-bottom: 2px solid {C('accent_brand')};
+                font-weight: bold;
+            }}
+            QTabWidget#stgTabs QTabBar::tab:hover:!selected {{
+                color: {C('text_secondary')};
+                border-bottom: 2px solid {C('text_dim')};
+            }}
             QSpinBox {{
                 background: {C('bg_input')};
                 color: {C('text_primary')};
                 border: 1px solid {C('border_light')};
                 border-radius: 6px;
-                padding: 4px 8px;
+                padding: 6px 10px;
                 font-size: 13px;
                 min-width: 120px;
             }}
             QSpinBox:focus {{ border-color: {C('accent_brand')}; }}
             QSpinBox::up-button, QSpinBox::down-button {{
-                width: 20px;
-                border: none;
-                background: {C('bg_input')};
+                width: 20px; border: none; background: transparent;
             }}
-            QSpinBox::up-arrow {{ width: 10px; height: 10px; }}
-            QSpinBox::down-arrow {{ width: 10px; height: 10px; }}
+            QSpinBox::up-arrow, QSpinBox::down-arrow {{ width: 10px; height: 10px; }}
             QRadioButton {{
-                color: {C('text_primary')};
-                font-size: 12px;
-                background: transparent;
+                color: {C('text_primary')}; font-size: 13px; background: transparent;
             }}
             QRadioButton::indicator {{
-                width: 16px;
-                height: 16px;
-                border-radius: 8px;
-                border: 2px solid {C('text_muted')};
-                background: {C('bg_input')};
+                width: 16px; height: 16px; border-radius: 8px;
+                border: 2px solid {C('text_muted')}; background: {C('bg_input')};
             }}
             QRadioButton::indicator:checked {{
-                background: {C('accent_brand')};
-                border-color: {C('accent_brand')};
+                background: {C('accent_brand')}; border-color: {C('accent_brand')};
             }}
-            QRadioButton::indicator:hover {{
-                border-color: {C('accent_brand')};
+            QRadioButton::indicator:hover {{ border-color: {C('accent_brand')}; }}
+            QScrollArea {{ background: transparent; border: none; }}
+            QScrollBar:vertical {{
+                background: transparent; width: 5px; margin: 0;
             }}
+            QScrollBar::handle:vertical {{
+                background: {C('border_light')}; border-radius: 2px; min-height: 30px;
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
         """)
         self._setup_ui()
 
-    def _setup_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setSpacing(12)
-        layout.setContentsMargins(24, 20, 24, 20)
+    # ── Layout ─────────────────────────────────────────────────────────
 
-        # ── Sarlavha ──
-        title_label = QLabel(t("settings.title"))
-        title_label.setObjectName("titleLabel")
-        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(title_label)
+    def _setup_ui(self):
+        root = QVBoxLayout(self)
+        root.setSpacing(0)
+        root.setContentsMargins(0, 0, 0, 0)
+
+        # Header
+        hdr = QFrame()
+        hdr.setObjectName("stgHeader")
+        hdr.setFixedHeight(68)
+        hdr_v = QVBoxLayout(hdr)
+        hdr_v.setContentsMargins(24, 0, 24, 0)
+        title = QLabel(t("settings.title"))
+        title.setObjectName("titleLabel")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        hdr_v.addWidget(title)
+        root.addWidget(hdr)
+
+        # Tabs
+        tabs = QTabWidget()
+        tabs.setObjectName("stgTabs")
+        tabs.addTab(self._create_main_tab(), t("settings.tab.main"))
+        tabs.addTab(self._create_advanced_tab(), t("settings.tab.advanced"))
+        root.addWidget(tabs, 1)
+
+        # Footer
+        ftr = QFrame()
+        ftr.setObjectName("stgFooter")
+        ftr.setFixedHeight(68)
+        ftr_h = QHBoxLayout(ftr)
+        ftr_h.setContentsMargins(24, 14, 24, 14)
+        ftr_h.setSpacing(10)
+        ftr_h.addStretch()
+
+        cancel_btn = QPushButton(f"❌  {t('settings.cancel')}")
+        cancel_btn.clicked.connect(self.reject)
+        cancel_btn.setFixedSize(148, 40)
+        ftr_h.addWidget(cancel_btn)
+
+        save_btn = QPushButton(f"💾  {t('settings.save')}")
+        save_btn.setObjectName("successButton")
+        save_btn.clicked.connect(self._save)
+        save_btn.setFixedSize(148, 40)
+        ftr_h.addWidget(save_btn)
+
+        root.addWidget(ftr)
+
+    # ── Private helpers ─────────────────────────────────────────────────
+
+    def _stg_section(self, text: str) -> QWidget:
+        """Section header: accent bar + uppercase label"""
+        w = QWidget()
+        w.setFixedHeight(28)
+        w.setStyleSheet("background: transparent;")
+        row = QHBoxLayout(w)
+        row.setContentsMargins(0, 6, 0, 0)
+        row.setSpacing(8)
+        bar = QFrame()
+        bar.setFixedSize(3, 13)
+        bar.setStyleSheet(
+            f"background: {C('accent_brand')}; border-radius: 1px; border: none;")
+        row.addWidget(bar)
+        lbl = QLabel(text.upper())
+        lbl.setStyleSheet(
+            f"color: {C('text_muted')}; font-size: 10px; font-weight: bold;"
+            f" letter-spacing: 1.5px; background: transparent;")
+        row.addWidget(lbl)
+        row.addStretch()
+        return w
+
+    def _stg_card(self):
+        """Returns (QFrame, QVBoxLayout) for a styled settings card"""
+        card = QFrame()
+        card.setStyleSheet(
+            f"background: {C('bg_card')};"
+            f" border: 1px solid {C('border_light')};"
+            f" border-radius: 10px;")
+        v = QVBoxLayout(card)
+        v.setContentsMargins(16, 12, 16, 12)
+        v.setSpacing(0)
+        return card, v
+
+    def _stg_sep(self) -> QFrame:
+        """Thin horizontal divider inside a card"""
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setFixedHeight(1)
+        sep.setStyleSheet(
+            f"background: {C('border_light')}; border: none; margin: 5px 0;")
+        return sep
+
+    def _stg_row(self, label_text: str, widget, attr: str = None) -> QHBoxLayout:
+        """Row: fixed-width label + expanding widget, with vertical padding"""
+        row = QHBoxLayout()
+        row.setSpacing(12)
+        row.setContentsMargins(0, 5, 0, 5)
+        lbl = QLabel(label_text)
+        lbl.setStyleSheet(
+            f"color: {C('text_muted')}; font-size: 12px; background: transparent;")
+        lbl.setFixedWidth(118)
+        row.addWidget(lbl)
+        row.addWidget(widget)
+        if attr:
+            setattr(self, attr, widget)
+        return row
+
+    # ── Tabs ────────────────────────────────────────────────────────────
+
+    def _create_main_tab(self) -> QScrollArea:
+        """Tab 1: Interfeys + Monitoring + AI Model"""
+        scroll = QScrollArea()
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+        content = QWidget()
+        content.setStyleSheet("background: transparent;")
+        layout = QVBoxLayout(content)
+        layout.setSpacing(10)
+        layout.setContentsMargins(20, 14, 20, 14)
 
         # ── Interfeys ──
-        layout.addWidget(self._section(t("settings.interface")))
-        iface_box = QFrame()
-        iface_box.setStyleSheet(f"""
-            QFrame {{ background: {C('bg_card')}; border: 1px solid {C('border_light')};
-                      border-radius: 8px; }}
-        """)
-        iface_v = QVBoxLayout(iface_box)
-        iface_v.setContentsMargins(16, 12, 16, 12)
-        iface_v.setSpacing(10)
-        iface_v.addLayout(self._row(t("settings.language"), self._make_combo(
+        layout.addWidget(self._stg_section(t("settings.interface")))
+        iface_card, iface_v = self._stg_card()
+        iface_v.addLayout(self._stg_row(t("settings.language"), self._make_combo(
             [t("settings.lang.uz"), t("settings.lang.ru"), t("settings.lang.en")],
             {"uz": 0, "ru": 1, "en": 2}.get(self.settings.get("language", "uz"), 0)
         ), attr="lang_combo"))
-        iface_v.addLayout(self._row(t("settings.theme"), self._make_combo(
+        iface_v.addWidget(self._stg_sep())
+        iface_v.addLayout(self._stg_row(t("settings.theme"), self._make_combo(
             [t("settings.theme.dark"), t("settings.theme.military"), t("settings.theme.light")],
             {"dark": 0, "military": 1, "light": 2}.get(self.settings.get("theme", "dark"), 0)
         ), attr="theme_combo"))
-        layout.addWidget(iface_box)
+        layout.addWidget(iface_card)
 
         # ── Monitoring ──
-        layout.addWidget(self._section(t("settings.monitoring")))
-        mon_box = QFrame()
-        mon_box.setStyleSheet(f"""
-            QFrame {{ background: {C('bg_card')}; border: 1px solid {C('border_light')};
-                      border-radius: 8px; }}
-        """)
-        mon_v = QVBoxLayout(mon_box)
-        mon_v.setContentsMargins(16, 12, 16, 12)
-        mon_v.setSpacing(10)
+        layout.addWidget(self._stg_section(t("settings.monitoring")))
+        mon_card, mon_v = self._stg_card()
 
         self.warning_threshold = QSpinBox()
         self.warning_threshold.setRange(0, 9999)
         self.warning_threshold.setSuffix(t("settings.sec"))
         self.warning_threshold.setValue(int(self.settings.get("warning_threshold", 10)))
         self.warning_threshold.setFixedHeight(36)
-        mon_v.addLayout(self._row(t("settings.warning"), self.warning_threshold))
+        mon_v.addLayout(self._stg_row(t("settings.warning"), self.warning_threshold))
+        mon_v.addWidget(self._stg_sep())
 
         self.violation_threshold = QSpinBox()
         self.violation_threshold.setRange(0, 9999)
         self.violation_threshold.setSuffix(t("settings.sec"))
         self.violation_threshold.setValue(int(self.settings.get("violation_threshold", 15)))
         self.violation_threshold.setFixedHeight(36)
-        mon_v.addLayout(self._row(t("settings.violation"), self.violation_threshold))
+        mon_v.addLayout(self._stg_row(t("settings.violation"), self.violation_threshold))
+        mon_v.addWidget(self._stg_sep())
 
         self.auto_save = QCheckBox(t("settings.autosave"))
         self.auto_save.setChecked(self.settings.get("auto_save", True))
         mon_v.addWidget(self.auto_save)
-
-        self.record_enabled = QCheckBox(t("settings.record_enabled"))
-        self.record_enabled.setChecked(self.settings.get("record_enabled", False))
-        mon_v.addWidget(self.record_enabled)
-
-        layout.addWidget(mon_box)
+        layout.addWidget(mon_card)
 
         # ── AI Model ──
-        layout.addWidget(self._section(t("settings.ai_model")))
+        layout.addWidget(self._stg_section(t("settings.ai_model")))
         self._model_btn_group = QButtonGroup(self)
         current_model_type = self.settings.get("model_type", "default")
 
@@ -961,26 +1106,100 @@ class SettingsDialog(QDialog):
         ))
 
         layout.addStretch()
+        scroll.setWidget(content)
+        return scroll
 
-        # ── Tugmalar ──
-        btn_row = QHBoxLayout()
-        btn_row.setSpacing(10)
-        btn_row.addStretch()
+    def _create_advanced_tab(self) -> QWidget:
+        """Tab 2: Video yozib olish sozlamalari — modern toggle design"""
+        tab = QWidget()
+        tab.setStyleSheet("background: transparent;")
+        layout = QVBoxLayout(tab)
+        layout.setSpacing(12)
+        layout.setContentsMargins(20, 16, 20, 16)
 
-        cancel_btn = QPushButton(f"❌ {t('settings.cancel')}")
-        cancel_btn.clicked.connect(self.reject)
-        cancel_btn.setMinimumWidth(120)
-        cancel_btn.setFixedHeight(38)
-        btn_row.addWidget(cancel_btn)
+        layout.addWidget(self._stg_section(t("settings.recording")))
 
-        save_btn = QPushButton(f"💾 {t('settings.save')}")
-        save_btn.setObjectName("successButton")
-        save_btn.clicked.connect(self._save)
-        save_btn.setMinimumWidth(120)
-        save_btn.setFixedHeight(38)
-        btn_row.addWidget(save_btn)
+        # ── Toggle card ─────────────────────────────────────────────────
+        is_on = self.settings.get("record_enabled", False)
 
-        layout.addLayout(btn_row)
+        def _toggle_style(on: bool) -> str:
+            border = C('accent_brand') if on else C('border_light')
+            return (f"background: {C('bg_card')}; border: 1px solid {border};"
+                    " border-radius: 10px;")
+
+        toggle_card = QFrame()
+        toggle_card.setStyleSheet(_toggle_style(is_on))
+        tc = QHBoxLayout(toggle_card)
+        tc.setContentsMargins(18, 16, 18, 16)
+        tc.setSpacing(16)
+
+        self.record_enabled = QCheckBox()
+        self.record_enabled.setChecked(is_on)
+        self.record_enabled.setFixedSize(24, 24)
+        self.record_enabled.toggled.connect(
+            lambda checked: toggle_card.setStyleSheet(_toggle_style(checked)))
+        tc.addWidget(self.record_enabled)
+
+        txt_col = QVBoxLayout()
+        txt_col.setSpacing(4)
+
+        main_lbl = QLabel(t("settings.recording"))
+        main_lbl.setStyleSheet(
+            f"color: {C('text_primary')}; font-size: 14px; font-weight: bold;"
+            " background: transparent; border: none;")
+        txt_col.addWidget(main_lbl)
+
+        sub_lbl = QLabel(f"📁  {t('settings.record_folder_default')}")
+        sub_lbl.setStyleSheet(
+            f"color: {C('text_muted')}; font-size: 11px;"
+            " background: transparent; border: none;")
+        txt_col.addWidget(sub_lbl)
+
+        tc.addLayout(txt_col, 1)
+
+        # Status badge (Yoqilgan / O'chirilgan)
+        self._rec_status_lbl = QLabel("ON" if is_on else "OFF")
+        self._rec_status_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._rec_status_lbl.setFixedSize(42, 22)
+        self._rec_status_lbl.setStyleSheet(self._rec_badge_style(is_on))
+        self.record_enabled.toggled.connect(self._on_rec_toggled)
+        tc.addWidget(self._rec_status_lbl)
+
+        layout.addWidget(toggle_card)
+
+        # ── Format / Sifat card ─────────────────────────────────────────
+        fmt_card, fmt_v = self._stg_card()
+
+        fmt_combo = self._make_combo(
+            ["MP4 (H.264)", "AVI", "MKV"],
+            {"mp4": 0, "avi": 1, "mkv": 2}.get(
+                self.settings.get("record_format", "mp4"), 0))
+        fmt_v.addLayout(
+            self._stg_row(t("settings.record_format"), fmt_combo, attr="record_format_combo"))
+        fmt_v.addWidget(self._stg_sep())
+
+        qual_combo = self._make_combo(
+            ["720p", "1080p", "Asl (Original)"],
+            {"720p": 0, "1080p": 1, "original": 2}.get(
+                self.settings.get("record_quality", "1080p"), 1))
+        fmt_v.addLayout(
+            self._stg_row(t("settings.record_quality"), qual_combo, attr="record_quality_combo"))
+
+        layout.addWidget(fmt_card)
+        layout.addStretch()
+        return tab
+
+    def _rec_badge_style(self, on: bool) -> str:
+        if on:
+            return (f"background: {C('accent_brand')}; color: {C('bg_primary')};"
+                    " border-radius: 11px; font-size: 10px; font-weight: bold; border: none;")
+        return (f"background: {C('bg_secondary')}; color: {C('text_muted')};"
+                " border-radius: 11px; font-size: 10px; font-weight: bold;"
+                f" border: 1px solid {C('border_light')};")
+
+    def _on_rec_toggled(self, checked: bool):
+        self._rec_status_lbl.setText("ON" if checked else "OFF")
+        self._rec_status_lbl.setStyleSheet(self._rec_badge_style(checked))
 
     def _section(self, text: str) -> QLabel:
         lbl = QLabel(text)
@@ -1054,6 +1273,8 @@ class SettingsDialog(QDialog):
     def _save(self):
         """Save settings"""
         lang_map = {0: "uz", 1: "ru", 2: "en"}
+        fmt_map = {0: "mp4", 1: "avi", 2: "mkv"}
+        qual_map = {0: "720p", 1: "1080p", 2: "original"}
         new_lang = lang_map[self.lang_combo.currentIndex()]
         model_type = "custom" if self._custom_radio.isChecked() else "default"
 
@@ -1064,6 +1285,8 @@ class SettingsDialog(QDialog):
             "violation_threshold": float(self.violation_threshold.value()),
             "auto_save": self.auto_save.isChecked(),
             "record_enabled": self.record_enabled.isChecked(),
+            "record_format": fmt_map[self.record_format_combo.currentIndex()],
+            "record_quality": qual_map[self.record_quality_combo.currentIndex()],
             "model_type": model_type,
         }
 
