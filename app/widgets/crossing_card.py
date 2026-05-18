@@ -230,7 +230,16 @@ class CameraWorker(QThread):
                 def _grab_loop():
                     fails = 0
                     while _grab_running[0]:
-                        ret = cap.grab()
+                        try:
+                            ret = cap.grab()
+                        except Exception as _ge:
+                            print(f"[{self.camera_name}] cap.grab() xato: {_ge}")
+                            fails += 1
+                            if fails > 30:
+                                _grab_error[0] = True
+                                break
+                            time.sleep(0.05)
+                            continue
                         if not ret:
                             fails += 1
                             if fails > 30:
@@ -241,7 +250,10 @@ class CameraWorker(QThread):
                         # Faqat so'ralganda decode — har doim eng yangi packet
                         if _want_frame[0]:
                             _want_frame[0] = False
-                            ret2, frm = cap.retrieve()
+                            try:
+                                ret2, frm = cap.retrieve()
+                            except Exception:
+                                continue
                             if ret2:
                                 with _frame_lock:
                                     _latest_frame[0] = frm
@@ -1967,13 +1979,21 @@ class CrossingCard(QWidget):
         try:
             if self._is_destroyed:
                 return
+            # Kamera qayta ulanganda tracker 0 dan boshlanadi (reset).
+            # Eski base hali katta bo'lsa minus chiqadi — offsetni to'g'irlaymiz.
+            if light_count < self._last_tracker_light or heavy_count < self._last_tracker_heavy:
+                prev_light = max(0, self._light_offset + (self._last_tracker_light - self._tracker_base_light))
+                prev_heavy = max(0, self._heavy_offset + (self._last_tracker_heavy - self._tracker_base_heavy))
+                self._light_offset = prev_light
+                self._heavy_offset = prev_heavy
+                self._tracker_base_light = 0
+                self._tracker_base_heavy = 0
             # Oxirgi tracker qiymatlarini saqlash (midnight reset uchun)
             self._last_tracker_light = light_count
             self._last_tracker_heavy = heavy_count
             # Display: DB offset + (tracker - base)
-            # Midnight dan keyin base = midnight dagi qiymat, shuning uchun 0 dan boshlanadi
-            display_light = self._light_offset + (light_count - self._tracker_base_light)
-            display_heavy = self._heavy_offset + (heavy_count - self._tracker_base_heavy)
+            display_light = max(0, self._light_offset + (light_count - self._tracker_base_light))
+            display_heavy = max(0, self._heavy_offset + (heavy_count - self._tracker_base_heavy))
             self.update_stats(display_light, display_heavy)
 
             # Bandlik (polygon ichidagi avtomobillar soni) — faqat holat o'zgarganda style

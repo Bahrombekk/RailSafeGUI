@@ -50,6 +50,10 @@ logging.basicConfig(
 )
 _logger = logging.getLogger("RailSafe")
 
+# snap7 TCP xatolarini log faylidan yashirish (PLCManager o'z print() dan foydalanadi)
+logging.getLogger("snap7").setLevel(logging.CRITICAL)
+logging.getLogger("snap7.client").setLevel(logging.CRITICAL)
+
 
 # ─── Global exception handlers ───────────────────────────
 def _global_exception_handler(exc_type, exc_value, exc_tb):
