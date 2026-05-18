@@ -79,9 +79,11 @@
     "video_recording_enabled": true,
     "model_type": "default",
     "custom_model_path": "runs/pereezd_v12/weights/best.pt",
-    "record_enabled": false,
+    "record_enabled": true,
     "record_format": "mkv",
-    "record_quality": "1080p"
+    "record_quality": "original",
+    "violation_enabled": true,
+    "violation_delay_sec": 1
   },
-  "last_updated": "2026-05-12T11:22:13.903071"
+  "last_updated": "2026-05-18T11:57:15.137968"
 }

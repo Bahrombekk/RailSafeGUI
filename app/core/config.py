@@ -40,7 +40,6 @@ class ConfigManager:
             "settings": {
                 "theme": "dark",
                 "language": "uz",
-                "auto_save": True,
                 "warning_threshold": 10.0,
                 "violation_threshold": 15.0
             },

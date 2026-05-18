@@ -17,6 +17,7 @@ import os
 import time
 import json
 import threading
+import collections
 from datetime import date
 from app.utils.theme_colors import C, TM
 from app.core.tracker import PolygonTracker
@@ -186,6 +187,12 @@ class CameraWorker(QThread):
         self._poly_mask = None
         self.plc_danger = False  # PLC aktiv + polygon ichida mashina → qizil
         self.video_recorder = None  # VideoRecorder | None
+        self.violation_detector = None  # ViolationDetector | None
+        self.crossing_display_name: str = ""  # ViolationDetector folder nomi uchun
+        # FPS tracker — video yozish uchun haqiqiy frame rate
+        self._fps_samples: collections.deque = collections.deque(maxlen=30)
+        self._prev_frame_t: float = 0.0
+        self.current_fps: float = 0.0
 
     def take_frame(self):
         """Eng oxirgi kadrni olish - eski framelar avtomatik tashlanadi"""
@@ -341,6 +348,23 @@ class CameraWorker(QThread):
                         color = (0, 0, 255)    # QIZIL — buzilish!
                     cv2.polylines(frame, [self._poly_pts], True, color, 2)
 
+                # FPS tracker (frame interval bo'yicha rolling avg)
+                _now_fps = time.perf_counter()
+                if self._prev_frame_t > 0:
+                    _dt = _now_fps - self._prev_frame_t
+                    if 0.01 < _dt < 1.0:
+                        self._fps_samples.append(1.0 / _dt)
+                        if len(self._fps_samples) >= 5:
+                            self.current_fps = sum(self._fps_samples) / len(self._fps_samples)
+                self._prev_frame_t = _now_fps
+
+                # REC indikator — yozayotgan bo'lsa qizil belgi va matn
+                if self.video_recorder is not None and self.video_recorder.is_recording:
+                    cv2.circle(frame, (w - 32, 22), 6, (0, 0, 220), -1)
+                    cv2.putText(frame, "REC", (w - 75, 28),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.55,
+                                (255, 255, 255), 2, cv2.LINE_AA)
+
                 rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 qimg = QImage(rgb.data, w, h, w * 3,
                               QImage.Format.Format_RGB888).copy()
@@ -352,6 +376,19 @@ class CameraWorker(QThread):
                 # Video yozish (agar yoqilgan bo'lsa)
                 if self.video_recorder is not None:
                     self.video_recorder.write(frame)
+
+                # Violation (radar) detection — PLC armlangan bo'lsa
+                if (self.violation_detector is not None and
+                        _tracker is not None):
+                    try:
+                        in_poly_tracks = _tracker.get_in_polygon_tracks()
+                        if in_poly_tracks:
+                            self.violation_detector.process_frame(
+                                frame, in_poly_tracks,
+                                self.crossing_display_name or "Pereezd",
+                                self.camera_name)
+                    except Exception as e:
+                        print(f"[{self.camera_name}] violation_detector xato: {e}")
 
             if _grab_error[0]:
                 self.status_changed.emit("error")
@@ -754,9 +791,12 @@ class CrossingCard(QWidget):
         self._plc_in_grace = False        # Grace period ichidamizmi?
         self._plc_grace_secs = 10         # 10 soniya kutish
 
-        # Video recorder
-        self._record_enabled = False  # Settings dan olinadi
-        self._active_recorders: list = []  # Hozir yozayotgan VideoRecorder lar
+        # Video recorder — alohida controller fayl-da.
+        # Yozish FAQAT PLC poyezd signali kelganda boshlanadi.
+        from app.core.recording_controller import RecordingController
+        self._rec_ctrl = RecordingController(self.config_manager, self.crossing_data)
+        # Violation (radar) detector — PLC signal kelganda raqam o'qiydi
+        self._violation_detector = None  # lazy init when first PLC signal arrives
 
         # Car detector - SHARED instance (GPU maksimal ishlatish)
         self.car_detector = car_detector
@@ -922,33 +962,62 @@ class CrossingCard(QWidget):
             pass  # PyQt6 abort() oldini olish
 
     def _start_recording(self):
-        """Poyezd aniqlanganda barcha kameralar uchun video yozishni boshlash."""
-        if not self._record_enabled or not self.camera_workers:
-            return
-        try:
-            from app.utils.video_recorder import VideoRecorder
-        except Exception:
-            return
-
+        """Recording controller orqali yozishni boshlash.
+        Settings dan format/sifat ni hot-reload qiladi."""
         crossing_name = self.crossing_data.get("name", f"Pereezd_{self.crossing_id}")
-        self._stop_recording()  # Avvalgisini to'xtatish (agar bo'lsa)
-
-        for worker in self.camera_workers:
-            rec = VideoRecorder()
-            rec.start(crossing_name, worker.camera_name, fps=25.0)
-            worker.video_recorder = rec
-            self._active_recorders.append(rec)
+        self._rec_ctrl.start(self.camera_workers, crossing_name=crossing_name)
 
     def _stop_recording(self):
         """Barcha yozuvlarni to'xtatish."""
-        for rec in self._active_recorders:
-            try:
-                rec.stop()
-            except Exception:
-                pass
-        self._active_recorders.clear()
-        for worker in self.camera_workers:
-            worker.video_recorder = None
+        self._rec_ctrl.stop()
+        self._rec_ctrl.detach_workers(self.camera_workers)
+
+    # ── Backward compat: ba'zi joylar hali ham _active_recorders tekshirishi mumkin
+    @property
+    def _active_recorders(self):
+        return self._rec_ctrl._active
+
+    # ── Violation (radar) detector ────────────────────────────────────
+
+    def _ensure_violation_detector(self):
+        """Lazy: PLC signali kelguncha modellarni yuklamaymiz."""
+        if self._violation_detector is not None:
+            return self._violation_detector
+        settings = (self.config_manager.get_settings()
+                    if self.config_manager else {})
+        if not settings.get("violation_enabled", False):
+            return None
+        try:
+            from app.core.plate_recognizer import get_plate_recognizer
+            from app.core.violation_detector import ViolationDetector
+            delay = float(settings.get("violation_delay_sec", 5.0))
+            recognizer = get_plate_recognizer()
+            self._violation_detector = ViolationDetector(
+                recognizer=recognizer, delay_seconds=delay)
+            # Worker-larga ulashish
+            for w in self.camera_workers:
+                w.violation_detector = self._violation_detector
+                w.crossing_display_name = self.crossing_data.get(
+                    "name", f"Pereezd_{self.crossing_id}")
+            print(f"[CrossingCard] ViolationDetector tayyor (delay={delay}s)")
+        except Exception as e:
+            print(f"[CrossingCard] ViolationDetector init xato: {e}")
+            self._violation_detector = None
+        return self._violation_detector
+
+    def _on_plc_signal_arm(self):
+        """PLC: poyezd kelmoqda → violation detector ni armlash."""
+        det = self._ensure_violation_detector()
+        if det is not None:
+            # Delay-ni har safar fresh o'qish (sozlama o'zgargan bo'lishi mumkin)
+            if self.config_manager:
+                s = self.config_manager.get_settings()
+                det.set_delay(float(s.get("violation_delay_sec", 5.0)))
+            det.on_plc_signal()
+
+    def _on_plc_signal_clear(self):
+        if self._violation_detector is not None:
+            self._violation_detector.on_plc_clear()
 
     def _on_plc_grace_expired(self):
         """Grace period tugadi — PLC haqiqatan ham o'chdi."""
@@ -958,6 +1027,7 @@ class CrossingCard(QWidget):
             self._plc_in_grace = False
             self._train_timer.stop()
             self._stop_recording()
+            self._on_plc_signal_clear()
 
             duration = 0.0
             if self._train_start_time > 0:
@@ -1015,9 +1085,10 @@ class CrossingCard(QWidget):
             # Camera workerlarga xavf holatini uzatish
             for _w in self.camera_workers:
                 _w.plc_danger = active
-            # Video yozishni boshlash
+            # Video yozish + violation detector (radar)
             if active:
                 self._start_recording()
+                self._on_plc_signal_arm()
         except RuntimeError:
             self._is_destroyed = True
 

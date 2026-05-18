@@ -467,9 +467,7 @@ class MainWindow(QMainWindow):
             except (RuntimeError, Exception) as e:
                 print(f"[CloseEvent] StatsDB close error: {e}")
             try:
-                settings = self.config_manager.get_settings()
-                if settings.get("auto_save", True):
-                    self.config_manager.save_config()
+                self.config_manager.save_config()
             except (RuntimeError, Exception) as e:
                 print(f"[CloseEvent] Config save error: {e}")
             event.accept()

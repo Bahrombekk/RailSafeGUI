@@ -194,6 +194,17 @@ class PolygonTracker:
         """Polygon ichidagi tracklar bbox to'plami (drawing uchun rang o'zgartirish)."""
         return {tr.bbox for tr in self._tracks.values() if tr.in_polygon}
 
+    def get_in_polygon_tracks(self) -> list:
+        """Polygon ichidagi tracklar to'liq ma'lumoti.
+        Returns list of dict: {'id', 'bbox', 'class_id', 'enter_time', 'time_in_polygon'}"""
+        return [{
+            'id': tr.track_id,
+            'bbox': tr.bbox,
+            'class_id': tr.class_id,
+            'enter_time': tr.polygon_enter_time,
+            'time_in_polygon': tr.time_in_polygon,
+        } for tr in self._tracks.values() if tr.in_polygon]
+
     def reset_counts(self):
         self.light_count = 0
         self.heavy_count = 0

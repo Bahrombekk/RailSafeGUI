@@ -94,6 +94,63 @@ class StyledCheckBox(QWidget):
                         Qt.AlignmentFlag.AlignVCenter, self._text)
 
 
+class ToggleSwitch(QWidget):
+    """Modern iOS/macOS-style toggle switch"""
+    toggled = pyqtSignal(bool)
+
+    def __init__(self, checked: bool = False, parent=None):
+        super().__init__(parent)
+        self._checked = checked
+        self._hovered = False
+        self.setFixedSize(48, 26)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
+
+    def isChecked(self) -> bool:
+        return self._checked
+
+    def setChecked(self, checked: bool):
+        if self._checked == checked:
+            return
+        self._checked = checked
+        self.update()
+        self.toggled.emit(checked)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.setChecked(not self._checked)
+
+    def enterEvent(self, event):
+        self._hovered = True
+        self.update()
+
+    def leaveEvent(self, event):
+        self._hovered = False
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        # Track
+        if self._checked:
+            track = QColor(C('accent_brand'))
+        else:
+            track = QColor(C('bg_input'))
+        painter.setBrush(track)
+        painter.setPen(Qt.PenStyle.NoPen)
+        radius = self.height() // 2
+        painter.drawRoundedRect(0, 0, self.width(), self.height(), radius, radius)
+
+        # Knob
+        knob_size = self.height() - 6
+        margin = 3
+        knob_y = margin
+        knob_x = self.width() - knob_size - margin if self._checked else margin
+        painter.setBrush(QColor("#ffffff"))
+        painter.drawEllipse(knob_x, knob_y, knob_size, knob_size)
+
+
 class StyledSpinBox(QSpinBox):
     """Styled spinbox for manual input"""
 
@@ -830,7 +887,7 @@ class SettingsDialog(QDialog):
         self.config_manager = config_manager
         self.settings = config_manager.get_settings()
         self.setWindowTitle(t("settings.title"))
-        self.setFixedSize(520, 680)
+        self.setFixedSize(620, 720)
         self.setStyleSheet(_dialog_style() + f"""
             QFrame#stgHeader {{
                 background: {C('bg_secondary')};
@@ -860,6 +917,11 @@ class SettingsDialog(QDialog):
             QFrame#stgFooter QPushButton#successButton:hover {{
                 background: {C('accent_teal')};
             }}
+            QFrame#stgCard {{
+                background: {C('bg_card')};
+                border: 1px solid {C('border_light')};
+                border-radius: 10px;
+            }}
             QTabWidget#stgTabs::pane {{
                 border: none;
                 border-top: 1px solid {C('border_light')};
@@ -874,7 +936,7 @@ class SettingsDialog(QDialog):
                 padding: 12px 0;
                 font-size: 13px;
                 font-weight: 500;
-                min-width: 228px;
+                min-width: 280px;
             }}
             QTabWidget#stgTabs QTabBar::tab:selected {{
                 color: {C('accent_brand')};
@@ -993,14 +1055,12 @@ class SettingsDialog(QDialog):
         return w
 
     def _stg_card(self):
-        """Returns (QFrame, QVBoxLayout) for a styled settings card"""
+        """Returns (QFrame, QVBoxLayout) for a styled settings card.
+        Uses objectName so the border doesn't leak to child QLabels."""
         card = QFrame()
-        card.setStyleSheet(
-            f"background: {C('bg_card')};"
-            f" border: 1px solid {C('border_light')};"
-            f" border-radius: 10px;")
+        card.setObjectName("stgCard")
         v = QVBoxLayout(card)
-        v.setContentsMargins(16, 12, 16, 12)
+        v.setContentsMargins(20, 14, 20, 14)
         v.setSpacing(0)
         return card, v
 
@@ -1031,7 +1091,7 @@ class SettingsDialog(QDialog):
     # ── Tabs ────────────────────────────────────────────────────────────
 
     def _create_main_tab(self) -> QScrollArea:
-        """Tab 1: Interfeys + Monitoring + AI Model"""
+        """Tab 1: Interfeys + Monitoring + AI Model — production design"""
         scroll = QScrollArea()
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setWidgetResizable(True)
@@ -1040,46 +1100,53 @@ class SettingsDialog(QDialog):
         content = QWidget()
         content.setStyleSheet("background: transparent;")
         layout = QVBoxLayout(content)
-        layout.setSpacing(10)
-        layout.setContentsMargins(20, 14, 20, 14)
+        layout.setSpacing(14)
+        layout.setContentsMargins(20, 18, 20, 18)
 
         # ── Interfeys ──
         layout.addWidget(self._stg_section(t("settings.interface")))
         iface_card, iface_v = self._stg_card()
-        iface_v.addLayout(self._stg_row(t("settings.language"), self._make_combo(
+        iface_v.setContentsMargins(0, 4, 0, 4)
+        iface_v.setSpacing(0)
+
+        self.lang_combo = self._make_combo(
             [t("settings.lang.uz"), t("settings.lang.ru"), t("settings.lang.en")],
-            {"uz": 0, "ru": 1, "en": 2}.get(self.settings.get("language", "uz"), 0)
-        ), attr="lang_combo"))
-        iface_v.addWidget(self._stg_sep())
-        iface_v.addLayout(self._stg_row(t("settings.theme"), self._make_combo(
+            {"uz": 0, "ru": 1, "en": 2}.get(self.settings.get("language", "uz"), 0))
+        self.lang_combo.setFixedWidth(190)
+        iface_v.addWidget(self._pref_row(
+            t("settings.language").rstrip(":"), self.lang_combo))
+        iface_v.addWidget(self._pref_divider())
+
+        self.theme_combo = self._make_combo(
             [t("settings.theme.dark"), t("settings.theme.military"), t("settings.theme.light")],
-            {"dark": 0, "military": 1, "light": 2}.get(self.settings.get("theme", "dark"), 0)
-        ), attr="theme_combo"))
+            {"dark": 0, "military": 1, "light": 2}.get(self.settings.get("theme", "dark"), 0))
+        self.theme_combo.setFixedWidth(190)
+        iface_v.addWidget(self._pref_row(
+            t("settings.theme").rstrip(":"), self.theme_combo))
         layout.addWidget(iface_card)
 
         # ── Monitoring ──
         layout.addWidget(self._stg_section(t("settings.monitoring")))
         mon_card, mon_v = self._stg_card()
+        mon_v.setContentsMargins(0, 4, 0, 4)
+        mon_v.setSpacing(0)
 
         self.warning_threshold = QSpinBox()
         self.warning_threshold.setRange(0, 9999)
         self.warning_threshold.setSuffix(t("settings.sec"))
         self.warning_threshold.setValue(int(self.settings.get("warning_threshold", 10)))
-        self.warning_threshold.setFixedHeight(36)
-        mon_v.addLayout(self._stg_row(t("settings.warning"), self.warning_threshold))
-        mon_v.addWidget(self._stg_sep())
+        self.warning_threshold.setFixedSize(120, 36)
+        mon_v.addWidget(self._pref_row(
+            t("settings.warning").rstrip(":"), self.warning_threshold))
+        mon_v.addWidget(self._pref_divider())
 
         self.violation_threshold = QSpinBox()
         self.violation_threshold.setRange(0, 9999)
         self.violation_threshold.setSuffix(t("settings.sec"))
         self.violation_threshold.setValue(int(self.settings.get("violation_threshold", 15)))
-        self.violation_threshold.setFixedHeight(36)
-        mon_v.addLayout(self._stg_row(t("settings.violation"), self.violation_threshold))
-        mon_v.addWidget(self._stg_sep())
-
-        self.auto_save = QCheckBox(t("settings.autosave"))
-        self.auto_save.setChecked(self.settings.get("auto_save", True))
-        mon_v.addWidget(self.auto_save)
+        self.violation_threshold.setFixedSize(120, 36)
+        mon_v.addWidget(self._pref_row(
+            t("settings.violation").rstrip(":"), self.violation_threshold))
         layout.addWidget(mon_card)
 
         # ── AI Model ──
@@ -1109,8 +1176,13 @@ class SettingsDialog(QDialog):
         scroll.setWidget(content)
         return scroll
 
-    def _create_advanced_tab(self) -> QWidget:
-        """Tab 2: Video yozib olish sozlamalari — modern toggle design"""
+    def _create_advanced_tab(self) -> QScrollArea:
+        """Tab 2: Video yozib olish + Avtomobil raqami — scrollable"""
+        scroll = QScrollArea()
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
         tab = QWidget()
         tab.setStyleSheet("background: transparent;")
         layout = QVBoxLayout(tab)
@@ -1119,87 +1191,218 @@ class SettingsDialog(QDialog):
 
         layout.addWidget(self._stg_section(t("settings.recording")))
 
-        # ── Toggle card ─────────────────────────────────────────────────
         is_on = self.settings.get("record_enabled", False)
 
-        def _toggle_style(on: bool) -> str:
-            border = C('accent_brand') if on else C('border_light')
-            return (f"background: {C('bg_card')}; border: 1px solid {border};"
-                    " border-radius: 10px;")
-
+        # ── Toggle karta ─────────────────────────────────────────────
         toggle_card = QFrame()
-        toggle_card.setStyleSheet(_toggle_style(is_on))
+        toggle_card.setObjectName("stgToggleCard")
+        toggle_card.setStyleSheet(self._toggle_card_qss(is_on))
         tc = QHBoxLayout(toggle_card)
-        tc.setContentsMargins(18, 16, 18, 16)
+        tc.setContentsMargins(20, 16, 20, 16)
         tc.setSpacing(16)
 
-        self.record_enabled = QCheckBox()
-        self.record_enabled.setChecked(is_on)
-        self.record_enabled.setFixedSize(24, 24)
-        self.record_enabled.toggled.connect(
-            lambda checked: toggle_card.setStyleSheet(_toggle_style(checked)))
-        tc.addWidget(self.record_enabled)
-
+        # Title + subtitle
         txt_col = QVBoxLayout()
         txt_col.setSpacing(4)
-
         main_lbl = QLabel(t("settings.recording"))
         main_lbl.setStyleSheet(
-            f"color: {C('text_primary')}; font-size: 14px; font-weight: bold;"
+            f"color: {C('text_primary')}; font-size: 14px; font-weight: 600;"
             " background: transparent; border: none;")
         txt_col.addWidget(main_lbl)
-
-        sub_lbl = QLabel(f"📁  {t('settings.record_folder_default')}")
+        sub_lbl = QLabel(t("settings.record_subtitle"))
         sub_lbl.setStyleSheet(
             f"color: {C('text_muted')}; font-size: 11px;"
             " background: transparent; border: none;")
         txt_col.addWidget(sub_lbl)
-
         tc.addLayout(txt_col, 1)
 
-        # Status badge (Yoqilgan / O'chirilgan)
-        self._rec_status_lbl = QLabel("ON" if is_on else "OFF")
-        self._rec_status_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._rec_status_lbl.setFixedSize(42, 22)
-        self._rec_status_lbl.setStyleSheet(self._rec_badge_style(is_on))
-        self.record_enabled.toggled.connect(self._on_rec_toggled)
-        tc.addWidget(self._rec_status_lbl)
+        # Modern toggle switch
+        self.record_enabled = ToggleSwitch(checked=is_on)
+        self.record_enabled.toggled.connect(
+            lambda checked: toggle_card.setStyleSheet(self._toggle_card_qss(checked)))
+        self.record_enabled.toggled.connect(self._update_pref_card_state)
+        tc.addWidget(self.record_enabled, 0, Qt.AlignmentFlag.AlignVCenter)
 
         layout.addWidget(toggle_card)
 
-        # ── Format / Sifat card ─────────────────────────────────────────
-        fmt_card, fmt_v = self._stg_card()
+        # ── Preferences karta ────────────────────────────────────────
+        pref_card, pref_v = self._stg_card()
+        pref_v.setContentsMargins(0, 4, 0, 4)
+        pref_v.setSpacing(0)
 
         fmt_combo = self._make_combo(
             ["MP4 (H.264)", "AVI", "MKV"],
             {"mp4": 0, "avi": 1, "mkv": 2}.get(
                 self.settings.get("record_format", "mp4"), 0))
-        fmt_v.addLayout(
-            self._stg_row(t("settings.record_format"), fmt_combo, attr="record_format_combo"))
-        fmt_v.addWidget(self._stg_sep())
+        fmt_combo.setFixedWidth(190)
+        pref_v.addWidget(self._pref_row(
+            t("settings.record_format").rstrip(":"),
+            fmt_combo, attr="record_format_combo"))
+        pref_v.addWidget(self._pref_divider())
 
         qual_combo = self._make_combo(
             ["720p", "1080p", "Asl (Original)"],
             {"720p": 0, "1080p": 1, "original": 2}.get(
                 self.settings.get("record_quality", "1080p"), 1))
-        fmt_v.addLayout(
-            self._stg_row(t("settings.record_quality"), qual_combo, attr="record_quality_combo"))
+        qual_combo.setFixedWidth(190)
+        pref_v.addWidget(self._pref_row(
+            t("settings.record_quality").rstrip(":"),
+            qual_combo, attr="record_quality_combo"))
+        pref_v.addWidget(self._pref_divider())
 
-        layout.addWidget(fmt_card)
+        # Folder path qatori (faqat ko'rsatuv)
+        folder_val = QLabel(t("settings.record_folder_default"))
+        folder_val.setStyleSheet(
+            f"color: {C('text_secondary')}; font-size: 12px;"
+            " background: transparent; border: none;")
+        folder_val.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        pref_v.addWidget(self._pref_row(
+            t("settings.record_location"), folder_val))
+
+        self._pref_card = pref_card
+        layout.addWidget(pref_card)
+
+        # ════════ Avtomobil raqami (radar) bo'limi ════════
+        layout.addSpacing(6)
+        layout.addWidget(self._stg_section(t("settings.violation_section")))
+
+        v_on = bool(self.settings.get("violation_enabled", False))
+        v_toggle = QFrame()
+        v_toggle.setObjectName("stgViolationCard")
+        v_toggle.setStyleSheet(self._toggle_card_qss(v_on, "stgViolationCard"))
+        vc = QHBoxLayout(v_toggle)
+        vc.setContentsMargins(20, 16, 20, 16)
+        vc.setSpacing(16)
+
+        vtxt = QVBoxLayout()
+        vtxt.setSpacing(4)
+        v_main = QLabel(t("settings.violation_title"))
+        v_main.setStyleSheet(
+            f"color: {C('text_primary')}; font-size: 14px; font-weight: 600;"
+            " background: transparent; border: none;")
+        vtxt.addWidget(v_main)
+        v_sub = QLabel(t("settings.violation_sub"))
+        v_sub.setWordWrap(True)
+        v_sub.setStyleSheet(
+            f"color: {C('text_muted')}; font-size: 11px;"
+            " background: transparent; border: none;")
+        vtxt.addWidget(v_sub)
+        vc.addLayout(vtxt, 1)
+
+        self.violation_enabled = ToggleSwitch(checked=v_on)
+        self.violation_enabled.toggled.connect(
+            lambda on: v_toggle.setStyleSheet(
+                self._toggle_card_qss(on, "stgViolationCard")))
+        self.violation_enabled.toggled.connect(self._update_violation_card_state)
+        vc.addWidget(self.violation_enabled, 0, Qt.AlignmentFlag.AlignVCenter)
+        layout.addWidget(v_toggle)
+
+        v_pref_card, v_pref_v = self._stg_card()
+        # objectName "stgCard" qoladi — QFrame#stgCard CSS qoidasi ishlaydi
+        v_pref_v.setContentsMargins(0, 4, 0, 4)
+        v_pref_v.setSpacing(0)
+
+        self.violation_delay_spin = QSpinBox()
+        self.violation_delay_spin.setRange(0, 120)
+        self.violation_delay_spin.setSuffix(t("settings.sec"))
+        self.violation_delay_spin.setValue(
+            int(self.settings.get("violation_delay_sec", 5)))
+        self.violation_delay_spin.setFixedSize(120, 36)
+        v_pref_v.addWidget(self._pref_row(
+            t("settings.violation_delay"), self.violation_delay_spin))
+        v_pref_v.addWidget(self._pref_divider())
+
+        # Info qatori (papka yo'li) — full-width chap-align
+        v_info_wrap = QWidget()
+        v_info_wrap.setStyleSheet("background: transparent;")
+        v_info_h = QHBoxLayout(v_info_wrap)
+        v_info_h.setContentsMargins(20, 10, 20, 10)
+        v_info_h.setSpacing(0)
+        v_info_lbl = QLabel(t("settings.violation_info"))
+        v_info_lbl.setStyleSheet(
+            f"color: {C('text_muted')}; font-size: 11px;"
+            " background: transparent; border: none;")
+        v_info_h.addWidget(v_info_lbl)
+        v_info_h.addStretch()
+        v_pref_v.addWidget(v_info_wrap)
+
+        self._violation_pref_card = v_pref_card
+        layout.addWidget(v_pref_card)
         layout.addStretch()
-        return tab
 
-    def _rec_badge_style(self, on: bool) -> str:
-        if on:
-            return (f"background: {C('accent_brand')}; color: {C('bg_primary')};"
-                    " border-radius: 11px; font-size: 10px; font-weight: bold; border: none;")
-        return (f"background: {C('bg_secondary')}; color: {C('text_muted')};"
-                " border-radius: 11px; font-size: 10px; font-weight: bold;"
-                f" border: 1px solid {C('border_light')};")
+        # Initial dim state
+        self._update_pref_card_state(is_on)
+        self._update_violation_card_state(v_on)
+        scroll.setWidget(tab)
+        return scroll
 
-    def _on_rec_toggled(self, checked: bool):
-        self._rec_status_lbl.setText("ON" if checked else "OFF")
-        self._rec_status_lbl.setStyleSheet(self._rec_badge_style(checked))
+    def _update_violation_card_state(self, enabled: bool):
+        """Violation pref kartani enabled/disabled qiladi"""
+        if not hasattr(self, '_violation_pref_card') or self._violation_pref_card is None:
+            return
+        self._violation_pref_card.setEnabled(enabled)
+        if enabled:
+            self._violation_pref_card.setGraphicsEffect(None)
+        else:
+            from PyQt6.QtWidgets import QGraphicsOpacityEffect
+            eff = QGraphicsOpacityEffect(self._violation_pref_card)
+            eff.setOpacity(0.7)
+            self._violation_pref_card.setGraphicsEffect(eff)
+
+    def _toggle_card_qss(self, on: bool, name: str = "stgToggleCard") -> str:
+        """Toggle karta uchun border rangi state ga qarab o'zgaradi"""
+        border = C('accent_brand') if on else C('border_light')
+        return (f"QFrame#{name} {{"
+                f" background: {C('bg_card')};"
+                f" border: 1px solid {border};"
+                f" border-radius: 10px;"
+                f" }}")
+
+    def _pref_row(self, label_text: str, widget, attr: str = None) -> QWidget:
+        """Settings row: label left, control right, with proper padding.
+        Returns a QWidget so we can dim it as a whole."""
+        row_w = QWidget()
+        row_w.setStyleSheet("background: transparent;")
+        row = QHBoxLayout(row_w)
+        row.setContentsMargins(20, 12, 20, 12)
+        row.setSpacing(12)
+        lbl = QLabel(label_text)
+        lbl.setStyleSheet(
+            f"color: {C('text_primary')}; font-size: 13px;"
+            " background: transparent; border: none;")
+        row.addWidget(lbl)
+        row.addStretch()
+        row.addWidget(widget)
+        if attr:
+            setattr(self, attr, widget)
+        return row_w
+
+    def _pref_divider(self) -> QFrame:
+        """Pref qatorlari orasidagi yupqa chiziq (left/right inset)"""
+        wrap = QFrame()
+        wrap.setStyleSheet("background: transparent; border: none;")
+        wrap.setFixedHeight(1)
+        h = QHBoxLayout(wrap)
+        h.setContentsMargins(20, 0, 20, 0)
+        h.setSpacing(0)
+        line = QFrame()
+        line.setFixedHeight(1)
+        line.setStyleSheet(f"background: {C('border_light')}; border: none;")
+        h.addWidget(line)
+        return wrap
+
+    def _update_pref_card_state(self, enabled: bool):
+        """Pref kartani enabled/disabled qiladi (yumshoq dim bilan)"""
+        if not hasattr(self, '_pref_card') or self._pref_card is None:
+            return
+        self._pref_card.setEnabled(enabled)
+        if enabled:
+            self._pref_card.setGraphicsEffect(None)
+        else:
+            from PyQt6.QtWidgets import QGraphicsOpacityEffect
+            eff = QGraphicsOpacityEffect(self._pref_card)
+            eff.setOpacity(0.7)
+            self._pref_card.setGraphicsEffect(eff)
 
     def _section(self, text: str) -> QLabel:
         lbl = QLabel(text)
@@ -1230,40 +1433,38 @@ class SettingsDialog(QDialog):
         return row
 
     def _model_card(self, radio: "QRadioButton", title: str, desc: str, checked: bool) -> QFrame:
+        """AI model tanlash kartasi — objectName orqali border child-larga oqmaydi"""
         radio.setChecked(checked)
         card = QFrame()
-        color = C('accent_brand') if checked else C('border_light')
-        card.setStyleSheet(f"""
-            QFrame {{
-                background: {C('bg_card')};
-                border: 2px solid {color};
-                border-radius: 8px;
-            }}
-        """)
+        card.setObjectName("stgModelCard")
 
-        def _update_border(state):
-            c = C('accent_brand') if state else C('border_light')
-            card.setStyleSheet(f"""
-                QFrame {{
-                    background: {C('bg_card')};
-                    border: 2px solid {c};
-                    border-radius: 8px;
-                }}
-            """)
+        def _qss(on: bool) -> str:
+            c = C('accent_brand') if on else C('border_light')
+            w = "2px" if on else "1px"
+            return (f"QFrame#stgModelCard {{"
+                    f" background: {C('bg_card')};"
+                    f" border: {w} solid {c};"
+                    f" border-radius: 10px;"
+                    f" }}")
 
-        radio.toggled.connect(_update_border)
+        card.setStyleSheet(_qss(checked))
+        radio.toggled.connect(lambda state: card.setStyleSheet(_qss(state)))
 
         row = QHBoxLayout(card)
-        row.setContentsMargins(14, 10, 14, 10)
-        row.setSpacing(12)
+        row.setContentsMargins(18, 13, 18, 13)
+        row.setSpacing(14)
         row.addWidget(radio)
 
         texts = QVBoxLayout()
-        texts.setSpacing(2)
+        texts.setSpacing(3)
         title_lbl = QLabel(title)
-        title_lbl.setStyleSheet(f"color: {C('text_primary')}; font-size: 12px; font-weight: bold; background: transparent; border: none;")
+        title_lbl.setStyleSheet(
+            f"color: {C('text_primary')}; font-size: 13px; font-weight: 600;"
+            " background: transparent; border: none;")
         d = QLabel(desc)
-        d.setStyleSheet(f"color: {C('text_muted')}; font-size: 10px; background: transparent; border: none;")
+        d.setStyleSheet(
+            f"color: {C('text_muted')}; font-size: 11px;"
+            " background: transparent; border: none;")
         texts.addWidget(title_lbl)
         texts.addWidget(d)
         row.addLayout(texts)
@@ -1283,10 +1484,11 @@ class SettingsDialog(QDialog):
             "theme": ["dark", "military", "light"][self.theme_combo.currentIndex()],
             "warning_threshold": float(self.warning_threshold.value()),
             "violation_threshold": float(self.violation_threshold.value()),
-            "auto_save": self.auto_save.isChecked(),
             "record_enabled": self.record_enabled.isChecked(),
             "record_format": fmt_map[self.record_format_combo.currentIndex()],
             "record_quality": qual_map[self.record_quality_combo.currentIndex()],
+            "violation_enabled": self.violation_enabled.isChecked(),
+            "violation_delay_sec": int(self.violation_delay_spin.value()),
             "model_type": model_type,
         }
 
