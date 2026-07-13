@@ -174,6 +174,24 @@ class ReportDialog(QDialog):
         pdf_btn.clicked.connect(self._export_pdf)
         btn_row.addWidget(pdf_btn)
 
+        # Toifa hisoboti (kesishma toifasi — standart jadval bo'yicha)
+        cat_btn = QPushButton(t("report.category_btn"))
+        cat_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {C('bg_input')};
+                color: {C('text_secondary')};
+                border: 1px solid {C('border_light')};
+                border-radius: 6px;
+                padding: 8px 18px;
+                font-size: 12px;
+                font-weight: bold;
+            }}
+            QPushButton:hover {{ background-color: {C('bg_hover')}; color: {C('text_primary')}; }}
+        """)
+        cat_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        cat_btn.clicked.connect(self._export_category)
+        btn_row.addWidget(cat_btn)
+
         export_btn = QPushButton(t("report.download"))
         export_btn.setStyleSheet(f"""
             QPushButton {{
@@ -221,6 +239,28 @@ class ReportDialog(QDialog):
 
         ok = generate_report(self.config_manager, self.stats_db, d_from, d_to, file_path)
 
+        if ok:
+            _open_file(file_path)
+            self.accept()
+        else:
+            QMessageBox.warning(self, t("error.title"), t("error.report"))
+
+    def _export_category(self):
+        """Kesishma TOIFASI hisoboti (standart jadval bo'yicha) — Word."""
+        d_from = self.date_from.date().toString("yyyy-MM-dd")
+        d_to = self.date_to.date().toString("yyyy-MM-dd")
+        if d_from > d_to:
+            QMessageBox.warning(self, t("error.title"), t("report.err_date"))
+            return
+        default_name = f"toifa_hisobot_{d_from}_{d_to}.docx"
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, t("report.save_dialog"), default_name,
+            "Word Documents (*.docx);;All Files (*)")
+        if not file_path:
+            return
+        from app.reports.category import generate_category_report
+        ok = generate_category_report(self.config_manager, self.stats_db,
+                                      d_from, d_to, file_path)
         if ok:
             _open_file(file_path)
             self.accept()
@@ -757,6 +797,26 @@ class AnalyticsPage(QWidget):
         glow.setOffset(0, 0)
         name_lbl.setGraphicsEffect(glow)
         header.addWidget(name_lbl)
+
+        # Toifa belgisi — standart jadval bo'yicha (mavjud BARCHA ma'lumot asosida)
+        try:
+            from app.reports.category import compute_category
+            _hc = float(self.config_manager.get_settings().get("toifa_heavy_coef", 2.5))
+            _to = date_to.isoformat() if date_to else date.today().isoformat()
+            _cat = compute_category(self.stats_db, cid, "2000-01-01", _to, heavy_coef=_hc)
+            toifa_lbl = QLabel(t("stats.toifa", toifa=_cat["toifa"]))
+            toifa_lbl.setStyleSheet(
+                f"color: {C('accent_brand')}; font-size: 12px; font-weight: bold; "
+                f"border: 1px solid {C('accent_brand')}66; border-radius: 6px; padding: 2px 10px;")
+            toifa_lbl.setToolTip(
+                f"Poyezd/sutka: {_cat['avg_trains']:.0f}  |  "
+                f"Keltirilgan transport/sutka: {int(_cat['avg_reduced'])}  |  "
+                f"Kunlar: {_cat['days']}")
+            header.addSpacing(10)
+            header.addWidget(toifa_lbl)
+        except Exception as e:
+            logger.debug("toifa badge xato: %s", e)
+
         header.addStretch()
 
         _date_str = date_to.isoformat() if date_to else None

@@ -613,5 +613,7 @@
         }
       ]
     }
-  }
+  },
+  "report.category_btn": "Category (Word)",
+  "stats.toifa": "Category: {toifa}"
 }

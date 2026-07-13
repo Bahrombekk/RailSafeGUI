@@ -613,5 +613,7 @@
         }
       ]
     }
-  }
+  },
+  "report.category_btn": "Toifa (Word)",
+  "stats.toifa": "Toifa: {toifa}"
 }
