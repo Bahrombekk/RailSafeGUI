@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import (QMainWindow, QStackedWidget, QStatusBar,
                               QMessageBox, QToolBar, QWidget, QHBoxLayout,
                               QLabel, QPushButton, QSizePolicy)
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QAction
+from PyQt6.QtGui import QAction, QPixmap
 from pathlib import Path
 
 from app.pages.dashboard import Dashboard
@@ -70,8 +70,19 @@ class MainWindow(QMainWindow):
         self.toolbar.setFixedHeight(40)
         self.addToolBar(self.toolbar)
 
+        # Logo — "RailSafe" yozuvidan OLDIN
+        self.logo_label = QLabel()
+        _logo = Path(__file__).parent.parent / "assets" / "images" / "Becraund.png"
+        if _logo.exists():
+            _pm = QPixmap(str(_logo))
+            if not _pm.isNull():
+                _pm = _pm.scaledToHeight(30, Qt.TransformationMode.SmoothTransformation)
+                self.logo_label.setPixmap(_pm)
+        self.logo_label.setContentsMargins(8, 0, 2, 0)
+        self.toolbar.addWidget(self.logo_label)
+
         # App icon/name
-        self.app_label = QLabel("  RailSafe  ")
+        self.app_label = QLabel("RailSafe  ")
         self.toolbar.addWidget(self.app_label)
 
         self.toolbar.addSeparator()

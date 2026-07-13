@@ -1,6 +1,13 @@
 """
 Car Detector - Avtomobillarni aniqlash moduli
 YOLO modelidan foydalangan holda avtomobillarni aniqlaydi
+
+LEGACY / ISHLATILMAYDI:
+    Bu modul (CarDetector) eski/qoldiq koddir. Ilova endi
+    detectors/realtime_detector.py ichidagi RealtimeMultiCameraDetector
+    (batch + detect_async) dan foydalanadi. CarDetector'da detect_async
+    yo'q va u callerlar tomonidan chaqirilmaydi. Havola/mos-kelish uchun
+    saqlanadi — yangi kodda RealtimeMultiCameraDetector ishlating.
 """
 
 import cv2
@@ -42,12 +49,12 @@ class CarDetector:
         frame_with_boxes = detector.draw_detections(frame, detections)
     """
 
-    # Default rang palitralari
+    # Default rang palitralari — hozircha barcha sinflar Yashil (0,255,0), BGR
     COLORS = {
-        0: (0, 255, 0),    # Yashil - avtomobil
-        1: (0, 255, 0),  # Apelsin - yuk mashinasi
-        2: (0, 255, 0),    # Qizil - avtobus
-        3: (0, 255, 0),  # Sariq - mototsikl
+        0: (0, 255, 0),  # Yashil - avtomobil
+        1: (0, 255, 0),  # Yashil - yuk mashinasi
+        2: (0, 255, 0),  # Yashil - avtobus
+        3: (0, 255, 0),  # Yashil - mototsikl
     }
 
     DEFAULT_COLOR = (128, 128, 128)  # Kulrang - noma'lum

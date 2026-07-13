@@ -18,6 +18,8 @@ import time
 import json
 import threading
 import collections
+import queue
+import logging
 from datetime import date
 from app.utils.theme_colors import C, TM
 from app.core.tracker import PolygonTracker
@@ -157,6 +159,31 @@ def _load_polygon(polygon_file: str, frame_w: int, frame_h: int):
         return None, None
 
 
+_log = logging.getLogger("RailSafe.ui")
+
+# ── Worker "graveyard" ──────────────────────────────────────────────
+# Bounded wait() dan keyin hali tugamagan QThread'lar shu yerda saqlanadi.
+# Python referensiyasi ushlab turilishi tufayli QThread wrapper GC bo'lmaydi
+# → "QThread: Destroyed while thread is still running" crash bo'lmaydi.
+_RETIRED_WORKERS = []
+
+
+def _retire_worker(worker):
+    """To'xtatilgan, lekin OS thread'i hali tugamagan worker'ni saqlab qo'yish.
+    GUI thread'da chaqiriladi — tugaganlarini oldindan tozalaymiz (leak bo'lmasin)."""
+    for w in list(_RETIRED_WORKERS):
+        try:
+            if not w.isRunning():
+                _RETIRED_WORKERS.remove(w)
+        except (RuntimeError, Exception):
+            try:
+                _RETIRED_WORKERS.remove(w)
+            except ValueError:
+                pass
+    if worker not in _RETIRED_WORKERS:
+        _RETIRED_WORKERS.append(worker)
+
+
 class CameraWorker(QThread):
     """Worker thread - all heavy work here, GUI thread only does setPixmap"""
     frame_ready = pyqtSignal()  # Lightweight - payload yo'q (queue backup bo'lmaydi)
@@ -175,6 +202,9 @@ class CameraWorker(QThread):
         self._running = True
         self._mutex = QMutex()
         self._latest_qimg = None  # Atomic latest frame (GIL-safe)
+        # frame_with_data tinglovchilari soni (detail view ulanganda > 0).
+        # 0 bo'lsa og'ir QImage signali emit qilinmaydi → queue backup yo'q.
+        self._share_count = 0
         # Car detector - non-blocking real-time mode
         self.car_detector = car_detector
         self.detection_enabled = detection_enabled and car_detector is not None
@@ -187,7 +217,9 @@ class CameraWorker(QThread):
         self._poly_mask = None
         self.plc_danger = False  # PLC aktiv + polygon ichida mashina → qizil
         self.video_recorder = None  # VideoRecorder | None
-        self.violation_detector = None  # ViolationDetector | None
+        self.violation_detector = None  # ViolationDetector | None (eski, to'g'ridan-to'g'ri)
+        self.anpr_worker = None  # AnprWorker | None — ANPR alohida thread'da
+        self._last_anpr_t = 0.0  # ANPR submit throttle (real-time'ga ta'sir qilmaslik)
         self.crossing_display_name: str = ""  # ViolationDetector folder nomi uchun
         # FPS tracker — video yozish uchun haqiqiy frame rate
         self._fps_samples: collections.deque = collections.deque(maxlen=30)
@@ -199,6 +231,15 @@ class CameraWorker(QThread):
         qimg = self._latest_qimg
         self._latest_qimg = None
         return qimg
+
+    def add_frame_consumer(self):
+        """Detail view ulanganda chaqiriladi — frame_with_data emit qilina boshlaydi."""
+        self._share_count += 1
+
+    def remove_frame_consumer(self):
+        """Detail view uzilganda chaqiriladi — tinglovchi qolmasa emit to'xtaydi."""
+        if self._share_count > 0:
+            self._share_count -= 1
 
     def run(self):
         cap = None
@@ -282,12 +323,21 @@ class CameraWorker(QThread):
                     continue
                 _last_frame_t = time.perf_counter()
 
+                # ANPR uchun ASL, TOZA, FULL-RES kadrni saqlab qolamiz
+                # (resize va annotatsiyadan OLDIN) — raqam sifati uchun.
+                orig_frame = frame
+                orig_h, orig_w = frame.shape[:2]
+
                 h, w = frame.shape[:2]
                 if w > self.display_width:
                     scale = self.display_width / w
                     frame = cv2.resize(frame, (self.display_width, int(h * scale)),
                                        interpolation=cv2.INTER_AREA)
                     h, w = frame.shape[:2]
+                # Tracker/deteksiya AYNAN shu o'lchamda ishlaydi. Keyinroq `w,h`
+                # draw_detections dan keyin o'zgarishi mumkin (det_frame o'lchami),
+                # shuning uchun ANPR masshtabi uchun barqaror nusxa saqlaymiz.
+                proc_w, proc_h = w, h
 
                 # Polygon yuklash (birinchi frame kelganda)
                 if not _poly_loaded:
@@ -383,24 +433,45 @@ class CameraWorker(QThread):
 
                 self._latest_qimg = qimg
                 self.frame_ready.emit()
-                self.frame_with_data.emit(qimg)
+                # Og'ir QImage signalini FAQAT tinglovchi bo'lsa emit qilamiz.
+                # Detail view ochilmagan bo'lsa har kadrda QImage nusxasi
+                # queue'da to'planib qolishining oldini oladi.
+                if self._share_count > 0:
+                    self.frame_with_data.emit(qimg)
 
                 # Video yozish (agar yoqilgan bo'lsa)
                 if self.video_recorder is not None:
                     self.video_recorder.write(frame)
 
-                # Violation (radar) detection — PLC armlangan bo'lsa
-                if (self.violation_detector is not None and
-                        _tracker is not None):
+                # ANPR (raqam aniqlash) — ALOHIDA thread'ga topshiriladi.
+                # Real-time oqim (video + hisoblash) bloklanmaydi; asl FULL-RES,
+                # toza (chizilmagan) kadr yuboriladi. Submit throttle bilan
+                # cheklanadi (har ~0.2s) — full-res nusxa narxini kamaytirish uchun.
+                if (self.anpr_worker is not None and _tracker is not None
+                        and orig_frame is not None
+                        and (_now_t - self._last_anpr_t) >= 0.2):
                     try:
                         in_poly_tracks = _tracker.get_in_polygon_tracks()
                         if in_poly_tracks:
-                            self.violation_detector.process_frame(
-                                frame, in_poly_tracks,
+                            self._last_anpr_t = _now_t
+                            # bbox'lar TRACKER (proc) koordinatasida — full-res'ga masshtablash.
+                            # proc_w/proc_h barqaror (w,h draw_detections dan keyin o'zgargan bo'lishi mumkin).
+                            sx = orig_w / float(proc_w)
+                            sy = orig_h / float(proc_h)
+                            scaled = [
+                                {**t, 'bbox': (int(t['bbox'][0] * sx),
+                                               int(t['bbox'][1] * sy),
+                                               int(t['bbox'][2] * sx),
+                                               int(t['bbox'][3] * sy))}
+                                for t in in_poly_tracks
+                            ]
+                            self.anpr_worker.submit(
+                                orig_frame.copy(), scaled,
                                 self.crossing_display_name or "Pereezd",
                                 self.camera_name)
                     except Exception as e:
-                        print(f"[{self.camera_name}] violation_detector xato: {e}")
+                        _log.error("[%s] ANPR submit xato: %s",
+                                   self.camera_name, e)
 
             if _grab_error[0]:
                 self.status_changed.emit("error")
@@ -543,9 +614,13 @@ class CameraWorker(QThread):
         except Exception:
             return False
 
-    def stop(self):
-        # Signal thread to stop — NON-BLOCKING (GUI thread bloklanmaydi)
-        # Resources finally block da tozalanadi (PyAV container.close, cap.release)
+    def stop(self, wait_ms: int = 1500):
+        """Thread'ni to'xtatish. wait_ms > 0 bo'lsa cheklangan (bounded) wait qilinadi.
+
+        DetailCameraWorker singari bounded wait ishlatamiz. Wait time'dan keyin
+        thread hali tugamagan bo'lsa, chaqiruvchi (stop_cameras) uni graveyard'ga
+        o'tkazadi — shunda QThread wrapper GC bo'lib crash chiqmaydi.
+        """
         try:
             self._mutex.tryLock(50)
             self._running = False
@@ -558,10 +633,14 @@ class CameraWorker(QThread):
         try:
             if self.isRunning():
                 self.quit()
-                # wait() CHAQIRILMAYDI — GUI freeze oldini olish uchun
-                # QThread o'z-o'zicha to'xtaydi (finally block)
-        except (RuntimeError, Exception):
-            pass
+                if wait_ms > 0:
+                    # Bounded wait — GUI thread ko'pi bilan wait_ms ms bloklanadi
+                    if not self.wait(wait_ms):
+                        _log.warning(
+                            "[%s] Worker %d ms ichida to'xtamadi — graveyard'ga o'tkaziladi",
+                            self.camera_name, wait_ms)
+        except (RuntimeError, Exception) as e:
+            _log.exception("[%s] stop() xato: %s", self.camera_name, e)
 
 
 class CameraSettingsDialog(QDialog):
@@ -748,6 +827,54 @@ class _PlcResizeFilter(QObject):
         return False
 
 
+class AnprWorker(threading.Thread):
+    """ANPR ni kamera worker thread'idan AJRATADI.
+
+    Maqsad: raqam aniqlash real-time video/hisoblash oqimiga TA'SIR QILMASIN.
+    Kamera worker faqat (full-res toza kadr + tracklar) ni navbatga qo'yadi va
+    darhol qaytadi; og'ir OCR shu yerda, fonda bajariladi. Navbat to'lsa eng
+    eski ish tashlanadi (ANPR real-time bo'lishi shart emas — aniqlik muhim)."""
+
+    def __init__(self, violation_detector):
+        super().__init__(daemon=True, name="anpr-worker")
+        self._vd = violation_detector
+        self._q = queue.Queue(maxsize=4)
+        self._running = True
+
+    def submit(self, frame, tracks, crossing_name, camera_name):
+        item = (frame, tracks, crossing_name, camera_name)
+        try:
+            self._q.put_nowait(item)
+        except queue.Full:
+            # Real-time'ga to'sqinlik qilmaslik uchun eng eskisini tashlaymiz
+            try:
+                self._q.get_nowait()
+                self._q.put_nowait(item)
+            except (queue.Empty, queue.Full):
+                pass
+
+    def run(self):
+        while self._running:
+            try:
+                job = self._q.get(timeout=0.5)
+            except queue.Empty:
+                continue
+            if job is None:
+                break
+            frame, tracks, cn, cam = job
+            try:
+                self._vd.process_frame(frame, tracks, cn, cam)
+            except Exception as e:
+                _log.error("[ANPR] process_frame xato: %s", e)
+
+    def stop(self):
+        self._running = False
+        try:
+            self._q.put_nowait(None)
+        except queue.Full:
+            pass
+
+
 class CrossingCard(QWidget):
     """
     Crossing card with two layout modes:
@@ -809,6 +936,8 @@ class CrossingCard(QWidget):
         self._rec_ctrl = RecordingController(self.config_manager, self.crossing_data)
         # Violation (radar) detector — PLC signal kelganda raqam o'qiydi
         self._violation_detector = None  # lazy init when first PLC signal arrives
+        self._anpr_worker = None          # AnprWorker — ANPR alohida fon thread'da
+        self._anpr_test_active = False    # ANPR test rejimi (PLC'siz doimiy)
 
         # Car detector - SHARED instance (GPU maksimal ishlatish)
         self.car_detector = car_detector
@@ -884,13 +1013,9 @@ class CrossingCard(QWidget):
 
     def _restart_camera_workers(self):
         """Barcha camera workerlarni to'xtatib, yangi holat bilan qayta ishga tushirish."""
-        for w in self.camera_workers:
-            try:
-                w.stop()
-            except Exception:
-                pass
-        self.camera_workers.clear()
-        self.camera_workers_by_id.clear()
+        # Qisqa bounded wait — auto-reconnect/state-change GUI'ni sezilarli
+        # bloklamasin; tugamaganlar stop_cameras ichida graveyard'ga o'tadi.
+        self.stop_cameras(wait_ms=300)
         self._main_camera_down = False
         QTimer.singleShot(300, self._start_cameras)
 
@@ -964,14 +1089,19 @@ class CrossingCard(QWidget):
                     # Birinchi "yo'q" — grace period boshlash
                     self._plc_in_grace = True
                     self._plc_active = False
-                    self._update_plc_ui(False, connected=True)
+                    # danger=True: poyezd hali bo'lishi mumkin — qizil overlay
+                    # grace tugamaguncha o'chirilmaydi (miltillashning oldini oladi)
+                    self._update_plc_ui(False, connected=True, danger=True)
                     self._grace_timer.start(self._plc_grace_secs * 1000)
                     # Timer va display — o'zgartirilmaydi (davom etadi)
                 elif not self._plc_active and not self._plc_in_grace:
                     # Idle holat — connected lekin poyezd yo'q, UI tasdiqlash
                     self._update_plc_ui(False, connected=True)
-        except Exception:
-            pass  # PyQt6 abort() oldini olish
+        except Exception as e:
+            # Xatoni yutmaymiz — log qilamiz (PyQt6 abort() oldini olish uchun
+            # istisnoni bu yerda ushlab qolamiz, lekin ko'rinadigan bo'lsin)
+            _log.exception("[%s] PLC poll xato: %s",
+                           self.crossing_data.get('name', '?'), e)
 
     def _start_recording(self):
         """Recording controller orqali yozishni boshlash.
@@ -979,10 +1109,11 @@ class CrossingCard(QWidget):
         crossing_name = self.crossing_data.get("name", f"Pereezd_{self.crossing_id}")
         self._rec_ctrl.start(self.camera_workers, crossing_name=crossing_name)
 
-    def _stop_recording(self):
-        """Barcha yozuvlarni to'xtatish."""
-        self._rec_ctrl.stop()
+    def _stop_recording(self) -> list:
+        """Barcha yozuvlarni to'xtatish. Saqlangan fayl yo'llarini qaytaradi."""
+        paths = self._rec_ctrl.stop()
         self._rec_ctrl.detach_workers(self.camera_workers)
+        return paths
 
     # ── Backward compat: ba'zi joylar hali ham _active_recorders tekshirishi mumkin
     @property
@@ -991,29 +1122,56 @@ class CrossingCard(QWidget):
 
     # ── Violation (radar) detector ────────────────────────────────────
 
+    def _anpr_test_enabled(self) -> bool:
+        """ANPR test rejimi (PLC'siz doimiy armlash) FAQAT crossing config'da
+        anpr_test=true bo'lsa yoqiladi.
+
+        Eslatma: ilgari global settings.anpr_test_mode ham qo'llab-quvvatlanardi,
+        lekin u update_settings MERGE tufayli o'chmas edi (auto-save true'da ushlab
+        turardi) — shuning uchun olib tashlandi. Oddiy ish rejimida ANPR faqat
+        violation_enabled=true + PLC signali bilan ishga tushadi."""
+        return bool(self.crossing_data.get("anpr_test", False))
+
     def _ensure_violation_detector(self):
         """Lazy: PLC signali kelguncha modellarni yuklamaymiz."""
         if self._violation_detector is not None:
             return self._violation_detector
         settings = (self.config_manager.get_settings()
                     if self.config_manager else {})
-        if not settings.get("violation_enabled", False):
+        # Test rejimi violation_enabled'siz ham ANPR'ni yoqadi —
+        # har bir mashina raqamini o'qish uchun.
+        anpr_test = self._anpr_test_enabled()
+        if not settings.get("violation_enabled", False) and not anpr_test:
             return None
         try:
             from app.core.plate_recognizer import get_plate_recognizer
             from app.core.violation_detector import ViolationDetector
             delay = float(settings.get("violation_delay_sec", 5.0))
             recognizer = get_plate_recognizer()
+            # Modellarni FONDA oldindan yuklash — birinchi qoidabuzarlikda
+            # kamera worker thread'i 2s bloklanmasligi uchun.
+            threading.Thread(target=recognizer.preload, daemon=True,
+                             name="anpr-preload").start()
+            # Test rejimida natijalar alohida papkaga: _anpr_test
+            out_dir = None
+            if anpr_test:
+                from app.utils.video_recorder import get_record_dir
+                out_dir = get_record_dir() / "_anpr_test"
             self._violation_detector = ViolationDetector(
-                recognizer=recognizer, delay_seconds=delay)
+                recognizer=recognizer, delay_seconds=delay, output_dir=out_dir)
+            # ANPR ni ALOHIDA fon thread'ida ishlatamiz — real-time oqimga
+            # ta'sir qilmasligi uchun.
+            self._anpr_worker = AnprWorker(self._violation_detector)
+            self._anpr_worker.start()
             # Worker-larga ulashish
             for w in self.camera_workers:
                 w.violation_detector = self._violation_detector
+                w.anpr_worker = self._anpr_worker
                 w.crossing_display_name = self.crossing_data.get(
                     "name", f"Pereezd_{self.crossing_id}")
             print(f"[CrossingCard] ViolationDetector tayyor (delay={delay}s)")
         except Exception as e:
-            print(f"[CrossingCard] ViolationDetector init xato: {e}")
+            _log.error("[CrossingCard] ViolationDetector init xato: %s", e)
             self._violation_detector = None
         return self._violation_detector
 
@@ -1029,7 +1187,31 @@ class CrossingCard(QWidget):
 
     def _on_plc_signal_clear(self):
         if self._violation_detector is not None:
-            self._violation_detector.on_plc_clear()
+            crossing_name = self.crossing_data.get("name", f"Pereezd_{self.crossing_id}")
+            cameras = self.crossing_data.get("cameras", [])
+            cam_name = cameras[0].get("name", "cam") if cameras else "cam"
+            self._violation_detector.on_plc_clear(crossing_name, cam_name)
+
+    def _maybe_start_anpr_test(self):
+        """ANPR test rejimi: crossing config'da anpr_test=true bo'lsa, PLC'siz
+        DOIMIY armlaydi — polygonga kirgan HAR bir mashina raqami o'qiladi.
+        Natijalar: Desktop/RailSafe_Yozuvlar/_anpr_test/<pereezd>/<sana>/"""
+        try:
+            if not self._anpr_test_enabled():
+                return
+            det = self._ensure_violation_detector()
+            if det is None:
+                _log.error("[ANPR-TEST] ViolationDetector yaratilmadi — "
+                           "modellar/CUDA ni tekshiring")
+                return
+            det.set_delay(0.0)     # kutmasdan darhol o'qish
+            det.on_plc_signal()    # doimiy arm (PLC'siz)
+            self._anpr_test_active = True
+            _log.info("[ANPR-TEST] Pereezd %s: doimiy ANPR yoqildi", self.crossing_id)
+            print(f"[ANPR-TEST] Pereezd {self.crossing_id}: har bir mashina "
+                  f"raqami o'qiladi → _anpr_test papkasi")
+        except Exception as e:
+            _log.error("[ANPR-TEST] xato: %s", e)
 
     def _on_plc_grace_expired(self):
         """Grace period tugadi — PLC haqiqatan ham o'chdi."""
@@ -1038,7 +1220,10 @@ class CrossingCard(QWidget):
                 return
             self._plc_in_grace = False
             self._train_timer.stop()
-            self._stop_recording()
+            # Grace haqiqatan tugadi — poyezd yo'q, kamera qizil overlay o'chiriladi
+            for _w in self.camera_workers:
+                _w.plc_danger = False
+            _saved_video_paths = self._stop_recording()
             self._on_plc_signal_clear()
 
             duration = 0.0
@@ -1053,35 +1238,51 @@ class CrossingCard(QWidget):
             if duration >= self._min_train_duration:
                 self._train_count_today += 1
                 self._update_train_count_display()
-                if self.stats_db and self._train_start_dt is not None:
-                    from datetime import datetime as _dt
+                # Count va DB har doim birga o'zgarishi shart (divergensiya bo'lmasin).
+                # Birinchi pollda poyezd allaqachon aktiv bo'lsa _train_start_dt=None
+                # bo'ladi — bunday holatda boshlanish vaqtini davomiylikdan
+                # (end - duration) hisoblab, baribir DB ga yozamiz.
+                if self.stats_db:
+                    from datetime import datetime as _dt, timedelta as _td
+                    end_dt = self._last_train_end_dt or _dt.now()
+                    start_dt = self._train_start_dt or (end_dt - _td(seconds=duration))
                     try:
                         self.stats_db.record_train_event(
-                            self.crossing_id,
-                            self._train_start_dt,
-                            _dt.now()
-                        )
+                            self.crossing_id, start_dt, end_dt)
                     except Exception as e:
-                        print(f"[CrossingCard] Train event yozish xato: {e}")
+                        _log.exception("[CrossingCard] Train event yozish xato: %s", e)
             else:
                 if duration > 0:
                     print(f"[CrossingCard] Qisqa signal ({duration:.1f}s < "
                           f"{self._min_train_duration}s) — e'tiborsiz")
+                # Yolg'on signal — saqlangan videolarni o'chirish
+                from pathlib import Path as _Path
+                for _vp in _saved_video_paths:
+                    try:
+                        _Path(_vp).unlink(missing_ok=True)
+                        print(f"[CrossingCard] Yolg'on signal video o'chirildi: {_vp}")
+                    except Exception:
+                        pass
                 self._last_train_duration = 0.0
                 self._update_train_duration_display(False)
 
             self._train_start_dt = None
-        except Exception:
-            pass
+        except Exception as e:
+            _log.exception("[CrossingCard] grace expired xato: %s", e)
 
-    def _update_plc_ui(self, active: bool, connected: bool = True):
+    def _update_plc_ui(self, active: bool, connected: bool = True, danger: bool = None):
         """PLC holati o'zgarganda UI ni yangilash.
         active=True              → poyezd kelmoqda (qizil)
         active=False, connected  → ulangan, kutmoqda (yashil)
         active=False, !connected → qurilma bilan aloqa yo'q (kulrang)
+        danger=None              → danger=active (kamera qizil overlay holati).
+                                   Grace paytida danger=True uzatiladi (poyezd
+                                   hali bo'lishi mumkin), active=False bo'lsa ham.
         """
         if self._is_destroyed:
             return
+        if danger is None:
+            danger = active
         try:
             if active:
                 self._plc_current_color = C('status_error')
@@ -1096,7 +1297,7 @@ class CrossingCard(QWidget):
             self._on_plc_resize(self._plc_frame.height(), self._plc_frame.width())
             # Camera workerlarga xavf holatini uzatish
             for _w in self.camera_workers:
-                _w.plc_danger = active
+                _w.plc_danger = danger
             # Video yozish + violation detector (radar)
             if active:
                 self._start_recording()
@@ -1900,6 +2101,9 @@ class CrossingCard(QWidget):
                 worker.start()
                 self.camera_workers.append(worker)
                 self.camera_workers_by_id[camera.get("id")] = worker
+
+            # ANPR test rejimi (PLC'siz doimiy) — workerlar tayyor bo'lgach
+            self._maybe_start_anpr_test()
         except (RuntimeError, Exception) as e:
             print(f"[StartCameras] Error: {e}")
 
@@ -1911,8 +2115,10 @@ class CrossingCard(QWidget):
             if qimg is None:
                 return
             self._display_frame(self.main_camera_label, qimg)
-        except Exception:
-            self._is_destroyed = True
+        except Exception as e:
+            # O'tkinchi (transient) xato — faqat shu kadrni tashlaymiz,
+            # butun widgetni o'lik deb belgilamaymiz (_is_destroyed).
+            _log.debug("[CrossingCard] main frame slot xato: %s", e)
 
     def _on_additional_frame(self, worker):
         try:
@@ -1925,8 +2131,9 @@ class CrossingCard(QWidget):
             # Asosiy kamera uzilgan bo'lsa — qo'shimchani asosiy joyda ham ko'rsatish
             if self._main_camera_down and self.main_camera_label is not None:
                 self._display_frame(self.main_camera_label, qimg)
-        except Exception:
-            self._is_destroyed = True
+        except Exception as e:
+            # O'tkinchi xato — kadrni tashlaymiz, widgetni o'chirmaymiz
+            _log.debug("[CrossingCard] additional frame slot xato: %s", e)
 
     def _schedule_reconnect(self):
         """Kamera uzilganda 5 sekunddan keyin qayta ulanish (debounced)."""
@@ -1959,8 +2166,9 @@ class CrossingCard(QWidget):
                 if self.main_camera_label:
                     self._set_placeholder(self.main_camera_label, t("cam.status.main_down"))
                 self._schedule_reconnect()
-        except Exception:
-            self._is_destroyed = True
+        except Exception as e:
+            # O'tkinchi xato — status yangilanmadi, widgetni o'chirmaymiz
+            _log.debug("[CrossingCard] main status slot xato: %s", e)
 
     def _on_additional_status(self, status):
         try:
@@ -1970,8 +2178,9 @@ class CrossingCard(QWidget):
                 if self.additional_camera_label:
                     self._set_placeholder(self.additional_camera_label, t("cam.status.failed"))
                 self._schedule_reconnect()
-        except Exception:
-            self._is_destroyed = True
+        except Exception as e:
+            # O'tkinchi xato — status yangilanmadi, widgetni o'chirmaymiz
+            _log.debug("[CrossingCard] additional status slot xato: %s", e)
 
     def _on_stats_update(self, light_count: int, heavy_count: int,
                          in_poly_count: int, max_time: float):
@@ -2042,8 +2251,10 @@ class CrossingCard(QWidget):
                             self.crossing_id, main_name, light_count, heavy_count)
                     except Exception as e:
                         print(f"[StatsDB] Record error: {e}")
-        except Exception:
-            self._is_destroyed = True
+        except Exception as e:
+            # O'tkinchi xato — bitta stat yangilanishini tashlaymiz,
+            # butun widgetni o'lik deb belgilamaymiz
+            _log.debug("[CrossingCard] stats slot xato: %s", e)
 
     def _on_mouse_press(self, event):
         """Single click - do nothing, wait for double click"""
@@ -2220,21 +2431,41 @@ class CrossingCard(QWidget):
         except (RuntimeError, Exception):
             pass
 
-    def stop_cameras(self):
+    def stop_cameras(self, wait_ms: int = 1500):
         # Avval signallarni uzib, keyin to'xtatish (crash prevention)
         for worker in self.camera_workers:
             try:
                 worker.frame_ready.disconnect()
+            except (TypeError, RuntimeError):
+                pass
+            try:
+                worker.frame_with_data.disconnect()
+            except (TypeError, RuntimeError):
+                pass
+            try:
                 worker.status_changed.disconnect()
+            except (TypeError, RuntimeError):
+                pass
+            try:
                 worker.stats_updated.disconnect()
             except (TypeError, RuntimeError):
                 pass
+        # Har bir worker'ni bounded wait bilan to'xtatamiz
         for worker in self.camera_workers:
             try:
-                worker.stop()
+                worker.stop(wait_ms=wait_ms)
             except (RuntimeError, Exception) as e:
-                print(f"[StopCamera] Error: {e}")
+                _log.exception("[StopCamera] Error: %s", e)
+        # Bounded wait'dan keyin hali ishlab turgan bo'lsa graveyard'ga o'tkazamiz —
+        # Python referensiyasi saqlanib, QThread wrapper GC bo'lmaydi (crash yo'q).
+        for worker in self.camera_workers:
+            try:
+                if worker.isRunning():
+                    _retire_worker(worker)
+            except (RuntimeError, Exception):
+                pass
         self.camera_workers.clear()
+        self.camera_workers_by_id.clear()
 
     def cleanup(self):
         if self._is_destroyed:
@@ -2261,6 +2492,13 @@ class CrossingCard(QWidget):
                 pass
             self._plc_manager = None
         self.stop_cameras()
+        # ANPR fon thread'ini to'xtatish
+        if self._anpr_worker is not None:
+            try:
+                self._anpr_worker.stop()
+            except Exception:
+                pass
+            self._anpr_worker = None
         # Shared detector - to'xtatmaymiz
         self.car_detector = None
 

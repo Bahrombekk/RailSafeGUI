@@ -18,9 +18,13 @@ import threading
 import time
 import os
 import glob
+import logging
 from typing import List, Dict, Tuple, Optional
 from dataclasses import dataclass
 from pathlib import Path
+
+# Modul logger'i (print o'rniga logging ishlatiladi)
+logger = logging.getLogger("RailSafe.detector")
 
 
 # COCO class names (80 classes)
@@ -88,8 +92,8 @@ class TensorRTBackend:
 
         self.device = torch.device("cuda:0")
 
-        logger = trt.Logger(trt.Logger.WARNING)
-        runtime = trt.Runtime(logger)
+        trt_logger = trt.Logger(trt.Logger.WARNING)
+        runtime = trt.Runtime(trt_logger)
 
         with open(engine_path, "rb") as f:
             raw = f.read()
@@ -132,6 +136,18 @@ class TensorRTBackend:
         self.max_batch = self._input_shape[0]
         self._imgsz = self._input_shape[2]  # H = W
 
+        # Output layout validatsiyasi: faqat end2end NMS layout (batch, num, 6)
+        # = [x1, y1, x2, y2, conf, cls] qo'llab-quvvatlanadi.
+        # Raw YOLO layout (masalan (batch, 84, 8400)) uchun bu parser
+        # noto'g'ri natija beradi — shu sabab TRT backend'ni toza xato bilan
+        # to'xtatamiz, fallback zanjiri Ultralytics'ga o'tsin.
+        if len(self._output_shape) != 3 or self._output_shape[-1] != 6:
+            raise RuntimeError(
+                f"TRT output layout qo'llab-quvvatlanmaydi: {self._output_shape}. "
+                f"end2end NMS layout (batch, num, 6) kutilgan edi. "
+                f"Engine'ni nms=True bilan qayta eksport qiling yoki Ultralytics fallback ishlatiladi."
+            )
+
         # Pre-allocate GPU buffers (max batch)
         self._input_buf = torch.zeros(self._input_shape, dtype=torch.float32, device=self.device)
         self._output_buf = torch.zeros(self._output_shape, dtype=torch.float32, device=self.device)
@@ -140,10 +156,10 @@ class TensorRTBackend:
         # Parallel preprocess pool (cv2/numpy release GIL - real parallelism)
         self._preprocess_pool = ThreadPoolExecutor(max_workers=min(max_batch, 4))
 
-        print(f"[TensorRT] Engine: {engine_path}")
-        print(f"[TensorRT] Input: {self._input_name} {self._input_shape}")
-        print(f"[TensorRT] Output: {self._output_name} {self._output_shape}")
-        print(f"[TensorRT] Max batch: {self.max_batch}, ImgSz: {self._imgsz}")
+        logger.info("[TensorRT] Engine: %s", engine_path)
+        logger.info("[TensorRT] Input: %s %s", self._input_name, self._input_shape)
+        logger.info("[TensorRT] Output: %s %s", self._output_name, self._output_shape)
+        logger.info("[TensorRT] Max batch: %s, ImgSz: %s", self.max_batch, self._imgsz)
 
     @property
     def imgsz(self) -> int:
@@ -202,6 +218,33 @@ class TensorRTBackend:
 
         return img
 
+    def close(self) -> None:
+        """Resurslarni bo'shatish: preprocess pool, TRT context/engine, GPU buferlar.
+        Model almashtirilganda GPU xotira + threadlar sizib ketmasligi uchun."""
+        # Preprocess pool'ni to'xtatish (kutmасdan)
+        pool = getattr(self, "_preprocess_pool", None)
+        if pool is not None:
+            try:
+                pool.shutdown(wait=False)
+            except Exception:
+                pass
+            self._preprocess_pool = None
+
+        # TRT context/engine va oldindan ajratilgan GPU buferlarni bo'shatish
+        for attr in ("context", "engine", "_input_buf", "_output_buf", "_stream"):
+            if hasattr(self, attr):
+                try:
+                    setattr(self, attr, None)
+                except Exception:
+                    pass
+
+        # CUDA cache'ni tozalash
+        try:
+            if self._torch is not None and self._torch.cuda.is_available():
+                self._torch.cuda.empty_cache()
+        except Exception:
+            pass
+
 
 class UltralyticsBackend:
     """Fallback: Ultralytics YOLO (PyTorch/ONNX)"""
@@ -210,6 +253,7 @@ class UltralyticsBackend:
                  imgsz: int, device: str, half: bool, classes: Optional[List[int]]):
         from ultralytics import YOLO
         import torch
+        self._torch = torch
 
         self._model = YOLO(model_path, task='detect')
         self._conf = conf
@@ -245,6 +289,16 @@ class UltralyticsBackend:
             classes=self._classes,
         )
 
+    def close(self) -> None:
+        """Resurslarni bo'shatish: model referenslari va CUDA cache.
+        Model almashtirilganda GPU xotira sizib ketmasligi uchun."""
+        self._model = None
+        try:
+            if self._torch is not None and self._torch.cuda.is_available():
+                self._torch.cuda.empty_cache()
+        except Exception:
+            pass
+
 
 class RealtimeMultiCameraDetector:
     """
@@ -259,11 +313,12 @@ class RealtimeMultiCameraDetector:
     - Natijalar darhol qaytariladi
     """
 
+    # Hozircha barcha sinflar Yashil (0,255,0) — BGR
     COLORS = {
-        2: (0, 255, 0),    # car - Yashil
-        3: (0, 255, 0),  # motorcycle - Apelsin
-        5: (0, 255, 0),  # bus - Sariq
-        7: (0, 255, 0),    # truck - Qizil
+        2: (0, 255, 0),  # car - Yashil
+        3: (0, 255, 0),  # motorcycle - Yashil
+        5: (0, 255, 0),  # bus - Yashil
+        7: (0, 255, 0),  # truck - Yashil
     }
     DEFAULT_COLOR = (0, 255, 0)
 
@@ -311,6 +366,9 @@ class RealtimeMultiCameraDetector:
         self._urgent_event = threading.Event()  # Darhol batch ishlatish uchun
 
         # Stats
+        # Bu listlar worker threadda append/pop qilinadi, GUI threadda
+        # get_stats()/get_fps() dan o'qiladi — shu sabab lock bilan himoyalanadi.
+        self._stats_lock = threading.Lock()
         self._inference_times = []
         self._batch_sizes = []
         self._cycle_times = []  # Actual wall-clock cycle time (sleep + infer)
@@ -322,20 +380,46 @@ class RealtimeMultiCameraDetector:
         if self._is_loaded:
             return True
 
-        # 1. TensorRT native (eng tez - 208 FPS)
+        # CUDA mavjudligini tekshirish. TensorRT majburiy CUDA talab qiladi;
+        # Ultralytics esa CPU'da ham ishlaydi (sekinroq).
+        cuda_available = False
+        try:
+            import torch
+            cuda_available = torch.cuda.is_available()
+        except Exception as e:
+            logger.warning("[RealtimeDetector] torch CUDA tekshiruvi muvaffaqiyatsiz: %s", e)
+
+        # Fallback backendlar uchun device/half ni CPU ga moslash.
+        # FP16 (half) CPU'da yaroqsiz — majburan o'chiramiz.
+        fallback_device = self.device
+        fallback_half = self.half
+        if self.device == "cuda" and not cuda_available:
+            logger.warning(
+                "[RealtimeDetector] CUDA yo'q — fallback CPU rejimiga o'tkazildi (half=False)"
+            )
+            fallback_device = "cpu"
+            fallback_half = False
+
+        # 1. TensorRT native (eng tez - 208 FPS) — faqat CUDA bo'lsa
         engine_path = find_engine(str(self.model_path))
-        if engine_path:
+        if engine_path and cuda_available:
             try:
                 self._trt = TensorRTBackend(engine_path)
                 self._model_type = "tensorrt"
                 self._class_names = COCO_NAMES.copy()
                 self._is_loaded = True
                 self._start_worker()
-                print(f"[RealtimeDetector] TensorRT NATIVE mode! Engine: {engine_path}")
+                logger.info("[RealtimeDetector] TensorRT NATIVE mode! Engine: %s", engine_path)
                 return True
             except Exception as e:
-                print(f"[RealtimeDetector] TensorRT xato: {e}")
+                logger.error("[RealtimeDetector] TensorRT xato: %s", e)
                 self._trt = None
+        elif engine_path and not cuda_available:
+            logger.warning(
+                "[RealtimeDetector] Engine topildi ('%s') lekin CUDA yo'q — "
+                "TensorRT o'tkazib yuborildi, Ultralytics CPU fallback ishlatiladi.",
+                engine_path,
+            )
 
         # 2. Ultralytics fallback (ONNX > PyTorch)
         candidates = []
@@ -346,23 +430,26 @@ class RealtimeMultiCameraDetector:
 
         for model_path, mtype in candidates:
             try:
-                print(f"[RealtimeDetector] {mtype.upper()} yuklanmoqda: {model_path}")
+                logger.info("[RealtimeDetector] %s yuklanmoqda: %s", mtype.upper(), model_path)
                 self._ultralytics = UltralyticsBackend(
                     model_path, self.confidence_threshold, self.iou_threshold,
-                    self.imgsz, self.device, self.half,
+                    self.imgsz, fallback_device, fallback_half,
                     list(self.filter_classes) if self.filter_classes else None,
                 )
                 self._model_type = mtype
                 self._class_names = self._ultralytics.class_names
                 self._is_loaded = True
                 self._start_worker()
-                print(f"[RealtimeDetector] Yuklandi! Mode: {mtype.upper()}")
+                logger.info(
+                    "[RealtimeDetector] Yuklandi! Mode: %s, Device: %s",
+                    mtype.upper(), fallback_device,
+                )
                 return True
             except Exception as e:
-                print(f"[RealtimeDetector] {mtype.upper()} xato: {e}")
+                logger.error("[RealtimeDetector] %s xato: %s", mtype.upper(), e)
                 self._ultralytics = None
 
-        print("[RealtimeDetector] Hech qaysi model yuklanmadi!")
+        logger.error("[RealtimeDetector] Hech qaysi model yuklanmadi!")
         return False
 
     def _start_worker(self):
@@ -404,21 +491,22 @@ class RealtimeMultiCameraDetector:
 
                 inference_ms = (time.perf_counter() - now) * 1000
 
-                # Cycle time = real wall-clock between batches (sleep + infer)
-                if self._last_cycle_time > 0:
-                    cycle_ms = (now - self._last_cycle_time) * 1000
-                    self._cycle_times.append(cycle_ms)
-                    if len(self._cycle_times) > 50:
-                        self._cycle_times.pop(0)
-                self._last_cycle_time = now
+                # Stats — GUI thread ham o'qiydi, shu sabab lock ostida yoziladi
+                with self._stats_lock:
+                    # Cycle time = real wall-clock between batches (sleep + infer)
+                    if self._last_cycle_time > 0:
+                        cycle_ms = (now - self._last_cycle_time) * 1000
+                        self._cycle_times.append(cycle_ms)
+                        if len(self._cycle_times) > 50:
+                            self._cycle_times.pop(0)
+                    self._last_cycle_time = now
 
-                # Stats
-                self._inference_times.append(inference_ms)
-                self._batch_sizes.append(batch_size)
-                if len(self._inference_times) > 50:
-                    self._inference_times.pop(0)
-                    self._batch_sizes.pop(0)
-                self._processed_count += batch_size
+                    self._inference_times.append(inference_ms)
+                    self._batch_sizes.append(batch_size)
+                    if len(self._inference_times) > 50:
+                        self._inference_times.pop(0)
+                        self._batch_sizes.pop(0)
+                    self._processed_count += batch_size
 
                 # Signal results (detections + original frame for aligned drawing)
                 with self._results_lock:
@@ -427,7 +515,7 @@ class RealtimeMultiCameraDetector:
                         event.set()
 
             except Exception as e:
-                print(f"[RealtimeDetector] Batch error: {e}")
+                logger.error("[RealtimeDetector] Batch error: %s", e)
                 for cam_id, frame, event in batch_data:
                     event.set()
 
@@ -470,6 +558,15 @@ class RealtimeMultiCameraDetector:
         orig_h, orig_w = orig_size
         imgsz = self._trt.imgsz
 
+        # Himoya: end2end layout har bir frame uchun (num, 6) bo'lishi shart.
+        # (Backend load'da tekshirilgan, bu esa qo'shimcha kafolat.)
+        if output.ndim != 2 or output.shape[1] != 6:
+            logger.error(
+                "[RealtimeDetector] TRT output shape kutilmagan: %s ((num, 6) kerak) — bo'sh natija",
+                output.shape,
+            )
+            return detections
+
         # Scale factor from letterbox
         r = min(imgsz / orig_h, imgsz / orig_w)
         new_w, new_h = int(orig_w * r), int(orig_h * r)
@@ -508,8 +605,8 @@ class RealtimeMultiCameraDetector:
                 class_name=cls_name,
             ))
 
-        # NMS (simple IoU-based)
-        detections = self._nms(detections)
+        # NMS (simple IoU-based) — configdagi iou_threshold hurmat qilinadi
+        detections = self._nms(detections, self.iou_threshold)
         return detections
 
     @staticmethod
@@ -664,17 +761,26 @@ class RealtimeMultiCameraDetector:
 
     def get_fps(self) -> float:
         """Per-camera FPS (har bir kamera uchun haqiqiy tezlik)"""
-        if not self._cycle_times:
+        # Worker thread yozayotgan listni lock ostida nusxalaymiz
+        with self._stats_lock:
+            cycle_times = list(self._cycle_times)
+        if not cycle_times:
             return 0.0
-        avg_cycle = sum(self._cycle_times) / len(self._cycle_times)
+        avg_cycle = sum(cycle_times) / len(cycle_times)
         return 1000.0 / avg_cycle if avg_cycle > 0 else 0.0
 
     def get_stats(self) -> Dict:
-        avg_ms = sum(self._inference_times) / len(self._inference_times) if self._inference_times else 0
-        avg_batch = sum(self._batch_sizes) / len(self._batch_sizes) if self._batch_sizes else 0
-        avg_cycle = sum(self._cycle_times) / len(self._cycle_times) if self._cycle_times else 0
+        # Worker thread yozayotgan listlarni lock ostida bir marta nusxalaymiz
+        with self._stats_lock:
+            inference_times = list(self._inference_times)
+            batch_sizes = list(self._batch_sizes)
+            cycle_times = list(self._cycle_times)
+            processed_count = self._processed_count
+        avg_ms = sum(inference_times) / len(inference_times) if inference_times else 0
+        avg_batch = sum(batch_sizes) / len(batch_sizes) if batch_sizes else 0
+        avg_cycle = sum(cycle_times) / len(cycle_times) if cycle_times else 0
         return {
-            "processed": self._processed_count,
+            "processed": processed_count,
             "avg_batch_ms": avg_ms,
             "avg_batch_size": avg_batch,
             "avg_cycle_ms": avg_cycle,
@@ -696,9 +802,30 @@ class RealtimeMultiCameraDetector:
         self._running = False
         if self._worker_thread:
             self._worker_thread.join(timeout=2.0)
+            self._worker_thread = None
+
+        # Backend resurslarini bo'shatish (thread pool, TRT engine/context/GPU buferlar).
+        # Model almashtirilganda GPU xotira + threadlar sizib ketmasligi uchun.
+        if self._trt is not None:
+            try:
+                self._trt.close()
+            except Exception as e:
+                logger.warning("[RealtimeDetector] TRT close xato: %s", e)
+            self._trt = None
+        if self._ultralytics is not None:
+            try:
+                self._ultralytics.close()
+            except Exception as e:
+                logger.warning("[RealtimeDetector] Ultralytics close xato: %s", e)
+            self._ultralytics = None
+
+        self._is_loaded = False
 
     def __del__(self):
-        self.stop()
+        try:
+            self.stop()
+        except Exception:
+            pass
 
     def __repr__(self):
         return f"RealtimeMultiCameraDetector(fps={self.get_fps():.1f}, mode={self._model_type.upper()})"

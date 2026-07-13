@@ -132,7 +132,7 @@ class PolygonTracker:
     def process_detections(self, detections) -> Dict[int, Track]:
         """Har kadr chaqiriladi. Kumulyativ light_count/heavy_count yangilanadi.
         Returns: active tracks dict (visualization uchun)."""
-        now = time.time()
+        now = time.monotonic()
 
         matches = self._match_detections(detections)
 

@@ -7,6 +7,7 @@ Ishlash tartibi:
   - Faqat PLC aktiv bo'lganda (poyezd kelmoqda) signal yuboriladi
 """
 
+import logging
 import threading
 import time
 
@@ -17,41 +18,10 @@ try:
     SNAP7_AVAILABLE = True
 except ImportError:
     SNAP7_AVAILABLE = False
-    print("[PLCManager] python-snap7 o'rnatilmagan — PLC ishlamaydi")
 
-
-def _plc_get_state(device_ip: str, device_port: int) -> bool:
-    """PLC dan poyezd holatini o'qish.
-    DB5.DBW0 == 256  →  poyezd kelmoqda (True)
-    """
-    plc = Client()
-    plc.connect(device_ip, 0, 1, tcp_port=device_port)
-    try:
-        ans = plc.read_area(area=Areas.DB, db_number=5, start=0, size=2)
-        return get_int(ans, 0) == 256
-    finally:
-        try:
-            plc.disconnect()
-        except Exception:
-            pass
-
-
-def _plc_send_cars(device_ip: str, device_port: int, has_cars: bool) -> None:
-    """PLC ga polygon ichida mashina borligini yuborish.
-    DB1.DBX0.0 = has_cars
-    snap7 v2.x: set_bool yangi bytearray qaytaradi.
-    """
-    plc = Client()
-    plc.connect(device_ip, 0, 1, tcp_port=device_port)
-    try:
-        buf = bytearray(2)
-        result = set_bool(buf, 0, 0, has_cars)
-        # snap7 v2.x qaytaradi; v1.x in-place o'zgartiradi
-        if result is not None:
-            buf = result
-        plc.write_area(area=Areas.DB, db_number=1, start=0, data=buf)
-    finally:
-        plc.disconnect()
+logger = logging.getLogger("RailSafe.plc")
+if not SNAP7_AVAILABLE:
+    logger.warning("python-snap7 o'rnatilmagan — PLC ishlamaydi")
 
 
 class PLCManager:
@@ -70,11 +40,13 @@ class PLCManager:
     """
 
     def __init__(self, device_ip: str, device_port: int = 102,
-                 poll_interval: float = 0.5, send_interval: float = 0.5):
+                 poll_interval: float = 0.5, send_interval: float = 0.5,
+                 connect_timeout: float = 3.0):
         self.device_ip = device_ip
         self.device_port = device_port
         self.poll_interval = poll_interval
         self.send_interval = send_interval
+        self._connect_timeout = max(0.5, float(connect_timeout))
 
         self._lock = threading.Lock()
         self._plc_active = False   # Poyezd kelmoqdami?
@@ -82,6 +54,7 @@ class PLCManager:
         self._connected = False    # Qurilma bilan aloqa bormi?
         self._running = False
         self._thread = None
+        self._client = None        # Doimiy snap7 client (bir marta ulanadi, qayta ishlatiladi)
         self._last_poll = 0.0
         self._last_send = 0.0
         self._last_ok_time = 0.0   # Oxirgi muvaffaqiyatli poll vaqti
@@ -89,26 +62,122 @@ class PLCManager:
         self._send_errors = 0      # Send xato hisoblagichi
         self._offline_after_errors = 5  # Necha xatodan keyin offline (≈2.5s)
 
+    # ── Doimiy client boshqaruvi ─────────────────────────────────────
+
+    def _ensure_client(self):
+        """Doimiy snap7 clientni tayyorlash. Ulanmagan bo'lsa — ulanadi.
+        Connect alohida threadda timeout bilan bajariladi: osilib qolgan
+        connect worker loopni cheksiz bloklamasin.
+        Ulanmasa Exception ko'taradi (worker try/except uni hisoblaydi).
+        """
+        if self._client is not None:
+            return self._client
+
+        client = Client()
+        # Recv/Send timeout (ms) — o'qish/yozish osilib qolmasin (best-effort)
+        try:
+            timeout_ms = int(self._connect_timeout * 1000)
+            from snap7.type import Parameter
+            client.set_param(Parameter.RecvTimeout, timeout_ms)
+            client.set_param(Parameter.SendTimeout, timeout_ms)
+        except Exception:
+            pass  # snap7 versiyasi qo'llab-quvvatlamasa — o'tkazib yuboramiz
+
+        err = {}
+
+        def _do_connect():
+            try:
+                client.connect(self.device_ip, 0, 1, tcp_port=self.device_port)
+            except Exception as e:
+                err['e'] = e
+
+        t = threading.Thread(target=_do_connect, daemon=True,
+                             name=f"plc-connect-{self.device_ip}")
+        t.start()
+        t.join(self._connect_timeout)
+
+        connected = False
+        if not t.is_alive() and 'e' not in err:
+            try:
+                connected = client.get_connected()
+            except Exception:
+                connected = 'e' not in err
+
+        if t.is_alive() or 'e' in err or not connected:
+            # Ulanmadi — osilgan yoki xato bo'lgan clientni tashlab yuboramiz
+            try:
+                client.disconnect()
+            except Exception:
+                pass
+            try:
+                client.destroy()
+            except Exception:
+                pass
+            raise ConnectionError(err.get('e', "connect timeout"))
+
+        self._client = client
+        return client
+
+    def _disconnect_client(self):
+        """Doimiy clientni yopish va ozod qilish."""
+        client = self._client
+        self._client = None
+        if client is not None:
+            try:
+                client.disconnect()
+            except Exception:
+                pass
+            try:
+                client.destroy()
+            except Exception:
+                pass
+
+    def _read_state(self) -> bool:
+        """PLC dan poyezd holatini o'qish (doimiy client orqali).
+        DB5.DBW0 == 256  →  poyezd kelmoqda (True)
+        """
+        client = self._ensure_client()
+        ans = client.read_area(area=Areas.DB, db_number=5, start=0, size=2)
+        return get_int(ans, 0) == 256
+
+    def _send_cars(self, has_cars: bool) -> None:
+        """PLC ga polygon ichida mashina borligini yuborish (doimiy client).
+        DB1.DBX0.0 = has_cars.  snap7 v2.x: set_bool yangi bytearray qaytaradi.
+        """
+        client = self._ensure_client()
+        buf = bytearray(2)
+        result = set_bool(buf, 0, 0, has_cars)
+        # snap7 v2.x qaytaradi; v1.x in-place o'zgartiradi
+        if result is not None:
+            buf = result
+        client.write_area(area=Areas.DB, db_number=1, start=0, data=buf)
+
     def start(self):
         """PLC polling threadini ishga tushirish."""
         if self._running:
             return
         if not SNAP7_AVAILABLE:
-            print(f"[PLCManager {self.device_ip}] snap7 yo'q, ishga tushmadi")
+            logger.warning("[%s] snap7 yo'q, ishga tushmadi", self.device_ip)
             return
         self._running = True
         self._thread = threading.Thread(
             target=self._worker, daemon=True,
             name=f"plc-{self.device_ip}")
         self._thread.start()
-        print(f"[PLCManager] Ishga tushdi: {self.device_ip}:{self.device_port}")
+        logger.info("Ishga tushdi: %s:%s", self.device_ip, self.device_port)
 
     def stop(self):
-        """PLC threadini to'xtatish — NON-BLOCKING.
-        Daemon thread o'z-o'zidan to'xtaydi, join qilish shart emas.
+        """PLC threadini to'xtatish.
+        Worker thread join qilinadi (bounded timeout) — tez stop→start ikkita
+        worker yaratib qo'ymasligi uchun. So'ng doimiy client uziladi.
         """
         self._running = False
-        self._thread = None  # Reference ozod qilinadi; thread daemon bo'lgani uchun o'ladi
+        t = self._thread
+        if t is not None and t.is_alive() and t is not threading.current_thread():
+            t.join(timeout=2.0)
+        self._thread = None
+        # Worker to'xtagandan keyin clientni xavfsiz uzamiz
+        self._disconnect_client()
 
     def get_plc_active(self) -> bool:
         """Hozirgi PLC holatini qaytarish (thread-safe). True = poyezd kelmoqda."""
@@ -137,7 +206,7 @@ class PLCManager:
             if now - self._last_poll >= self.poll_interval:
                 self._last_poll = now
                 try:
-                    new_state = _plc_get_state(self.device_ip, self.device_port)
+                    new_state = self._read_state()
                     self._last_ok_time = now
                     self._consecutive_errors = 0
                     with self._lock:
@@ -145,9 +214,12 @@ class PLCManager:
                         self._connected = True
                 except Exception as e:
                     self._consecutive_errors += 1
+                    # Xato bo'lsa doimiy clientni tashlaymiz — keyingi pollda qayta ulanadi
+                    self._disconnect_client()
                     # Birinchi xato va har 60-chi xatoda log (spam oldini olish)
                     if self._consecutive_errors == 1 or self._consecutive_errors % 60 == 0:
-                        print(f"[PLCManager {self.device_ip}] Ulanish yo'q (#{self._consecutive_errors}): {e}")
+                        logger.warning("[%s] Ulanish yo'q (#%s): %s",
+                                       self.device_ip, self._consecutive_errors, e)
                     with self._lock:
                         self._plc_active = False
                         # N xatodan keyin yoki 2 daqiqa signal bo'lmasa — offline
@@ -164,12 +236,15 @@ class PLCManager:
                     cars = self._has_cars
                 if active:
                     try:
-                        _plc_send_cars(self.device_ip, self.device_port, cars)
+                        self._send_cars(cars)
                         self._send_errors = 0  # Muvaffaqiyatli — counter reset
                     except Exception as e:
                         self._send_errors += 1
+                        # Xato bo'lsa clientni tashlaymiz — keyingi pollda qayta ulanadi
+                        self._disconnect_client()
                         # Birinchi va har 60-chi xatoda log
                         if self._send_errors == 1 or self._send_errors % 60 == 0:
-                            print(f"[PLCManager {self.device_ip}] Send xato (#{self._send_errors}): {e}")
+                            logger.warning("[%s] Send xato (#%s): %s",
+                                           self.device_ip, self._send_errors, e)
 
             time.sleep(0.05)

@@ -132,10 +132,13 @@ _on_plc_grace_expired() [10s o'tgandan keyin]:
 | Fayl | Sinf | Vazifa |
 |------|------|--------|
 | `database.py` | `StatsDB` | SQLite bilan ishlash — transport va poyezd statistikasi |
-| `config.py` | `ConfigManager` | `config/gui_config.json` ni o'qish/yozish |
-| `plc.py` | `PLCManager` | Siemens S7-1200 bilan snap7 orqali aloqa |
+| `config.py` | `ConfigManager` | `config/gui_config.json` ni o'qish/yozish (thread-safe) |
+| `plc.py` | `PLCManager` | Siemens S7-1200 bilan snap7 orqali aloqa (doimiy client) |
 | `tracker.py` | `PolygonTracker` | Deteksiyalarni kuzatish va polygon zona hisoblash |
-| `camera.py` | `CameraHelper` | RTSP ulanish yordamchi funksiyalari |
+| `camera.py` | `OptimizedCamera` | RTSP ulanish yordamchi funksiyalari |
+| `plate_recognizer.py` | `PlateRecognizer` | ANPR — ikki bosqichli YOLO (plita → OCR), sifat oshirish, format-tuzatish |
+| `violation_detector.py` | `ViolationDetector` | Poyezd o'tishida qoidabuzar mashina raqamini o'qib dalil saqlash |
+| `recording_controller.py` | `RecordingController` | Kesishma bo'yicha video yozuvni boshqarish |
 
 ### `database.py` — Ma'lumotlar bazasi
 
@@ -216,6 +219,36 @@ PLCManager (daemon thread):
             False → transport yo'q
 ```
 
+### `plate_recognizer.py` + `violation_detector.py` — ANPR
+
+Poyezd o'tayotganda kesishmadagi mashina raqamini o'qib dalil saqlaydi.
+
+```
+PLC poyezd signali → ViolationDetector.on_plc_signal() (armlash)
+        │
+        ▼
+Kamera worker (real-time)              AnprWorker (ALOHIDA fon thread)
+  asl full-res toza kadr + tracklar ──submit──▶  ViolationDetector.process_frame()
+  (bloklanmaydi)                                   │
+                                                   ├── _crop_car (full-res)
+                                                   ├── PlateRecognizer.detect_and_read
+                                                   │     ├── detect_plate (YOLO)
+                                                   │     ├── _enhance_plate (deskew+CLAHE+
+                                                   │     │     kattalashtirish+unsharp)
+                                                   │     └── read_plate (OCR) + format-tuzatish
+                                                   ├── eng tiniq kadr (Laplacian variance)
+                                                   ├── retry konsensus (per-character ovoz)
+                                                   └── dalil: JPG + crop + violations.csv
+```
+
+**Nega alohida thread?** OCR og'ir (2 ta YOLO, 1024/1152px). Real-time video va
+transport hisoblash oqimiga ta'sir qilmasligi uchun ANPR `AnprWorker` (bounded queue)
+da bajariladi. Kamera worker faqat kadrni topshiradi (~3ms) va davom etadi.
+
+**Sozlamalar** (`gui_config.json`):
+- `violation_enabled` — PLC signalida ANPR yoqilsinmi
+- `anpr_test_mode` — PLC'siz kesishmalarda ham har mashinani sinash (test)
+
 ---
 
 ## `reports/` — Hisobot Generatorlar
@@ -247,6 +280,7 @@ PLCManager (daemon thread):
 |------|--------|
 | `theme_colors.py` | `C("accent_brand")` — mavzuga qarab rang qaytaradi |
 | `language.py` | `t("key")` — joriy tilda matn qaytaradi, `LM` singleton |
+| `video_recorder.py` | `VideoRecorder` — poyezd o'tishida video segment yozish (bounded queue, disk tekshiruvi) |
 
 ---
 

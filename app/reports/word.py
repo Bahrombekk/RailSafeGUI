@@ -4,6 +4,8 @@ Belgilangan sana oralig'ida pereezd monitoring statistikasini eksport qiladi.
 Professional dizayn: rangli banner, accent kartalar, vizual grafiklar.
 """
 
+import logging
+
 from docx import Document
 from docx.shared import Inches, Pt, Cm, RGBColor, Emu
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -12,6 +14,10 @@ from docx.enum.section import WD_ORIENT
 from docx.oxml.ns import qn, nsdecls
 from docx.oxml import parse_xml
 from datetime import datetime, date, timedelta
+
+from app.utils.language import t
+
+logger = logging.getLogger("RailSafe.reports")
 
 # ─── Ranglar (HTML dizaynga mos) ──────────────────────────
 # Header: #0d2b4e / #1a3d6b / #1558a0  (HTML bilan bir xil)
@@ -90,10 +96,8 @@ def generate_report(config_manager, stats_db, date_from: str, date_to: str,
         doc.save(file_path)
         return True
 
-    except Exception as e:
-        print(f"[ReportGenerator] Error: {e}")
-        import traceback
-        traceback.print_exc()
+    except Exception:
+        logger.exception("[ReportGenerator] Hisobot yaratishda xato")
         return False
 
 
@@ -116,7 +120,7 @@ def _add_title_page(doc, date_from, date_to, crossings):
     _set_cell_padding(c0, top=180, bottom=100, left=400, right=400)
     p = c0.paragraphs[0]
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run = p.add_run("O'ZBEKISTON TEMIR YO'LLARI  —  AKSIYADORLIK JAMIYATI")
+    run = p.add_run(t("rpt.org_name").upper())
     run.font.size = Pt(9)
     run.font.color.rgb = BRAND_PALE
     run.font.name = 'Calibri'
@@ -129,7 +133,7 @@ def _add_title_page(doc, date_from, date_to, crossings):
 
     pb = c1.paragraphs[0]
     pb.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run = pb.add_run("Avtomatlashtirilgan monitoring tizimi")
+    run = pb.add_run(t("rpt.auto_system"))
     run.font.size = Pt(8)
     run.font.color.rgb = RGBColor(0x90, 0xB8, 0xD8)
     run.font.name = 'Calibri'
@@ -137,7 +141,7 @@ def _add_title_page(doc, date_from, date_to, crossings):
 
     pt = c1.add_paragraph()
     pt.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run = pt.add_run("AQLLI TEMIR YO'L KESISHMASI")
+    run = pt.add_run(t("rpt.main_title").upper())
     run.bold = True
     run.font.size = Pt(20)
     run.font.color.rgb = WHITE
@@ -146,7 +150,7 @@ def _add_title_page(doc, date_from, date_to, crossings):
 
     ps = c1.add_paragraph()
     ps.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run = ps.add_run("Monitoring Hisoboti — transport harakati va poyezd o'tishlarining statistik tahlili")
+    run = ps.add_run(t("rpt.subtitle"))
     run.font.size = Pt(9)
     run.font.color.rgb = RGBColor(0x90, 0xB8, 0xD8)
     run.font.name = 'Calibri'
@@ -158,7 +162,8 @@ def _add_title_page(doc, date_from, date_to, crossings):
     _set_cell_padding(c2, top=120, bottom=120, left=400, right=400)
     p2 = c2.paragraphs[0]
     p2.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run = p2.add_run(f"Hisobot davri:   {_format_date(date_from)}  —  {_format_date(date_to)}")
+    run = p2.add_run(
+        f"{t('rpt.period')}:   {_format_date(date_from)}  —  {_format_date(date_to)}")
     run.font.size = Pt(11)
     run.font.color.rgb = WHITE
     run.font.name = 'Calibri'
@@ -172,20 +177,21 @@ def _add_title_page(doc, date_from, date_to, crossings):
     _remove_table_borders(info)
 
     _add_banner_card(info.rows[0].cells[0],
-                     str(len(crossings)), "Pereezdlar", ACCENT_BLUE_HEX)
+                     str(len(crossings)), t("rpt.pereezds"), ACCENT_BLUE_HEX)
     _add_banner_card(info.rows[0].cells[1],
-                     str(total_cams), "Kameralar", "156B9A")
+                     str(total_cams), t("rpt.cameras"), "156B9A")
     _add_banner_card(info.rows[0].cells[2],
-                     _format_date(date_from), "Boshlanish", ACCENT_GREEN_HEX)
+                     _format_date(date_from), t("rpt.start"), ACCENT_GREEN_HEX)
     _add_banner_card(info.rows[0].cells[3],
-                     _format_date(date_to), "Tugash", ACCENT_TEAL_HEX)
+                     _format_date(date_to), t("rpt.end"), ACCENT_TEAL_HEX)
 
     _add_spacer(doc, 20)
 
     # Yaratilgan vaqt
     gen = doc.add_paragraph()
     gen.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run = gen.add_run(f"Hisobot yaratilgan: {datetime.now().strftime('%d.%m.%Y  %H:%M')}")
+    run = gen.add_run(
+        t("rpt.report_created_at", dt=datetime.now().strftime('%d.%m.%Y  %H:%M')))
     run.font.size = Pt(9)
     run.font.color.rgb = TEXT_LIGHT
     run.italic = True
@@ -193,7 +199,7 @@ def _add_title_page(doc, date_from, date_to, crossings):
 
     sys_p = doc.add_paragraph()
     sys_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run = sys_p.add_run("RailSafe Monitoring System v2.0")
+    run = sys_p.add_run(t("rpt.system_ver"))
     run.font.size = Pt(9)
     run.font.color.rgb = TEXT_LIGHT
     run.italic = True
@@ -206,7 +212,7 @@ def _add_title_page(doc, date_from, date_to, crossings):
 # ═══════════════════════════════════════════════════════════
 
 def _add_summary(doc, stats_db, crossings, date_from, date_to):
-    _section_header(doc, "1", "UMUMIY STATISTIKA")
+    _section_header(doc, "1", t("rpt.sec_summary").upper())
 
     grand_light  = 0
     grand_heavy  = 0
@@ -225,43 +231,44 @@ def _add_summary(doc, stats_db, crossings, date_from, date_to):
     _remove_table_borders(cards)
 
     _add_stat_card(cards.rows[0].cells[0], str(grand_total),
-                   "JAMI TRANSPORT",  LIGHT_BLUE_BG,   BRAND,
+                   t("rpt.card_total_transport").upper(), LIGHT_BLUE_BG,   BRAND,
                    ACCENT_BLUE_HEX)
     _add_stat_card(cards.rows[0].cells[1], str(grand_light),
-                   "YENGIL",          LIGHT_GREEN_BG,  ACCENT_GREEN,
+                   t("rpt.light").upper(),          LIGHT_GREEN_BG,  ACCENT_GREEN,
                    ACCENT_GREEN_HEX)
     _add_stat_card(cards.rows[0].cells[2], str(grand_heavy),
-                   "OG'IR",           LIGHT_ORANGE_BG, ACCENT_ORANGE,
+                   t("rpt.heavy").upper(),           LIGHT_ORANGE_BG, ACCENT_ORANGE,
                    ACCENT_ORANGE_HEX)
     _add_stat_card(cards.rows[0].cells[3], str(grand_trains),
-                   "POYEZDLAR",       LIGHT_TEAL_BG,   ACCENT_TEAL,
+                   t("rpt.card_trains").upper(),       LIGHT_TEAL_BG,   ACCENT_TEAL,
                    ACCENT_TEAL_HEX)
 
     _add_spacer(doc, 10)
 
     # ── Pereezdlar qiyosiy tahlili ───────────────────────────
-    _sub_header(doc, "Pereezdlar bo'yicha qiyosiy tahlil")
+    _sub_header(doc, t("rpt.compare_analysis"))
 
     cr_data = []
     max_total = 1
     for cr in crossings:
         l, h = stats_db.get_date_range_total(cr["id"], date_from, date_to)
         ts = stats_db.get_train_range_stats(cr["id"], date_from, date_to)
-        t = l + h
-        if t > max_total:
-            max_total = t
-        cr_data.append((cr, l, h, t, ts["count"]))
+        tot = l + h
+        if tot > max_total:
+            max_total = tot
+        cr_data.append((cr, l, h, tot, ts["count"]))
 
     # Jadval — # | Pereezd | Yengil | Og'ir | Jami | ████ grafik | Poyezdlar
-    headers = ["#", "Pereezd", "Yengil", "Og'ir", "Jami", "Nisbati", "Poyezdlar"]
+    headers = [t("rpt.col_num"), t("rpt.col_pereezd"), t("rpt.light"),
+               t("rpt.heavy"), t("rpt.total"), t("rpt.col_ratio"), t("rpt.col_trains")]
     rows_data = []
-    for idx, (cr, l, h, t, trains) in enumerate(cr_data):
-        bar_len = int(t / max_total * 20) if max_total > 0 else 0
+    for idx, (cr, l, h, tot, trains) in enumerate(cr_data):
+        bar_len = int(tot / max_total * 20) if max_total > 0 else 0
         bar = "█" * bar_len + "░" * (20 - bar_len)
         rows_data.append([
             str(idx + 1),
             cr.get("name", f"Pereezd #{cr['id']}"),
-            str(l), str(h), str(t),
+            str(l), str(h), str(tot),
             bar,
             str(trains),
         ])
@@ -332,31 +339,32 @@ def _add_crossing_section(doc, stats_db, crossing, date_from, date_to,
     total = light + heavy
     train_stats = stats_db.get_train_range_stats(cid, date_from, date_to)
 
-    _block_label(doc, "TRANSPORT STATISTIKASI", ACCENT_BLUE_HEX)
+    _block_label(doc, t("rpt.transport_stats").upper(), ACCENT_BLUE_HEX)
 
     cards = doc.add_table(rows=1, cols=4)
     cards.alignment = WD_TABLE_ALIGNMENT.CENTER
     _remove_table_borders(cards)
 
     _add_stat_card(cards.rows[0].cells[0], str(total),
-                   "JAMI",   LIGHT_BLUE_BG,   BRAND,         ACCENT_BLUE_HEX)
+                   t("rpt.total").upper(),   LIGHT_BLUE_BG,   BRAND,         ACCENT_BLUE_HEX)
     _add_stat_card(cards.rows[0].cells[1], str(light),
-                   "YENGIL", LIGHT_GREEN_BG,  ACCENT_GREEN,  ACCENT_GREEN_HEX)
+                   t("rpt.light").upper(), LIGHT_GREEN_BG,  ACCENT_GREEN,  ACCENT_GREEN_HEX)
     _add_stat_card(cards.rows[0].cells[2], str(heavy),
-                   "OG'IR",  LIGHT_ORANGE_BG, ACCENT_ORANGE, ACCENT_ORANGE_HEX)
+                   t("rpt.heavy").upper(),  LIGHT_ORANGE_BG, ACCENT_ORANGE, ACCENT_ORANGE_HEX)
     _add_stat_card(cards.rows[0].cells[3], str(train_stats["count"]),
-                   "POYEZDLAR", LIGHT_TEAL_BG, ACCENT_TEAL,  ACCENT_TEAL_HEX)
+                   t("rpt.card_trains").upper(), LIGHT_TEAL_BG, ACCENT_TEAL,  ACCENT_TEAL_HEX)
 
     _add_spacer(doc, 10)
 
     # ── Kameralar statistikasi ───────────────────────────────
     if cameras:
-        _block_label(doc, "KAMERALAR STATISTIKASI", "156B9A")
-        cam_headers = ["#", "Kamera", "Turi", "Yengil", "Og'ir", "Jami"]
+        _block_label(doc, t("rpt.cam_stats").upper(), "156B9A")
+        cam_headers = [t("rpt.col_num"), t("rpt.col_camera"), t("rpt.col_type"),
+                       t("rpt.light"), t("rpt.heavy"), t("rpt.total")]
         cam_rows = []
         for idx, cam in enumerate(cameras):
             cn = cam.get("name", "?")
-            ct = "Asosiy" if cam.get("type") == "main" else "Qo'shimcha"
+            ct = t("crossing.type.main") if cam.get("type") == "main" else t("crossing.type.additional")
             cl, ch = stats_db.get_date_range_camera(cid, cn, date_from, date_to)
             cam_rows.append([str(idx + 1), cn, ct, str(cl), str(ch), str(cl + ch)])
 
@@ -369,22 +377,23 @@ def _add_crossing_section(doc, stats_db, crossing, date_from, date_to,
     # ── Kunlik statistika ────────────────────────────────────
     daily_data = stats_db.get_date_range_daily(cid, date_from, date_to)
     if daily_data:
-        _block_label(doc, "KUNLIK STATISTIKA", HDR_GREEN)
+        _block_label(doc, t("rpt.daily_stats").upper(), HDR_GREEN)
 
-        days_uz = ["Dushanba", "Seshanba", "Chorshanba", "Payshanba",
-                   "Juma", "Shanba", "Yakshanba"]
+        # Hafta kunlari nomlari (0=Dushanba ... 6=Yakshanba)
+        day_names = [t(f"rpt.weekday_{i}") for i in range(7)]
         max_day = max((d["light"] + d["heavy"] for d in daily_data), default=1) or 1
 
-        daily_headers = ["#", "Sana", "Kun", "Yengil", "Og'ir", "Jami", "Grafik"]
+        daily_headers = [t("rpt.col_num"), t("rpt.col_date"), t("rpt.col_day"),
+                         t("rpt.light"), t("rpt.heavy"), t("rpt.total"), t("rpt.col_chart")]
         daily_rows = []
         for idx, d in enumerate(daily_data):
             try:
                 dt = datetime.strptime(d["date"], "%Y-%m-%d")
-                day_name = days_uz[dt.weekday()]
+                day_name = day_names[dt.weekday()]
             except (ValueError, TypeError):
                 day_name = "—"
-            t = d["light"] + d["heavy"]
-            bar_len = int(t / max_day * 16) if max_day > 0 else 0
+            tot = d["light"] + d["heavy"]
+            bar_len = int(tot / max_day * 16) if max_day > 0 else 0
             bar = "█" * bar_len
             daily_rows.append([
                 str(idx + 1),
@@ -392,7 +401,7 @@ def _add_crossing_section(doc, stats_db, crossing, date_from, date_to,
                 day_name,
                 str(d["light"]),
                 str(d["heavy"]),
-                str(t),
+                str(tot),
                 bar,
             ])
 
@@ -404,14 +413,15 @@ def _add_crossing_section(doc, stats_db, crossing, date_from, date_to,
         _add_spacer(doc, 10)
 
     # ── Poyezd harakati ──────────────────────────────────────
-    _block_label(doc, "POYEZD HARAKATI", HDR_TEAL)
+    _block_label(doc, t("rpt.train_movement").upper(), HDR_TEAL)
 
     def _fmt_dur(secs):
         if not secs:
             return "—"
         m = int(secs) // 60
         s = int(secs) % 60
-        return f"{m} daq {s:02d} son" if m > 0 else f"{s} son"
+        return (f"{m} {t('unit.min')} {s:02d} {t('unit.sec')}"
+                if m > 0 else f"{s} {t('unit.sec')}")
 
     # 4 ta poyezd kartasi
     tcards = doc.add_table(rows=1, cols=4)
@@ -419,23 +429,24 @@ def _add_crossing_section(doc, stats_db, crossing, date_from, date_to,
     _remove_table_borders(tcards)
 
     _add_stat_card(tcards.rows[0].cells[0], str(train_stats["count"]),
-                   "JAMI POYEZDLAR", LIGHT_TEAL_BG,    ACCENT_TEAL,   ACCENT_TEAL_HEX)
+                   t("rpt.total_trains").upper(), LIGHT_TEAL_BG,    ACCENT_TEAL,   ACCENT_TEAL_HEX)
     _add_stat_card(tcards.rows[0].cells[1],
                    _fmt_dur(train_stats["avg"]) if train_stats["count"] else "—",
-                   "O'RTACHA VAQT", LIGHT_BLUE_BG,   BRAND_LIGHT,   ACCENT_BLUE_HEX)
+                   t("rpt.avg_time").upper(), LIGHT_BLUE_BG,   BRAND_LIGHT,   ACCENT_BLUE_HEX)
     _add_stat_card(tcards.rows[0].cells[2],
                    _fmt_dur(train_stats["min"]) if train_stats["count"] else "—",
-                   "MINIMAL VAQT",  LIGHT_GREEN_BG,  ACCENT_GREEN,  ACCENT_GREEN_HEX)
+                   t("rpt.min_time").upper(),  LIGHT_GREEN_BG,  ACCENT_GREEN,  ACCENT_GREEN_HEX)
     _add_stat_card(tcards.rows[0].cells[3],
                    _fmt_dur(train_stats["max"]) if train_stats["count"] else "—",
-                   "MAKSIMAL VAQT", LIGHT_ORANGE_BG, ACCENT_ORANGE, ACCENT_ORANGE_HEX)
+                   t("rpt.max_time").upper(), LIGHT_ORANGE_BG, ACCENT_ORANGE, ACCENT_ORANGE_HEX)
 
     _add_spacer(doc, 8)
 
     # Poyezdlar o'tish jadvali
     train_events = stats_db.get_train_events_range(cid, date_from, date_to)
     if train_events:
-        t_headers = ["#", "Sana", "Kirish", "Chiqish", "Davomiyligi"]
+        t_headers = [t("rpt.col_num"), t("rpt.col_date"), t("rpt.col_enter"),
+                     t("rpt.col_exit"), t("rpt.col_duration")]
         t_rows = []
         for idx, ev in enumerate(train_events):
             t_rows.append([
@@ -451,7 +462,7 @@ def _add_crossing_section(doc, stats_db, crossing, date_from, date_to,
                           bold_col=4)
     elif train_stats["count"] == 0:
         p = doc.add_paragraph()
-        run = p.add_run("  Tanlangan davr uchun poyezd o'tishi qayd etilmagan.")
+        run = p.add_run("  " + t("rpt.no_train_period"))
         run.font.size = Pt(9)
         run.font.color.rgb = TEXT_GRAY
         run.italic = True
@@ -471,7 +482,7 @@ def _add_footer(doc):
 
     p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run = p.add_run("— Hisobot tugadi —")
+    run = p.add_run("— " + t("rpt.footer_end") + " —")
     run.font.size = Pt(10)
     run.font.color.rgb = TEXT_LIGHT
     run.italic = True
@@ -479,10 +490,10 @@ def _add_footer(doc):
 
     p2 = doc.add_paragraph()
     p2.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run = p2.add_run("RailSafe Monitoring System  |  ")
+    run = p2.add_run(t("rpt.footer_system") + "  |  ")
     run.font.size = Pt(8)
     run.font.color.rgb = TEXT_LIGHT
-    run = p2.add_run(f"Yaratilgan: {datetime.now().strftime('%d.%m.%Y %H:%M')}")
+    run = p2.add_run(t("rpt.report_created_at", dt=datetime.now().strftime('%d.%m.%Y %H:%M')))
     run.font.size = Pt(8)
     run.font.color.rgb = TEXT_LIGHT
 

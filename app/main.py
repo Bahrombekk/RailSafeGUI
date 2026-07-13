@@ -17,6 +17,14 @@ faulthandler.enable()
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+# Konsol chiqishini UTF-8 ga o'tkazish — Windows cp1251 konsolida '→', '—',
+# emoji kabi belgilar UnicodeEncodeError bermasligi uchun (print xatolari).
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+
 # Suppress HEVC/ffmpeg codec warnings
 os.environ['OPENCV_LOG_LEVEL'] = 'ERROR'
 os.environ['OPENCV_FFMPEG_LOGLEVEL'] = '-8'
@@ -91,7 +99,7 @@ def main():
     app = QApplication(sys.argv)
     app.setApplicationName("RailSafe AI")
     app.setOrganizationName("RailSafe AI Team")
-    app.setApplicationVersion("1.0.0")
+    app.setApplicationVersion("1.1.0")
 
     # Set application style
     app.setStyle("Fusion")

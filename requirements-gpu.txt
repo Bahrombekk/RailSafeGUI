@@ -1,0 +1,20 @@
+# RailSafe AI — GPU (NVIDIA CUDA) o'rnatish
+# TensorRT native inference (208 FPS) uchun. NVIDIA GPU + drayver talab qilinadi.
+#
+#   pip install -r requirements-gpu.txt
+#
+# Eslatma: torch/torchvision CUDA 13.0 (cu130) build'lari PyTorch
+# rasmiy indeksidan yuklab olinadi (--extra-index-url).
+
+-r requirements-base.txt
+
+--extra-index-url https://download.pytorch.org/whl/cu130
+
+torch==2.10.0+cu130
+torchvision==0.25.0+cu130
+
+# AI deteksiya
+ultralytics==8.4.19
+
+# TensorRT (GPU tezlashtirish — ixtiyoriy, o'rnatilmasa PyTorch/ONNX ga o'tadi)
+tensorrt==10.15.1.29

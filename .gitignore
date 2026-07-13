@@ -1,5 +1,7 @@
 # Virtual environment
 venv/
+.venv/
+env/
 
 # Python cache
 __pycache__/
@@ -47,3 +49,23 @@ __pycache__/
 # Project specific
 Keraksiz/
 runs/
+
+# PyInstaller / Inno Setup build chiqishlari
+build/
+dist/
+Output/
+*.manifest
+
+# Yaratilgan hisobotlar (repo'ga kirmasligi kerak)
+*.docx
+*.pdf
+image.png
+app/hisobot_*.pdf
+app/hisobot_*.docx
+app/toifa_hisobot.docx
+hisobot_*.pdf
+hisobot_*.docx
+
+# Runtime ma'lumotlar (baza WAL/SHM)
+*.db-shm
+*.db-wal

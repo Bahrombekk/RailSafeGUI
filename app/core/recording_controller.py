@@ -75,14 +75,18 @@ class RecordingController:
                       f"{rec.last_error or 'unknown error'}")
         return any_started
 
-    def stop(self):
-        """Barcha aktiv recorder-larni to'xtatish va worker dan uzish."""
+    def stop(self) -> list:
+        """Barcha aktiv recorder-larni to'xtatish. Saqlangan fayl yo'llarini qaytaradi."""
+        paths = []
         for rec in self._active:
             try:
                 rec.stop()
+                if rec.last_path:
+                    paths.append(rec.last_path)
             except Exception as e:
                 print(f"[RecordingController] stop error: {e}")
         self._active.clear()
+        return paths
 
     def detach_workers(self, workers: list):
         """Worker-lardan video_recorder reference-ni olib tashlash."""

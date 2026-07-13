@@ -4,12 +4,23 @@ Real DB ma'lumotlaridan zamonaviy HTML hisobot yaratadi.
 test_hsobot.py dizayniga mos — CSS kartalar, jadvallar, rang kodlari.
 """
 
+import html
+import logging
 from datetime import datetime
+
+from app.utils.language import t, LM
+
+logger = logging.getLogger("RailSafe.reports")
 
 
 def build_html_report(config_manager, stats_db,
                       date_from: str, date_to: str) -> str:
     """HTML string qaytaradi — PDF yoki preview uchun."""
+
+    # HTML injection oldini olish uchun — config/DB dan kelgan har qanday
+    # matnni interpolatsiyadan oldin escape qilamiz.
+    def _e(s):
+        return html.escape(str(s)) if s is not None else ""
 
     def _fmt(n):
         return f"{int(n):,}".replace(",", " ") if isinstance(n, (int, float)) else str(n)
@@ -19,7 +30,8 @@ def build_html_report(config_manager, stats_db,
             return "—"
         m = int(secs) // 60
         s = int(secs) % 60
-        return f"{m} daq {s:02d} son" if m > 0 else f"{s} son"
+        return (f"{m} {t('unit.min')} {s:02d} {t('unit.sec')}"
+                if m > 0 else f"{s} {t('unit.sec')}")
 
     def _fdate(d):
         try:
@@ -46,13 +58,13 @@ def build_html_report(config_manager, stats_db,
         cam_rows_html = ""
         for i, cam in enumerate(cr.get("cameras", [])):
             cn = cam.get("name", "?")
-            ct = "Asosiy" if cam.get("type") == "main" else "Qo'shimcha"
+            ct = t("crossing.type.main") if cam.get("type") == "main" else t("crossing.type.additional")
             cl, ch = stats_db.get_date_range_camera(cid, cn, date_from, date_to)
             cam_rows_html += f"""
             <tr>
                 <td>{i+1}</td>
-                <td>{cn}</td>
-                <td><span class="badge">{ct}</span></td>
+                <td>{_e(cn)}</td>
+                <td><span class="badge">{_e(ct)}</span></td>
                 <td>{_fmt(cl)}</td>
                 <td>{_fmt(ch)}</td>
                 <td class="highlight">{_fmt(cl+ch)}</td>
@@ -65,21 +77,21 @@ def build_html_report(config_manager, stats_db,
             train_rows_html += f"""
             <tr>
                 <td>{idx}</td>
-                <td>{ev.get('date','')}</td>
-                <td><strong>{ev.get('start','')}</strong></td>
-                <td><strong>{ev.get('end','')}</strong></td>
-                <td class="highlight">{ev.get('duration_fmt','')}</td>
+                <td>{_e(ev.get('date',''))}</td>
+                <td><strong>{_e(ev.get('start',''))}</strong></td>
+                <td><strong>{_e(ev.get('end',''))}</strong></td>
+                <td class="highlight">{_e(ev.get('duration_fmt',''))}</td>
             </tr>"""
 
         train_section = (f"""
-        <div class="sub-title">🚂 Poyezdlar o'tish jadvali</div>
+        <div class="sub-title">🚂 {_e(t("rpt.train_pass_table"))}</div>
         <table>
             <thead><tr>
-                <th>#</th><th>Sana</th><th>Kirish</th><th>Chiqish</th><th>O'tish vaqti</th>
+                <th>{_e(t("rpt.col_num"))}</th><th>{_e(t("rpt.col_date"))}</th><th>{_e(t("rpt.col_enter"))}</th><th>{_e(t("rpt.col_exit"))}</th><th>{_e(t("rpt.col_pass_time"))}</th>
             </tr></thead>
             <tbody>{train_rows_html}</tbody>
-        </table>""") if events else """
-        <div class='no-data'>Bu kesishma uchun poyezd ma'lumotlari mavjud emas</div>"""
+        </table>""") if events else f"""
+        <div class='no-data'>{_e(t("rpt.no_train_data"))}</div>"""
 
         cx_data.append({
             "cr": cr, "light": light, "heavy": heavy, "total": light + heavy,
@@ -93,8 +105,8 @@ def build_html_report(config_manager, stats_db,
         cmp_rows += f"""
         <tr>
             <td>{i+1}</td>
-            <td><strong>{cr.get('name','')}</strong></td>
-            <td>{cr.get('location','—')}</td>
+            <td><strong>{_e(cr.get('name',''))}</strong></td>
+            <td>{_e(cr.get('location','—'))}</td>
             <td>{_fmt(d['light'])}</td>
             <td>{_fmt(d['heavy'])}</td>
             <td class="highlight">{_fmt(d['total'])}</td>
@@ -110,51 +122,51 @@ def build_html_report(config_manager, stats_db,
         <div class="section">
             <div class="section-header">
                 <div>
-                    <div class="section-title">{cr.get('name','')}</div>
-                    <div class="section-sub">📡 {cr.get('location','—')}</div>
+                    <div class="section-title">{_e(cr.get('name',''))}</div>
+                    <div class="section-sub">📡 {_e(cr.get('location','—'))}</div>
                 </div>
                 <div class="stat-row">
                     <div class="mini-stat" style="border-color:#1d4ed8">
                         <div class="ms-val" style="color:#1d4ed8">{_fmt(d['total'])}</div>
-                        <div class="ms-lbl">Jami</div>
+                        <div class="ms-lbl">{_e(t("rpt.total"))}</div>
                     </div>
                     <div class="mini-stat" style="border-color:#10b981">
                         <div class="ms-val" style="color:#10b981">{_fmt(d['light'])}</div>
-                        <div class="ms-lbl">Yengil</div>
+                        <div class="ms-lbl">{_e(t("rpt.light"))}</div>
                     </div>
                     <div class="mini-stat" style="border-color:#f59e0b">
                         <div class="ms-val" style="color:#f59e0b">{_fmt(d['heavy'])}</div>
-                        <div class="ms-lbl">Og'ir</div>
+                        <div class="ms-lbl">{_e(t("rpt.heavy"))}</div>
                     </div>
                 </div>
             </div>
 
-            <div class="sub-title">📷 Kameralar statistikasi</div>
+            <div class="sub-title">📷 {_e(t("rpt.cam_stats"))}</div>
             <table>
                 <thead><tr>
-                    <th>#</th><th>Kamera</th><th>Turi</th>
-                    <th>Yengil</th><th>Og'ir</th><th>Jami</th>
+                    <th>{_e(t("rpt.col_num"))}</th><th>{_e(t("rpt.col_camera"))}</th><th>{_e(t("rpt.col_type"))}</th>
+                    <th>{_e(t("rpt.light"))}</th><th>{_e(t("rpt.heavy"))}</th><th>{_e(t("rpt.total"))}</th>
                 </tr></thead>
                 <tbody>{d['cam_rows_html']}</tbody>
             </table>
 
-            <div class="sub-title" style="margin-top:18px">🚂 Poyezd harakati statistikasi</div>
+            <div class="sub-title" style="margin-top:18px">🚂 {_e(t("rpt.train_movement_stats"))}</div>
             <div class="stat-row" style="margin-bottom:14px">
                 <div class="mini-stat" style="border-color:#7c3aed">
                     <div class="ms-val" style="color:#7c3aed">{ts['count']}</div>
-                    <div class="ms-lbl">Jami poyezdlar</div>
+                    <div class="ms-lbl">{_e(t("rpt.total_trains"))}</div>
                 </div>
                 <div class="mini-stat" style="border-color:#1d4ed8">
                     <div class="ms-val" style="color:#1d4ed8">{_fmt_dur(ts['avg']) if ts['count'] else '—'}</div>
-                    <div class="ms-lbl">O'rtacha vaqt</div>
+                    <div class="ms-lbl">{_e(t("rpt.avg_time"))}</div>
                 </div>
                 <div class="mini-stat" style="border-color:#10b981">
                     <div class="ms-val" style="color:#10b981">{_fmt_dur(ts['min']) if ts['count'] else '—'}</div>
-                    <div class="ms-lbl">Minimal vaqt</div>
+                    <div class="ms-lbl">{_e(t("rpt.min_time"))}</div>
                 </div>
                 <div class="mini-stat" style="border-color:#ef4444">
                     <div class="ms-val" style="color:#ef4444">{_fmt_dur(ts['max']) if ts['count'] else '—'}</div>
-                    <div class="ms-lbl">Maksimal vaqt</div>
+                    <div class="ms-lbl">{_e(t("rpt.max_time"))}</div>
                 </div>
             </div>
             {d['train_section']}
@@ -164,11 +176,11 @@ def build_html_report(config_manager, stats_db,
     created_str = datetime.now().strftime("%d.%m.%Y  %H:%M")
 
     return f"""<!DOCTYPE html>
-<html lang="uz">
+<html lang="{_e(LM.current)}">
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>RailSafe — Monitoring Hisoboti</title>
+<title>{_e(t("rpt.doc_title"))}</title>
 <style>
   * {{ box-sizing:border-box; margin:0; padding:0; }}
   body {{ font-family:'Segoe UI',Arial,sans-serif; background:#f0f4f8; color:#1f2937; font-size:13px; }}
@@ -335,98 +347,84 @@ def build_html_report(config_manager, stats_db,
 <body>
 <div class="header">
   <div class="header-top-bar">
-    <div class="header-org-name">O'zbekiston Temir Yo'llari  —  Aksiyadorlik Jamiyati</div>
-    <div class="header-doc-num">RailSafe Monitoring System v2.0</div>
+    <div class="header-org-name">{_e(t("rpt.org_name"))}</div>
+    <div class="header-doc-num">{_e(t("rpt.system_ver"))}</div>
   </div>
   <div class="header-main">
     <div class="header-left">
-      <div class="header-system-badge">Avtomatlashtirilgan monitoring tizimi</div>
-      <div class="header-title">Aqlli Temir Yo'l Kesishmasi</div>
-      <div class="header-sub">Monitoring Hisoboti — transport harakati va poyezd o'tishlarining statistik tahlili</div>
+      <div class="header-system-badge">{_e(t("rpt.auto_system"))}</div>
+      <div class="header-title">{_e(t("rpt.main_title"))}</div>
+      <div class="header-sub">{_e(t("rpt.subtitle"))}</div>
     </div>
     <div class="header-right">
       <div class="header-meta-row">
-        <span class="header-meta-label">Hisobot davri</span>
-        <span class="header-meta-val">{period_str}</span>
+        <span class="header-meta-label">{_e(t("rpt.period"))}</span>
+        <span class="header-meta-val">{_e(period_str)}</span>
       </div>
       <div class="header-meta-row">
-        <span class="header-meta-label">Yaratilgan</span>
-        <span class="header-meta-val">{created_str}</span>
+        <span class="header-meta-label">{_e(t("rpt.created"))}</span>
+        <span class="header-meta-val">{_e(created_str)}</span>
       </div>
       <div class="header-meta-row">
-        <span class="header-meta-label">Kesishmalar</span>
-        <span class="header-meta-val">{len(crossings)} ta</span>
+        <span class="header-meta-label">{_e(t("rpt.crossings"))}</span>
+        <span class="header-meta-val">{_e(t("rpt.meta_count", n=len(crossings)))}</span>
       </div>
       <div class="header-meta-row">
-        <span class="header-meta-label">Kameralar</span>
-        <span class="header-meta-val">{total_cams} ta</span>
+        <span class="header-meta-label">{_e(t("rpt.cameras"))}</span>
+        <span class="header-meta-val">{_e(t("rpt.meta_count", n=total_cams))}</span>
       </div>
     </div>
   </div>
   <div class="header-bottom-bar">
-    <div class="hb-item">{len(crossings)} ta nazorat nuqtasi</div>
+    <div class="hb-item">{_e(t("rpt.checkpoints", n=len(crossings)))}</div>
     <span class="hb-sep">|</span>
-    <div class="hb-item">{total_cams} ta kuzatuv kamerasi</div>
+    <div class="hb-item">{_e(t("rpt.monitor_cameras", n=total_cams))}</div>
     <span class="hb-sep">|</span>
-    <div class="hb-item">{grand_trains} ta poyezd qayd etilgan</div>
+    <div class="hb-item">{_e(t("rpt.trains_recorded", n=grand_trains))}</div>
     <span class="hb-sep">|</span>
-    <div class="hb-item">Davr: {period_str}</div>
+    <div class="hb-item">{_e(t("rpt.period_label", period=period_str))}</div>
   </div>
 </div>
 
 <div class="content">
-  <div class="sec-title"><span>1. Umumiy Statistika</span></div>
+  <div class="sec-title"><span>1. {_e(t("rpt.sec_summary"))}</span></div>
   <div class="cards">
     <div class="card" style="border-top:4px solid #1d4ed8">
-      <div class="card-lbl">Jami Transport</div>
+      <div class="card-lbl">{_e(t("rpt.card_total_transport"))}</div>
       <div class="card-val">{_fmt(grand_light+grand_heavy)}</div>
     </div>
     <div class="card" style="border-top:4px solid #10b981">
-      <div class="card-lbl">Yengil Transport</div>
+      <div class="card-lbl">{_e(t("rpt.card_light_transport"))}</div>
       <div class="card-val">{_fmt(grand_light)}</div>
     </div>
     <div class="card" style="border-top:4px solid #f59e0b">
-      <div class="card-lbl">Og'ir Transport</div>
+      <div class="card-lbl">{_e(t("rpt.card_heavy_transport"))}</div>
       <div class="card-val">{_fmt(grand_heavy)}</div>
     </div>
     <div class="card" style="border-top:4px solid #7c3aed">
-      <div class="card-lbl">Poyezdlar</div>
+      <div class="card-lbl">{_e(t("rpt.card_trains"))}</div>
       <div class="card-val">{_fmt(grand_trains)}</div>
     </div>
   </div>
 
-  <div class="sec-title"><span>2. Kesishmalar Taqqoslash</span></div>
+  <div class="sec-title"><span>2. {_e(t("rpt.sec_compare"))}</span></div>
   <div class="section">
     <table>
       <thead><tr>
-        <th>#</th><th>Kesishma</th><th>Joylashuv</th>
-        <th>Yengil</th><th>Og'ir</th><th>Jami</th><th>Kameralar</th>
+        <th>{_e(t("rpt.col_num"))}</th><th>{_e(t("rpt.col_crossing"))}</th><th>{_e(t("rpt.col_location"))}</th>
+        <th>{_e(t("rpt.light"))}</th><th>{_e(t("rpt.heavy"))}</th><th>{_e(t("rpt.total"))}</th><th>{_e(t("rpt.col_cameras"))}</th>
       </tr></thead>
       <tbody>{cmp_rows}</tbody>
     </table>
   </div>
 
-  <div class="sec-title"><span>3. Kesishmalar Batafsil</span></div>
+  <div class="sec-title"><span>3. {_e(t("rpt.sec_detail"))}</span></div>
   {sections_html}
 
   <div class="footer">
-    — Hisobot tugadi —<br>
-    RailSafe Monitoring System  |  Yaratilgan: {created_str}
+    — {_e(t("rpt.footer_end"))} —<br>
+    {_e(t("rpt.footer_created", created=created_str))}
   </div>
 </div>
 </body>
 </html>"""
-
-
-def generate_html_report(config_manager, stats_db,
-                         date_from: str, date_to: str,
-                         file_path: str) -> bool:
-    """HTML faylga saqlash (eski interfeys)."""
-    try:
-        html = build_html_report(config_manager, stats_db, date_from, date_to)
-        with open(file_path, "w", encoding="utf-8") as f:
-            f.write(html)
-        return True
-    except Exception as e:
-        print(f"[ReportHTML] Error: {e}")
-        return False

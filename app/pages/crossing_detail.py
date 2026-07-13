@@ -14,6 +14,7 @@ import os
 import time
 import json
 import threading
+import logging
 
 from app.utils.theme_colors import C
 from app.utils.language import t, LM
@@ -176,6 +177,29 @@ def _load_polygon(polygon_file: str, frame_w: int, frame_h: int):
     except Exception as e:
         print(f"[Polygon] Yuklab bo'lmadi: {polygon_file}: {e}")
         return None, None
+
+
+_log = logging.getLogger("RailSafe.ui")
+
+# ── Worker "graveyard" (crossing_card.py dagi kabi) ─────────────────
+# Bounded wait() dan keyin hali tugamagan QThread'lar shu yerda saqlanadi —
+# Python referensiyasi ushlanib, QThread wrapper GC bo'lmaydi (crash yo'q).
+_RETIRED_WORKERS = []
+
+
+def _retire_worker(worker):
+    """To'xtatilgan, lekin OS thread'i hali tugamagan worker'ni saqlab qo'yish."""
+    for w in list(_RETIRED_WORKERS):
+        try:
+            if not w.isRunning():
+                _RETIRED_WORKERS.remove(w)
+        except (RuntimeError, Exception):
+            try:
+                _RETIRED_WORKERS.remove(w)
+            except ValueError:
+                pass
+    if worker not in _RETIRED_WORKERS:
+        _RETIRED_WORKERS.append(worker)
 
 
 class DetailCameraWorker(QThread):
@@ -441,8 +465,10 @@ class DetailCameraWorker(QThread):
         except Exception:
             return False
 
-    def stop(self):
-        # tryLock — deadlock dan himoya
+    def request_stop(self):
+        """To'xtash signalini beradi — BLOKLAMAYDI (parallel to'xtatish uchun).
+        Bir nechta worker'ni oldin request_stop, keyin wait_stopped bilan
+        yig'ish → umumiy kutish vaqti sum emas, max bo'ladi (GUI kam bloklanadi)."""
         try:
             if self._mutex.tryLock(1000):
                 self._running = False
@@ -454,10 +480,28 @@ class DetailCameraWorker(QThread):
         try:
             if self.isRunning():
                 self.quit()
-                if not self.wait(5000):
-                    print(f"[Detail-{self.camera_name}] Worker thread did not stop in 5s")
         except (RuntimeError, Exception):
             pass
+
+    def wait_stopped(self, wait_ms: int = 1500) -> bool:
+        """Thread tugashini cheklangan (bounded) muddat kutadi.
+        Returns True — tugadi, False — hali ishlamoqda (graveyard kerak)."""
+        try:
+            if not self.isRunning():
+                return True
+            if not self.wait(wait_ms):
+                _log.warning("[Detail-%s] Worker %d ms ichida to'xtamadi",
+                             self.camera_name, wait_ms)
+                return False
+            return True
+        except (RuntimeError, Exception) as e:
+            _log.exception("[Detail-%s] wait_stopped xato: %s", self.camera_name, e)
+            return True
+
+    def stop(self, wait_ms: int = 1500):
+        # request_stop + bounded wait — 5000ms o'rniga 1500ms (GUI freeze kamayadi)
+        self.request_stop()
+        self.wait_stopped(wait_ms)
 
 
 class CrossingDetail(QWidget):
@@ -938,6 +982,10 @@ class CrossingDetail(QWidget):
                     self._on_stats_update(cid, cname, light, heavy, in_poly, max_t, 0.0)
                 worker.frame_with_data.connect(fn_frame)
                 worker.stats_updated.connect(fn_stats)
+                # Card worker'ga "menga kadr kerak" deb bildiramiz — shundagina
+                # u og'ir frame_with_data(QImage) signalini emit qiladi.
+                if hasattr(worker, "add_frame_consumer"):
+                    worker.add_frame_consumer()
                 self._shared_signal_ids[cam_id] = (worker, fn_frame, fn_stats)
                 self.camera_workers_dict[cam_id] = worker
                 self._on_camera_status(cam_id, "online")
@@ -1388,6 +1436,12 @@ class CrossingDetail(QWidget):
                 worker.stats_updated.disconnect(fn_stats)
             except (TypeError, RuntimeError):
                 pass
+            # Tinglovchi ketdi — card endi og'ir frame_with_data emit qilmasin
+            if hasattr(worker, "remove_frame_consumer"):
+                try:
+                    worker.remove_frame_consumer()
+                except (RuntimeError, Exception):
+                    pass
         self._shared_signal_ids.clear()
 
         # O'z workerlarini to'xtatish (shared emaslar)
@@ -1404,9 +1458,18 @@ class CrossingDetail(QWidget):
                 w.stats_updated.disconnect()
             except (TypeError, RuntimeError):
                 pass
+        # Avval BARCHASIGA to'xtash signalini beramiz (parallel), keyin bounded
+        # join — shunda GUI ko'pi bilan ~1.5s bloklanadi (N*5s emas).
         for w in self.camera_workers:
             try:
-                w.stop()
+                w.request_stop()
+            except (RuntimeError, Exception):
+                pass
+        for w in self.camera_workers:
+            try:
+                if not w.wait_stopped(1500):
+                    # Hali tugamadi — graveyard'ga (GC bo'lib crash chiqmasin)
+                    _retire_worker(w)
             except (RuntimeError, Exception):
                 pass
         self.camera_workers.clear()
@@ -1447,10 +1510,10 @@ class CrossingDetail(QWidget):
             pass
 
     def refresh(self):
+        # cleanup() endi worker'larni bounded join bilan to'xtatadi
+        # (parallel request_stop + wait_stopped) — GUI thread'da qo'shimcha
+        # time.sleep() kerak emas, tugamaganlar graveyard'da xavfsiz saqlanadi.
         self.cleanup()
-        # Barcha workerlar to'liq to'xtaganligini kutish
-        import time as _time
-        _time.sleep(0.1)
         self._destroyed = False
         self.crossing_data = self.config_manager.get_crossing(self.crossing_id)
         self.camera_labels.clear()

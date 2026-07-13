@@ -6,8 +6,11 @@ Thread-safe. Stores per-camera, per-hour counts. Auto-resets at midnight.
 import sqlite3
 import threading
 import os
+import logging
 from datetime import datetime, date, timedelta
 from typing import List, Dict, Tuple, Optional
+
+logger = logging.getLogger("RailSafe.database")
 
 
 class StatsDB:
@@ -80,9 +83,10 @@ class StatsDB:
             last_l, last_h = self._last_counts.get(key, (0, 0))
             delta_l = max(0, light - last_l)
             delta_h = max(0, heavy - last_h)
-            self._last_counts[key] = (light, heavy)
 
             if delta_l == 0 and delta_h == 0:
+                # Delta yo'q bo'lsa ham oxirgi qiymatni yangilaymiz (INSERT talab qilinmaydi)
+                self._last_counts[key] = (light, heavy)
                 return
 
             hour = self._current_hour()
@@ -100,38 +104,55 @@ class StatsDB:
                 """, (crossing_id, camera_name, hour, delta_l, delta_h, now,
                       delta_l, delta_h, now))
                 self._conn.commit()
+                # Faqat INSERT muvaffaqiyatli bo'lgandan keyin oxirgi qiymatni
+                # yangilaymiz — aks holda xatoda delta butunlay yo'qoladi.
+                self._last_counts[key] = (light, heavy)
             except Exception as e:
-                print(f"[StatsDB] record_count error: {e}")
+                logger.error("record_count error: %s", e)
 
-    def get_today_total(self, crossing_id: int) -> Tuple[int, int]:
-        """Bugungi kun uchun jami (barcha kameralar, 00:00 dan hozirga).
+    def get_today_total(self, crossing_id: int,
+                        target_date: Optional[str] = None) -> Tuple[int, int]:
+        """Berilgan kun uchun jami (barcha kameralar).
+        target_date: "2026-05-13" format (None = bugun).
         Returns: (light_total, heavy_total)"""
-        today = date.today().isoformat()
-        with self._lock:
-            row = self._conn.execute("""
-                SELECT COALESCE(SUM(light_count), 0),
-                       COALESCE(SUM(heavy_count), 0)
-                FROM hourly_stats
-                WHERE crossing_id = ?
-                  AND date(hour_start) = ?
-            """, (crossing_id, today)).fetchone()
-        return (row[0], row[1]) if row else (0, 0)
+        if target_date is None:
+            target_date = date.today().isoformat()
+        try:
+            with self._lock:
+                row = self._conn.execute("""
+                    SELECT COALESCE(SUM(light_count), 0),
+                           COALESCE(SUM(heavy_count), 0)
+                    FROM hourly_stats
+                    WHERE crossing_id = ?
+                      AND date(hour_start) = ?
+                """, (crossing_id, target_date)).fetchone()
+            return (row[0], row[1]) if row else (0, 0)
+        except Exception as e:
+            logger.error("get_today_total error: %s", e)
+            return (0, 0)
 
     def get_camera_today(self, crossing_id: int,
-                         camera_name: str) -> Tuple[int, int]:
-        """Bitta kamera uchun bugungi jami.
+                         camera_name: str,
+                         target_date: Optional[str] = None) -> Tuple[int, int]:
+        """Bitta kamera uchun berilgan kun jamisi.
+        target_date: "2026-05-13" format (None = bugun).
         Returns: (light, heavy)"""
-        today = date.today().isoformat()
-        with self._lock:
-            row = self._conn.execute("""
-                SELECT COALESCE(SUM(light_count), 0),
-                       COALESCE(SUM(heavy_count), 0)
-                FROM hourly_stats
-                WHERE crossing_id = ?
-                  AND camera_name = ?
-                  AND date(hour_start) = ?
-            """, (crossing_id, camera_name, today)).fetchone()
-        return (row[0], row[1]) if row else (0, 0)
+        if target_date is None:
+            target_date = date.today().isoformat()
+        try:
+            with self._lock:
+                row = self._conn.execute("""
+                    SELECT COALESCE(SUM(light_count), 0),
+                           COALESCE(SUM(heavy_count), 0)
+                    FROM hourly_stats
+                    WHERE crossing_id = ?
+                      AND camera_name = ?
+                      AND date(hour_start) = ?
+                """, (crossing_id, camera_name, target_date)).fetchone()
+            return (row[0], row[1]) if row else (0, 0)
+        except Exception as e:
+            logger.error("get_camera_today error: %s", e)
+            return (0, 0)
 
     def get_hourly_data(self, crossing_id: int,
                         target_date: Optional[str] = None) -> List[Dict]:
@@ -140,75 +161,89 @@ class StatsDB:
         if target_date is None:
             target_date = date.today().isoformat()
 
-        with self._lock:
-            rows = self._conn.execute("""
-                SELECT CAST(strftime('%H', hour_start) AS INTEGER) as hour,
-                       SUM(light_count) as light,
-                       SUM(heavy_count) as heavy
-                FROM hourly_stats
-                WHERE crossing_id = ?
-                  AND date(hour_start) = ?
-                GROUP BY hour
-                ORDER BY hour
-            """, (crossing_id, target_date)).fetchall()
-
         # 24 soat uchun to'liq massiv
         data = [{"hour": h, "light": 0, "heavy": 0} for h in range(24)]
-        for hour, light, heavy in rows:
-            if 0 <= hour < 24:
-                data[hour]["light"] = light or 0
-                data[hour]["heavy"] = heavy or 0
+        try:
+            with self._lock:
+                rows = self._conn.execute("""
+                    SELECT CAST(strftime('%H', hour_start) AS INTEGER) as hour,
+                           SUM(light_count) as light,
+                           SUM(heavy_count) as heavy
+                    FROM hourly_stats
+                    WHERE crossing_id = ?
+                      AND date(hour_start) = ?
+                    GROUP BY hour
+                    ORDER BY hour
+                """, (crossing_id, target_date)).fetchall()
+            for hour, light, heavy in rows:
+                if 0 <= hour < 24:
+                    data[hour]["light"] = light or 0
+                    data[hour]["heavy"] = heavy or 0
+        except Exception as e:
+            logger.error("get_hourly_data error: %s", e)
         return data
 
-    def get_weekly_data(self, crossing_id: int) -> List[Dict]:
+    def get_weekly_data(self, crossing_id: int,
+                        date_to: Optional[date] = None) -> List[Dict]:
         """Oxirgi 7 kun (kunlik jami), hafta kuni tartibi bilan (Du→Ya).
+        date_to: oxirgi kun (None = bugun).
         Returns: [{"date": "2026-02-11", "day": "Du", "light": 10, "heavy": 3}, ...]"""
         days_uz = ["Du", "Se", "Cho", "Pa", "Ju", "Sha", "Ya"]
-        today = date.today()
-        date_from = (today - timedelta(days=6)).isoformat()
-        with self._lock:
-            rows = self._conn.execute("""
-                SELECT date(hour_start) as d,
-                       COALESCE(SUM(light_count), 0),
-                       COALESCE(SUM(heavy_count), 0)
-                FROM hourly_stats
-                WHERE crossing_id = ?
-                  AND date(hour_start) >= ? AND date(hour_start) <= ?
-                GROUP BY d
-            """, (crossing_id, date_from, today.isoformat())).fetchall()
-        db_map = {r[0]: (r[1], r[2]) for r in rows}
-        data = []
-        for i in range(6, -1, -1):
-            d = today - timedelta(days=i)
-            ds = d.isoformat()
-            light, heavy = db_map.get(ds, (0, 0))
-            data.append({"date": ds, "day": days_uz[d.weekday()], "light": light, "heavy": heavy})
-        data.sort(key=lambda x: days_uz.index(x["day"]))
-        return data
+        if date_to is None:
+            date_to = date.today()
+        date_from = (date_to - timedelta(days=6)).isoformat()
+        try:
+            with self._lock:
+                rows = self._conn.execute("""
+                    SELECT date(hour_start) as d,
+                           COALESCE(SUM(light_count), 0),
+                           COALESCE(SUM(heavy_count), 0)
+                    FROM hourly_stats
+                    WHERE crossing_id = ?
+                      AND date(hour_start) >= ? AND date(hour_start) <= ?
+                    GROUP BY d
+                """, (crossing_id, date_from, date_to.isoformat())).fetchall()
+            db_map = {r[0]: (r[1], r[2]) for r in rows}
+            data = []
+            # 7 kunlik oyna eng eski kundan eng yangisiga qarab quriladi —
+            # sana (xronologik) tartibi shu bo'yicha saqlanadi, hafta kuni nomi bilan emas.
+            for i in range(6, -1, -1):
+                d = date_to - timedelta(days=i)
+                ds = d.isoformat()
+                light, heavy = db_map.get(ds, (0, 0))
+                data.append({"date": ds, "day": days_uz[d.weekday()], "light": light, "heavy": heavy})
+            return data
+        except Exception as e:
+            logger.error("get_weekly_data error: %s", e)
+            return []
 
     def get_monthly_data(self, crossing_id: int) -> List[Dict]:
         """Oxirgi 30 kun (kunlik jami).
         Returns: [{"date": "2026-01-13", "light": 10, "heavy": 3}, ...]"""
         today = date.today()
         date_from = (today - timedelta(days=29)).isoformat()
-        with self._lock:
-            rows = self._conn.execute("""
-                SELECT date(hour_start) as d,
-                       COALESCE(SUM(light_count), 0),
-                       COALESCE(SUM(heavy_count), 0)
-                FROM hourly_stats
-                WHERE crossing_id = ?
-                  AND date(hour_start) >= ? AND date(hour_start) <= ?
-                GROUP BY d
-            """, (crossing_id, date_from, today.isoformat())).fetchall()
-        db_map = {r[0]: (r[1], r[2]) for r in rows}
-        data = []
-        for i in range(29, -1, -1):
-            d = today - timedelta(days=i)
-            ds = d.isoformat()
-            light, heavy = db_map.get(ds, (0, 0))
-            data.append({"date": ds, "day": d.day, "light": light, "heavy": heavy})
-        return data
+        try:
+            with self._lock:
+                rows = self._conn.execute("""
+                    SELECT date(hour_start) as d,
+                           COALESCE(SUM(light_count), 0),
+                           COALESCE(SUM(heavy_count), 0)
+                    FROM hourly_stats
+                    WHERE crossing_id = ?
+                      AND date(hour_start) >= ? AND date(hour_start) <= ?
+                    GROUP BY d
+                """, (crossing_id, date_from, today.isoformat())).fetchall()
+            db_map = {r[0]: (r[1], r[2]) for r in rows}
+            data = []
+            for i in range(29, -1, -1):
+                d = today - timedelta(days=i)
+                ds = d.isoformat()
+                light, heavy = db_map.get(ds, (0, 0))
+                data.append({"date": ds, "day": d.day, "light": light, "heavy": heavy})
+            return data
+        except Exception as e:
+            logger.error("get_monthly_data error: %s", e)
+            return []
 
     def get_yearly_data(self, crossing_id: int) -> List[Dict]:
         """Oxirgi 12 oy (oylik jami).
@@ -217,121 +252,148 @@ class StatsDB:
                      "Iyl", "Avg", "Sen", "Okt", "Noy", "Dek"]
         today = date.today()
         data = []
-        with self._lock:
-            for i in range(11, -1, -1):
-                # i oy oldin
-                m = today.month - i
-                y = today.year
-                while m <= 0:
-                    m += 12
-                    y -= 1
-                ms = f"{y}-{m:02d}"
-                row = self._conn.execute("""
-                    SELECT COALESCE(SUM(light_count), 0),
-                           COALESCE(SUM(heavy_count), 0)
-                    FROM hourly_stats
-                    WHERE crossing_id = ?
-                      AND strftime('%Y-%m', hour_start) = ?
-                """, (crossing_id, ms)).fetchone()
-                data.append({
-                    "month": ms,
-                    "label": months_uz[m - 1],
-                    "light": row[0] if row else 0,
-                    "heavy": row[1] if row else 0,
-                })
-        return data
+        try:
+            with self._lock:
+                for i in range(11, -1, -1):
+                    # i oy oldin
+                    m = today.month - i
+                    y = today.year
+                    while m <= 0:
+                        m += 12
+                        y -= 1
+                    ms = f"{y}-{m:02d}"
+                    row = self._conn.execute("""
+                        SELECT COALESCE(SUM(light_count), 0),
+                               COALESCE(SUM(heavy_count), 0)
+                        FROM hourly_stats
+                        WHERE crossing_id = ?
+                          AND strftime('%Y-%m', hour_start) = ?
+                    """, (crossing_id, ms)).fetchone()
+                    data.append({
+                        "month": ms,
+                        "label": months_uz[m - 1],
+                        "light": row[0] if row else 0,
+                        "heavy": row[1] if row else 0,
+                    })
+            return data
+        except Exception as e:
+            logger.error("get_yearly_data error: %s", e)
+            return []
 
-    def get_heatmap_data(self, crossing_id: int) -> List[Dict]:
+    def get_heatmap_data(self, crossing_id: int,
+                         date_to: Optional[date] = None) -> List[Dict]:
         """Oxirgi 7 kun heatmap: har kun uchun 24 soatlik ma'lumot, hafta kuni tartibi (Du→Ya).
+        date_to: oxirgi kun (None = bugun).
         Returns: [{"date": "...", "day": "Du", "hours": [0]*24}, ...] (7 ta)
         """
         days_uz = ["Du", "Se", "Cho", "Pa", "Ju", "Sha", "Ya"]
-        today = date.today()
-        date_from = (today - timedelta(days=6)).isoformat()
-        with self._lock:
-            rows = self._conn.execute("""
-                SELECT date(hour_start) as d,
-                       CAST(strftime('%H', hour_start) AS INTEGER) as h,
-                       COALESCE(SUM(light_count), 0) + COALESCE(SUM(heavy_count), 0)
-                FROM hourly_stats
-                WHERE crossing_id = ?
-                  AND date(hour_start) >= ? AND date(hour_start) <= ?
-                GROUP BY d, h
-            """, (crossing_id, date_from, today.isoformat())).fetchall()
-        db_map = {}
-        for d_str, h, total in rows:
-            db_map.setdefault(d_str, {})[h] = total
-        data = []
-        for i in range(6, -1, -1):
-            d = today - timedelta(days=i)
-            ds = d.isoformat()
-            hours = [db_map.get(ds, {}).get(h, 0) for h in range(24)]
-            data.append({"date": ds, "day": days_uz[d.weekday()], "hours": hours})
-        data.sort(key=lambda x: days_uz.index(x["day"]))
-        return data
+        if date_to is None:
+            date_to = date.today()
+        date_from = (date_to - timedelta(days=6)).isoformat()
+        try:
+            with self._lock:
+                rows = self._conn.execute("""
+                    SELECT date(hour_start) as d,
+                           CAST(strftime('%H', hour_start) AS INTEGER) as h,
+                           COALESCE(SUM(light_count), 0) + COALESCE(SUM(heavy_count), 0)
+                    FROM hourly_stats
+                    WHERE crossing_id = ?
+                      AND date(hour_start) >= ? AND date(hour_start) <= ?
+                    GROUP BY d, h
+                """, (crossing_id, date_from, date_to.isoformat())).fetchall()
+            db_map = {}
+            for d_str, h, total in rows:
+                db_map.setdefault(d_str, {})[h] = total
+            data = []
+            # Sana (xronologik) tartibida — eng eski kundan eng yangisiga.
+            for i in range(6, -1, -1):
+                d = date_to - timedelta(days=i)
+                ds = d.isoformat()
+                hours = [db_map.get(ds, {}).get(h, 0) for h in range(24)]
+                data.append({"date": ds, "day": days_uz[d.weekday()], "hours": hours})
+            return data
+        except Exception as e:
+            logger.error("get_heatmap_data error: %s", e)
+            return []
 
     def get_date_range_daily(self, crossing_id: int,
                              date_from: str, date_to: str) -> List[Dict]:
         """Belgilangan sana oralig'ida kunlik statistika.
         date_from, date_to: "2026-02-01" format.
         Returns: [{"date": "2026-02-01", "light": 10, "heavy": 3}, ...]"""
-        with self._lock:
-            rows = self._conn.execute("""
-                SELECT date(hour_start) as d,
-                       COALESCE(SUM(light_count), 0),
-                       COALESCE(SUM(heavy_count), 0)
-                FROM hourly_stats
-                WHERE crossing_id = ?
-                  AND date(hour_start) >= ?
-                  AND date(hour_start) <= ?
-                GROUP BY d
-                ORDER BY d
-            """, (crossing_id, date_from, date_to)).fetchall()
-        return [{"date": r[0], "light": r[1], "heavy": r[2]} for r in rows]
+        try:
+            with self._lock:
+                rows = self._conn.execute("""
+                    SELECT date(hour_start) as d,
+                           COALESCE(SUM(light_count), 0),
+                           COALESCE(SUM(heavy_count), 0)
+                    FROM hourly_stats
+                    WHERE crossing_id = ?
+                      AND date(hour_start) >= ?
+                      AND date(hour_start) <= ?
+                    GROUP BY d
+                    ORDER BY d
+                """, (crossing_id, date_from, date_to)).fetchall()
+            return [{"date": r[0], "light": r[1], "heavy": r[2]} for r in rows]
+        except Exception as e:
+            logger.error("get_date_range_daily error: %s", e)
+            return []
 
     def get_date_range_total(self, crossing_id: int,
                              date_from: str, date_to: str) -> Tuple[int, int]:
         """Belgilangan sana oralig'ida jami (light, heavy)."""
-        with self._lock:
-            row = self._conn.execute("""
-                SELECT COALESCE(SUM(light_count), 0),
-                       COALESCE(SUM(heavy_count), 0)
-                FROM hourly_stats
-                WHERE crossing_id = ?
-                  AND date(hour_start) >= ?
-                  AND date(hour_start) <= ?
-            """, (crossing_id, date_from, date_to)).fetchone()
-        return (row[0], row[1]) if row else (0, 0)
+        try:
+            with self._lock:
+                row = self._conn.execute("""
+                    SELECT COALESCE(SUM(light_count), 0),
+                           COALESCE(SUM(heavy_count), 0)
+                    FROM hourly_stats
+                    WHERE crossing_id = ?
+                      AND date(hour_start) >= ?
+                      AND date(hour_start) <= ?
+                """, (crossing_id, date_from, date_to)).fetchone()
+            return (row[0], row[1]) if row else (0, 0)
+        except Exception as e:
+            logger.error("get_date_range_total error: %s", e)
+            return (0, 0)
 
     def get_date_range_camera(self, crossing_id: int, camera_name: str,
                               date_from: str, date_to: str) -> Tuple[int, int]:
         """Bitta kamera uchun sana oralig'ida jami."""
-        with self._lock:
-            row = self._conn.execute("""
-                SELECT COALESCE(SUM(light_count), 0),
-                       COALESCE(SUM(heavy_count), 0)
-                FROM hourly_stats
-                WHERE crossing_id = ?
-                  AND camera_name = ?
-                  AND date(hour_start) >= ?
-                  AND date(hour_start) <= ?
-            """, (crossing_id, camera_name, date_from, date_to)).fetchone()
-        return (row[0], row[1]) if row else (0, 0)
+        try:
+            with self._lock:
+                row = self._conn.execute("""
+                    SELECT COALESCE(SUM(light_count), 0),
+                           COALESCE(SUM(heavy_count), 0)
+                    FROM hourly_stats
+                    WHERE crossing_id = ?
+                      AND camera_name = ?
+                      AND date(hour_start) >= ?
+                      AND date(hour_start) <= ?
+                """, (crossing_id, camera_name, date_from, date_to)).fetchone()
+            return (row[0], row[1]) if row else (0, 0)
+        except Exception as e:
+            logger.error("get_date_range_camera error: %s", e)
+            return (0, 0)
 
     def get_all_totals(self) -> Dict[int, Tuple[int, int]]:
         """Barcha pereezdlar uchun bugungi jami.
         Returns: {crossing_id: (light, heavy), ...}"""
         today = date.today().isoformat()
-        with self._lock:
-            rows = self._conn.execute("""
-                SELECT crossing_id,
-                       COALESCE(SUM(light_count), 0),
-                       COALESCE(SUM(heavy_count), 0)
-                FROM hourly_stats
-                WHERE date(hour_start) = ?
-                GROUP BY crossing_id
-            """, (today,)).fetchall()
-        return {r[0]: (r[1], r[2]) for r in rows}
+        try:
+            with self._lock:
+                rows = self._conn.execute("""
+                    SELECT crossing_id,
+                           COALESCE(SUM(light_count), 0),
+                           COALESCE(SUM(heavy_count), 0)
+                    FROM hourly_stats
+                    WHERE date(hour_start) = ?
+                    GROUP BY crossing_id
+                """, (today,)).fetchall()
+            return {r[0]: (r[1], r[2]) for r in rows}
+        except Exception as e:
+            logger.error("get_all_totals error: %s", e)
+            return {}
 
     # ─── TRAIN EVENTS ────────────────────────────────────────
 
@@ -380,73 +442,89 @@ class StatsDB:
         Yolg'on qisqa signallardan himoya: faqat davomiylik >= MIN_DURATION bo'lganda chaqiriladi.
         """
         duration = (end_dt - start_dt).total_seconds()
-        with self._lock:
-            self._conn.execute("""
-                INSERT INTO train_events
-                    (crossing_id, start_time, end_time, duration_seconds, event_date)
-                VALUES (?, ?, ?, ?, ?)
-            """, (crossing_id, start_dt.isoformat(), end_dt.isoformat(),
-                  duration, start_dt.date().isoformat()))
-            self._conn.commit()
+        try:
+            with self._lock:
+                self._conn.execute("""
+                    INSERT INTO train_events
+                        (crossing_id, start_time, end_time, duration_seconds, event_date)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (crossing_id, start_dt.isoformat(), end_dt.isoformat(),
+                      duration, start_dt.date().isoformat()))
+                self._conn.commit()
+        except Exception as e:
+            logger.error("record_train_event error: %s", e)
 
     def record_train_start(self, crossing_id: int):
         """Eski usul (to'g'ridan-to'g'ri foydalanilmaydi, moslik uchun saqlanadi)."""
         now = datetime.now()
-        with self._lock:
-            existing = self._conn.execute("""
-                SELECT id FROM train_events
-                WHERE crossing_id = ? AND end_time IS NULL
-                LIMIT 1
-            """, (crossing_id,)).fetchone()
-            if existing:
-                return
-            self._conn.execute("""
-                INSERT INTO train_events (crossing_id, start_time, event_date)
-                VALUES (?, ?, ?)
-            """, (crossing_id, now.isoformat(), now.date().isoformat()))
-            self._conn.commit()
+        try:
+            with self._lock:
+                existing = self._conn.execute("""
+                    SELECT id FROM train_events
+                    WHERE crossing_id = ? AND end_time IS NULL
+                    LIMIT 1
+                """, (crossing_id,)).fetchone()
+                if existing:
+                    return
+                self._conn.execute("""
+                    INSERT INTO train_events (crossing_id, start_time, event_date)
+                    VALUES (?, ?, ?)
+                """, (crossing_id, now.isoformat(), now.date().isoformat()))
+                self._conn.commit()
+        except Exception as e:
+            logger.error("record_train_start error: %s", e)
 
     def record_train_end(self, crossing_id: int):
         """Eski usul (to'g'ridan-to'g'ri foydalanilmaydi, moslik uchun saqlanadi)."""
         now = datetime.now()
-        with self._lock:
-            row = self._conn.execute("""
-                SELECT id, start_time FROM train_events
-                WHERE crossing_id = ? AND end_time IS NULL
-                ORDER BY id DESC LIMIT 1
-            """, (crossing_id,)).fetchone()
-            if row:
-                start = datetime.fromisoformat(row[1])
-                duration = (now - start).total_seconds()
-                self._conn.execute("""
-                    UPDATE train_events
-                    SET end_time = ?, duration_seconds = ?
-                    WHERE id = ?
-                """, (now.isoformat(), duration, row[0]))
-                self._conn.commit()
+        try:
+            with self._lock:
+                row = self._conn.execute("""
+                    SELECT id, start_time FROM train_events
+                    WHERE crossing_id = ? AND end_time IS NULL
+                    ORDER BY id DESC LIMIT 1
+                """, (crossing_id,)).fetchone()
+                if row:
+                    start = datetime.fromisoformat(row[1])
+                    duration = (now - start).total_seconds()
+                    self._conn.execute("""
+                        UPDATE train_events
+                        SET end_time = ?, duration_seconds = ?
+                        WHERE id = ?
+                    """, (now.isoformat(), duration, row[0]))
+                    self._conn.commit()
+        except Exception as e:
+            logger.error("record_train_end error: %s", e)
 
-    def get_train_today_stats(self, crossing_id: int) -> Dict:
+    def get_train_today_stats(self, crossing_id: int,
+                               target_date: Optional[str] = None) -> Dict:
         """Bugungi poyezd statistikasi (birlashtirilgan).
+        target_date: "2026-05-13" format (None = bugun).
         Returns: {"count": 5, "min": 45.2, "max": 120.5, "avg": 78.3}"""
-        today = date.today().isoformat()
-        with self._lock:
-            rows = self._conn.execute("""
-                SELECT start_time, end_time, duration_seconds
-                FROM train_events
-                WHERE crossing_id = ? AND event_date = ?
-                  AND end_time IS NOT NULL
-                ORDER BY start_time ASC
-            """, (crossing_id, today)).fetchall()
-        merged = self._merge_intervals(rows)
-        durations = [d for _, _, d in merged if d is not None]
-        if not durations:
+        if target_date is None:
+            target_date = date.today().isoformat()
+        try:
+            with self._lock:
+                rows = self._conn.execute("""
+                    SELECT start_time, end_time, duration_seconds
+                    FROM train_events
+                    WHERE crossing_id = ? AND event_date = ?
+                      AND end_time IS NOT NULL
+                    ORDER BY start_time ASC
+                """, (crossing_id, target_date)).fetchall()
+            merged = self._merge_intervals(rows)
+            durations = [d for _, _, d in merged if d is not None]
+            if not durations:
+                return {"count": 0, "min": 0, "max": 0, "avg": 0}
+            return {
+                "count": len(durations),
+                "min": min(durations),
+                "max": max(durations),
+                "avg": sum(durations) / len(durations),
+            }
+        except Exception as e:
+            logger.error("get_train_today_stats error: %s", e)
             return {"count": 0, "min": 0, "max": 0, "avg": 0}
-        return {
-            "count": len(durations),
-            "min": min(durations),
-            "max": max(durations),
-            "avg": sum(durations) / len(durations),
-        }
 
     def _get_raw_events(self, crossing_id: int,
                         date_from: str, date_to: str) -> list:
@@ -460,68 +538,83 @@ class StatsDB:
         """, (crossing_id, date_from, date_to)).fetchall()
         return rows
 
-    def get_train_weekly(self, crossing_id: int) -> List[Dict]:
-        """Oxirgi 7 kun poyezd soni (birlashtirilgan), hafta kuni tartibi (Du→Ya)."""
+    def get_train_weekly(self, crossing_id: int,
+                         date_to: Optional[date] = None) -> List[Dict]:
+        """Oxirgi 7 kun poyezd soni (birlashtirilgan), hafta kuni tartibi (Du→Ya).
+        date_to: oxirgi kun (None = bugun)."""
         days_uz = ["Du", "Se", "Cho", "Pa", "Ju", "Sha", "Ya"]
-        today = date.today()
-        date_from = (today - timedelta(days=6)).isoformat()
-        with self._lock:
-            raw = self._get_raw_events(crossing_id, date_from, today.isoformat())
-        # Har kun uchun alohida birlashtirish
-        by_day: Dict[str, list] = {}
-        for r in raw:
-            d = r[0][:10]
-            by_day.setdefault(d, []).append(r)
-        db_map = {}
-        for ds, day_rows in by_day.items():
-            merged = self._merge_intervals(day_rows)
-            durations = [d for _, _, d in merged if d is not None]
-            avg = sum(durations) / len(durations) if durations else 0
-            db_map[ds] = (len(merged), avg)
-        data = []
-        for i in range(6, -1, -1):
-            d = today - timedelta(days=i)
-            ds = d.isoformat()
-            count, avg = db_map.get(ds, (0, 0))
-            data.append({"date": ds, "day": days_uz[d.weekday()], "count": count, "avg": avg})
-        data.sort(key=lambda x: days_uz.index(x["day"]))
-        return data
+        if date_to is None:
+            date_to = date.today()
+        date_from = (date_to - timedelta(days=6)).isoformat()
+        try:
+            with self._lock:
+                raw = self._get_raw_events(crossing_id, date_from, date_to.isoformat())
+            # Har kun uchun alohida birlashtirish
+            by_day: Dict[str, list] = {}
+            for r in raw:
+                d = r[0][:10]
+                by_day.setdefault(d, []).append(r)
+            db_map = {}
+            for ds, day_rows in by_day.items():
+                merged = self._merge_intervals(day_rows)
+                durations = [d for _, _, d in merged if d is not None]
+                avg = sum(durations) / len(durations) if durations else 0
+                db_map[ds] = (len(merged), avg)
+            data = []
+            # Sana (xronologik) tartibida — eng eski kundan eng yangisiga.
+            for i in range(6, -1, -1):
+                d = date_to - timedelta(days=i)
+                ds = d.isoformat()
+                count, avg = db_map.get(ds, (0, 0))
+                data.append({"date": ds, "day": days_uz[d.weekday()], "count": count, "avg": avg})
+            return data
+        except Exception as e:
+            logger.error("get_train_weekly error: %s", e)
+            return []
 
     def get_train_monthly(self, crossing_id: int) -> List[Dict]:
         """Oxirgi 30 kun poyezd soni (birlashtirilgan)."""
         today = date.today()
         date_from = (today - timedelta(days=29)).isoformat()
-        with self._lock:
-            raw = self._get_raw_events(crossing_id, date_from, today.isoformat())
-        by_day: Dict[str, list] = {}
-        for r in raw:
-            d = r[0][:10]
-            by_day.setdefault(d, []).append(r)
-        db_map = {}
-        for ds, day_rows in by_day.items():
-            merged = self._merge_intervals(day_rows)
-            durations = [d for _, _, d in merged if d is not None]
-            avg = sum(durations) / len(durations) if durations else 0
-            db_map[ds] = (len(merged), avg)
-        data = []
-        for i in range(29, -1, -1):
-            d = today - timedelta(days=i)
-            ds = d.isoformat()
-            count, avg = db_map.get(ds, (0, 0))
-            data.append({"date": ds, "day": d.day, "count": count, "avg": avg})
-        return data
+        try:
+            with self._lock:
+                raw = self._get_raw_events(crossing_id, date_from, today.isoformat())
+            by_day: Dict[str, list] = {}
+            for r in raw:
+                d = r[0][:10]
+                by_day.setdefault(d, []).append(r)
+            db_map = {}
+            for ds, day_rows in by_day.items():
+                merged = self._merge_intervals(day_rows)
+                durations = [d for _, _, d in merged if d is not None]
+                avg = sum(durations) / len(durations) if durations else 0
+                db_map[ds] = (len(merged), avg)
+            data = []
+            for i in range(29, -1, -1):
+                d = today - timedelta(days=i)
+                ds = d.isoformat()
+                count, avg = db_map.get(ds, (0, 0))
+                data.append({"date": ds, "day": d.day, "count": count, "avg": avg})
+            return data
+        except Exception as e:
+            logger.error("get_train_monthly error: %s", e)
+            return []
 
     def get_all_train_today(self) -> Dict[int, int]:
         """Barcha pereezdlar bugungi poyezd soni (birlashtirilgan)."""
         today = date.today().isoformat()
-        with self._lock:
-            cids = [r[0] for r in self._conn.execute(
-                "SELECT DISTINCT crossing_id FROM train_events WHERE event_date = ?",
-                (today,)).fetchall()]
-        result = {}
-        for cid in cids:
-            result[cid] = self.get_train_today_stats(cid)["count"]
-        return result
+        try:
+            with self._lock:
+                cids = [r[0] for r in self._conn.execute(
+                    "SELECT DISTINCT crossing_id FROM train_events WHERE event_date = ?",
+                    (today,)).fetchall()]
+            result = {}
+            for cid in cids:
+                result[cid] = self.get_train_today_stats(cid)["count"]
+            return result
+        except Exception as e:
+            logger.error("get_all_train_today error: %s", e)
+            return {}
 
     def get_train_today_count(self, crossing_id: int) -> int:
         """Bugungi birlashtirilgan poyezdlar soni."""
@@ -535,44 +628,47 @@ class StatsDB:
         """
         if target_date is None:
             target_date = date.today().isoformat()
-        with self._lock:
-            rows = self._conn.execute("""
-                SELECT start_time, end_time, duration_seconds
-                FROM train_events
-                WHERE crossing_id = ? AND event_date = ?
-                ORDER BY start_time ASC
-            """, (crossing_id, target_date)).fetchall()
-
-        # Ochiq (jarayondagi) eventni ajratish
-        closed = [r for r in rows if r[1] is not None]
-        open_ev = [r for r in rows if r[1] is None]
-
-        merged = self._merge_intervals(closed)
-
         result = []
-        # Ochiq event (hozir o'tayotgan) — eng birinchi
-        for start_str, _, _ in open_ev:
-            try:
-                s = datetime.fromisoformat(start_str)
-                result.append({
-                    "start": s.strftime("%H:%M"),
-                    "end": "...",
-                    "duration": 0.0,
-                    "in_progress": True,
-                })
-            except Exception:
-                pass
+        try:
+            with self._lock:
+                rows = self._conn.execute("""
+                    SELECT start_time, end_time, duration_seconds
+                    FROM train_events
+                    WHERE crossing_id = ? AND event_date = ?
+                    ORDER BY start_time ASC
+                """, (crossing_id, target_date)).fetchall()
 
-        for s_dt, e_dt, dur in reversed(merged):
-            try:
-                result.append({
-                    "start": s_dt.strftime("%H:%M"),
-                    "end": e_dt.strftime("%H:%M") if e_dt else "...",
-                    "duration": dur or 0.0,
-                    "in_progress": False,
-                })
-            except Exception:
-                pass
+            # Ochiq (jarayondagi) eventni ajratish
+            closed = [r for r in rows if r[1] is not None]
+            open_ev = [r for r in rows if r[1] is None]
+
+            merged = self._merge_intervals(closed)
+
+            # Ochiq event (hozir o'tayotgan) — eng birinchi
+            for start_str, _, _ in open_ev:
+                try:
+                    s = datetime.fromisoformat(start_str)
+                    result.append({
+                        "start": s.strftime("%H:%M"),
+                        "end": "...",
+                        "duration": 0.0,
+                        "in_progress": True,
+                    })
+                except Exception:
+                    pass
+
+            for s_dt, e_dt, dur in reversed(merged):
+                try:
+                    result.append({
+                        "start": s_dt.strftime("%H:%M"),
+                        "end": e_dt.strftime("%H:%M") if e_dt else "...",
+                        "duration": dur or 0.0,
+                        "in_progress": False,
+                    })
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.error("get_train_events_today error: %s", e)
         return result
 
     def get_train_hourly_data(self, crossing_id: int,
@@ -580,20 +676,23 @@ class StatsDB:
         """24 soatlik poyezd soni (grafik uchun, birlashtirilgan). Returns: [0]*24 list."""
         if target_date is None:
             target_date = date.today().isoformat()
-        with self._lock:
-            rows = self._conn.execute("""
-                SELECT start_time, end_time, duration_seconds
-                FROM train_events
-                WHERE crossing_id = ? AND event_date = ?
-                  AND end_time IS NOT NULL
-                ORDER BY start_time ASC
-            """, (crossing_id, target_date)).fetchall()
-        merged = self._merge_intervals(rows)
         counts = [0] * 24
-        for s_dt, _e, _d in merged:
-            h = s_dt.hour
-            if 0 <= h < 24:
-                counts[h] += 1
+        try:
+            with self._lock:
+                rows = self._conn.execute("""
+                    SELECT start_time, end_time, duration_seconds
+                    FROM train_events
+                    WHERE crossing_id = ? AND event_date = ?
+                      AND end_time IS NOT NULL
+                    ORDER BY start_time ASC
+                """, (crossing_id, target_date)).fetchall()
+            merged = self._merge_intervals(rows)
+            for s_dt, _e, _d in merged:
+                h = s_dt.hour
+                if 0 <= h < 24:
+                    counts[h] += 1
+        except Exception as e:
+            logger.error("get_train_hourly_data error: %s", e)
         return counts
 
     def get_train_range_stats(self, crossing_id: int,
@@ -601,26 +700,30 @@ class StatsDB:
         """Sana oralig'ida birlashtirilgan poyezd statistikasi.
         Returns: {"count": N, "min": s, "max": s, "avg": s}
         """
-        with self._lock:
-            raw = self._get_raw_events(crossing_id, date_from, date_to)
-        # Kunlik birlashtirish
-        by_day: Dict[str, list] = {}
-        for r in raw:
-            d = r[0][:10]
-            by_day.setdefault(d, []).append(r)
-        all_durations = []
-        for day_rows in by_day.values():
-            for _, _, dur in self._merge_intervals(day_rows):
-                if dur is not None:
-                    all_durations.append(dur)
-        if not all_durations:
+        try:
+            with self._lock:
+                raw = self._get_raw_events(crossing_id, date_from, date_to)
+            # Kunlik birlashtirish
+            by_day: Dict[str, list] = {}
+            for r in raw:
+                d = r[0][:10]
+                by_day.setdefault(d, []).append(r)
+            all_durations = []
+            for day_rows in by_day.values():
+                for _, _, dur in self._merge_intervals(day_rows):
+                    if dur is not None:
+                        all_durations.append(dur)
+            if not all_durations:
+                return {"count": 0, "min": 0, "max": 0, "avg": 0}
+            return {
+                "count": len(all_durations),
+                "min": min(all_durations),
+                "max": max(all_durations),
+                "avg": sum(all_durations) / len(all_durations),
+            }
+        except Exception as e:
+            logger.error("get_train_range_stats error: %s", e)
             return {"count": 0, "min": 0, "max": 0, "avg": 0}
-        return {
-            "count": len(all_durations),
-            "min": min(all_durations),
-            "max": max(all_durations),
-            "avg": sum(all_durations) / len(all_durations),
-        }
 
     def get_train_events_range(self, crossing_id: int,
                                date_from: str, date_to: str) -> List[Dict]:
@@ -628,26 +731,29 @@ class StatsDB:
         Returns: [{"date": "12.03.2026", "start": "09:30", "end": "09:36",
                    "duration_secs": 360.0, "duration_fmt": "6 daq 0 son"}, ...]
         """
-        with self._lock:
-            raw = self._get_raw_events(crossing_id, date_from, date_to)
-        by_day: Dict[str, list] = {}
-        for r in raw:
-            d = r[0][:10]
-            by_day.setdefault(d, []).append(r)
         result = []
-        for ds in sorted(by_day.keys()):
-            for s_dt, e_dt, dur in self._merge_intervals(by_day[ds]):
-                if e_dt is None or dur is None:
-                    continue
-                m = int(dur) // 60
-                s = int(dur) % 60
-                result.append({
-                    "date": s_dt.strftime("%d.%m.%Y"),
-                    "start": s_dt.strftime("%H:%M"),
-                    "end": e_dt.strftime("%H:%M"),
-                    "duration_secs": dur,
-                    "duration_fmt": f"{m} daq {s} son" if m > 0 else f"{s} son",
-                })
+        try:
+            with self._lock:
+                raw = self._get_raw_events(crossing_id, date_from, date_to)
+            by_day: Dict[str, list] = {}
+            for r in raw:
+                d = r[0][:10]
+                by_day.setdefault(d, []).append(r)
+            for ds in sorted(by_day.keys()):
+                for s_dt, e_dt, dur in self._merge_intervals(by_day[ds]):
+                    if e_dt is None or dur is None:
+                        continue
+                    m = int(dur) // 60
+                    s = int(dur) % 60
+                    result.append({
+                        "date": s_dt.strftime("%d.%m.%Y"),
+                        "start": s_dt.strftime("%H:%M"),
+                        "end": e_dt.strftime("%H:%M"),
+                        "duration_secs": dur,
+                        "duration_fmt": f"{m} daq {s} son" if m > 0 else f"{s} son",
+                    })
+        except Exception as e:
+            logger.error("get_train_events_range error: %s", e)
         return result
 
     def rename_camera(self, crossing_id: int, old_name: str, new_name: str):

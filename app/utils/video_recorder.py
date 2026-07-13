@@ -11,6 +11,7 @@ Features:
 - VideoWriter init is lazy — actual size detected from first frame.
 """
 
+import logging
 import os
 import queue
 import shutil
@@ -23,6 +24,12 @@ from datetime import datetime
 from pathlib import Path
 
 import cv2
+
+logger = logging.getLogger("RailSafe.recorder")
+
+# fd-2 (stderr) global bo'lgani uchun, bir nechta kamera bir vaqtda yozganda
+# bitta recorder ikkinchisining stderr redirect'ini buzmasligi uchun serial qilamiz.
+_STDERR_LOCK = threading.Lock()
 
 
 # Codec preference per output format. First entry that opens wins.
@@ -38,33 +45,37 @@ _CODEC_CHAIN = {
 @contextmanager
 def _suppress_native_stderr():
     """OpenCV/FFmpeg ning stderr ga yozadigan xatolarini vaqtincha jimlatamiz.
-    Codec mavjud emasligi haqida shovqin yozmasligi uchun."""
-    try:
-        sys.stderr.flush()
-    except Exception:
-        pass
-    saved_fd = -1
-    devnull_fd = -1
-    try:
-        saved_fd = os.dup(2)
-        devnull_fd = os.open(os.devnull, os.O_WRONLY)
-        os.dup2(devnull_fd, 2)
-        yield
-    except OSError:
-        # fd manipulation ishlamasa, original stderr da qoldiramiz
-        yield
-    finally:
-        if saved_fd >= 0:
-            try:
-                os.dup2(saved_fd, 2)
-                os.close(saved_fd)
-            except OSError:
-                pass
-        if devnull_fd >= 0:
-            try:
-                os.close(devnull_fd)
-            except OSError:
-                pass
+    Codec mavjud emasligi haqida shovqin yozmasligi uchun.
+
+    fd 2 process-global bo'lgani uchun _STDERR_LOCK bilan himoyalanadi —
+    aks holda parallel recorder'lar bir-birining redirect'ini buzadi."""
+    with _STDERR_LOCK:
+        try:
+            sys.stderr.flush()
+        except Exception:
+            pass
+        saved_fd = -1
+        devnull_fd = -1
+        try:
+            saved_fd = os.dup(2)
+            devnull_fd = os.open(os.devnull, os.O_WRONLY)
+            os.dup2(devnull_fd, 2)
+            yield
+        except OSError:
+            # fd manipulation ishlamasa, original stderr da qoldiramiz
+            yield
+        finally:
+            if saved_fd >= 0:
+                try:
+                    os.dup2(saved_fd, 2)
+                    os.close(saved_fd)
+                except OSError:
+                    pass
+            if devnull_fd >= 0:
+                try:
+                    os.close(devnull_fd)
+                except OSError:
+                    pass
 
 # Quality → max height (None means keep original resolution)
 _QUALITY_HEIGHT = {
@@ -104,7 +115,13 @@ class VideoRecorder:
         max_duration_sec: int = 1800,        # 30 minutes per segment
         min_free_disk_mb: int = 500,          # require >=500 MB free
         queue_size: int = 120,
+        on_error=None,                        # callable(str) — avto-to'xtash xatosi
+        on_stopped=None,                      # callable() — yozish tugadi/to'xtadi
     ):
+        # GUI ni xabardor qilish uchun ixtiyoriy callback'lar. Ular worker
+        # thread'da chaqiriladi — GUI tomonda signal orqali marshal qilish kerak.
+        self.on_error = on_error
+        self.on_stopped = on_stopped
         self.fmt = fmt if fmt in _CODEC_CHAIN else "mp4"
         self.quality = quality if quality in _QUALITY_HEIGHT else "original"
         self.max_duration_sec = max(60, int(max_duration_sec))
@@ -143,7 +160,8 @@ class VideoRecorder:
             self.last_error = (
                 f"Disk to'la: {free}MB qoldi, "
                 f"minimum {self.min_free_disk_mb}MB kerak")
-            print(f"[VideoRecorder] {self.last_error}")
+            logger.error("[VideoRecorder] %s", self.last_error)
+            self._fire_error(self.last_error)
             return False
 
         self._folder = folder
@@ -167,6 +185,12 @@ class VideoRecorder:
         """Non-blocking frame submission. Drops on backpressure (queue full)."""
         if not self.is_recording:
             return
+        # OpenCV kadr buferini qayta ishlatadi — nusxa olmasak, encoder
+        # navbatda turgan kadrni ustiga yozilgan holda o'qishi mumkin (buzilish).
+        try:
+            frame = frame.copy()
+        except AttributeError:
+            pass
         try:
             self._queue.put_nowait(frame)
         except queue.Full:
@@ -188,9 +212,8 @@ class VideoRecorder:
             self._thread.join(timeout=8.0)
             self._thread = None
         if self._dropped_frames > 0:
-            print(f"[VideoRecorder] {self._base_name}: "
-                  f"yozildi={self._written_frames}, "
-                  f"tushib qoldi={self._dropped_frames}")
+            logger.info("[VideoRecorder] %s: yozildi=%d, tushib qoldi=%d",
+                        self._base_name, self._written_frames, self._dropped_frames)
 
     @property
     def dropped_frames(self) -> int:
@@ -201,6 +224,26 @@ class VideoRecorder:
         return self._written_frames
 
     # ── Internal ────────────────────────────────────────────────────────
+
+    def _fire_error(self, msg: str) -> None:
+        """on_error callback'ni xavfsiz chaqirish (worker thread'da)."""
+        cb = self.on_error
+        if cb is None:
+            return
+        try:
+            cb(msg)
+        except Exception:
+            logger.exception("[VideoRecorder] on_error callback xatosi")
+
+    def _fire_stopped(self) -> None:
+        """on_stopped callback'ni xavfsiz chaqirish (worker thread'da)."""
+        cb = self.on_stopped
+        if cb is None:
+            return
+        try:
+            cb()
+        except Exception:
+            logger.exception("[VideoRecorder] on_stopped callback xatosi")
 
     def _resize_frame(self, frame):
         """Quality sozlamasiga ko'ra frame ni kichraytirish."""
@@ -271,7 +314,7 @@ class VideoRecorder:
                 # Rotation: max duration tugadi → segmentni yopish
                 if writer is not None and (now_t - segment_start) >= self.max_duration_sec:
                     writer.release()
-                    print(f"[VideoRecorder] Segment yakunlandi: {actual_path}")
+                    logger.info("[VideoRecorder] Segment yakunlandi: %s", actual_path)
                     writer = None
                     self._segment_idx += 1
 
@@ -283,7 +326,8 @@ class VideoRecorder:
                     if writer is None:
                         self.last_error = (
                             f"VideoWriter ochilmadi ({w}x{h}, fmt={self.fmt})")
-                        print(f"[VideoRecorder] {self.last_error}")
+                        logger.error("[VideoRecorder] %s", self.last_error)
+                        self._fire_error(self.last_error)
                         break
                     self.last_codec_fell_back = fell_back
                     self.last_path = actual_path
@@ -293,7 +337,7 @@ class VideoRecorder:
                     if fell_back:
                         msg += (f"  ⚠️ '{self.fmt}' codec topilmadi, "
                                 f"fallback ishlatildi")
-                    print(msg)
+                    logger.info("%s", msg)
                     segment_start = now_t
 
                 # Periodic disk check (~ har 30 sek)
@@ -303,7 +347,8 @@ class VideoRecorder:
                     if 0 <= free < self.min_free_disk_mb:
                         self.last_error = (
                             f"Disk to'lib qoldi: {free}MB qoldi — yozish to'xtatildi")
-                        print(f"[VideoRecorder] {self.last_error}")
+                        logger.error("[VideoRecorder] %s", self.last_error)
+                        self._fire_error(self.last_error)
                         break
 
                 try:
@@ -311,14 +356,15 @@ class VideoRecorder:
                     self._written_frames += 1
                 except Exception as e:
                     self.last_error = f"Yozishda xato: {e}"
-                    print(f"[VideoRecorder] {self.last_error}")
+                    logger.error("[VideoRecorder] %s", self.last_error)
+                    self._fire_error(self.last_error)
                     break
 
         finally:
             if writer:
                 writer.release()
-                print(f"[VideoRecorder] Yopildi: {actual_path}  "
-                      f"(yozildi={self._written_frames}, "
-                      f"tushib qoldi={self._dropped_frames})")
+                logger.info("[VideoRecorder] Yopildi: %s  (yozildi=%d, tushib qoldi=%d)",
+                            actual_path, self._written_frames, self._dropped_frames)
             # Loop abnormal tugagan bo'lsa ham state ni to'g'rilash
             self.is_recording = False
+            self._fire_stopped()

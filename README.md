@@ -12,6 +12,7 @@ Real vaqt rejimida temir yo'l kesishmalarini kuzatuvchi, transport harakatini hi
 | **AI deteksiya** | YOLOv8 + TensorRT — 208 FPS, batch=8 (GPU), ONNX/PyTorch fallback |
 | **Transport hisoblash** | Polygon zona orqali yengil/og'ir transport alohida hisoblanadi |
 | **Poyezd monitoring** | Siemens S7-1200 PLC bilan integratsiya, har bir o'tish qayd etiladi |
+| **ANPR (raqam aniqlash)** | Poyezd o'tayotganda kesishmadagi mashina raqamini o'qib, dalil (rasm + CSV) saqlaydi. Alohida fon oqimida — real-time videoga ta'sir qilmaydi |
 | **Statistika** | Kunlik, haftalik, oylik, yillik grafik va jadvallar |
 | **Hisobotlar** | Word (.docx) va PDF hisobotlarni eksport qilish |
 | **Ko'p til** | O'zbek / Rus / Ingliz |
@@ -156,41 +157,84 @@ Delta tracking (restart xavfsizligi):
 
 ---
 
+## ANPR — Avtomobil raqamini aniqlash
+
+Poyezd o'tayotganda kesishma zonasidagi mashinalarning raqamini o'qib, dalil
+saqlaydi (radar-kamera tamoyili). Ikki bosqichli YOLO: plita joyini topish →
+belgilarni o'qish (OCR).
+
+```
+PLC poyezd signali → ViolationDetector "armlanadi"
+        │
+        ▼
+Kadr → CameraWorker (real-time)          AnprWorker (ALOHIDA fon oqimi)
+        grab→detect→track→video  ──submit──▶  crop → sifat oshirish → OCR
+        (bloklanmaydi, 30 FPS)    (full-res)   → konsensus → dalil saqlash
+```
+
+**Muhim tamoyillar:**
+
+- **Real-time'ga ta'sir qilmaydi** — ANPR kamera oqimidan alohida fon thread'ida
+  (`AnprWorker`) ishlaydi. Kamera worker faqat kadrni navbatga qo'yadi (~3ms).
+- **Asl full-res toza kadr** — crop kichraytirilgan/annotatsiyalangan kadrdan emas,
+  asl to'liq o'lchamli kadrdan olinadi (sifat uchun).
+- **Sifat oshirish** — deskew (burchak to'g'rilash) + kattalashtirish + CLAHE kontrast
+  + denoise + o'tkirlashtirish.
+- **Aniqlik** — eng tiniq kadr (Laplacian variance), retry'lar bo'yicha per-character
+  konsensus, O'zbek format-tuzatish (O↔0, I↔1, ...).
+- **Raqam o'qilmasa ham** qoidabuzarlik fakti "UNKNOWN" bilan saqlanadi.
+
+**Natijalar:** `Desktop/RailSafe_Yozuvlar/_violations/<kesishma>/<sana>/`
+```
+HH-MM-SS-ms_<kamera>_<RAQAM>_id<N>.jpg       # to'liq annotatsiyalangan kadr
+HH-MM-SS-ms_<kamera>_<RAQAM>_id<N>_crop.jpg  # raqam yaqindan
+violations.csv                                # jurnal
+```
+
+> **Test rejimi:** `settings.anpr_test_mode=true` — PLC'siz kesishmalarda ham har bir
+> mashina raqamini o'qib sinash uchun (natijalar `_anpr_test/` papkasiga).
+
+---
+
 ## O'rnatish
 
 ### Talablar
 
 - **OS**: Windows 10/11 (64-bit)
 - **Python**: 3.10+
-- **GPU**: NVIDIA (TensorRT uchun), CPU ham ishlaydi
+- **GPU**: NVIDIA (TensorRT uchun), CPU ham ishlaydi (avtomatik fallback)
 - **Tarmoq**: Kameralar bilan bir tarmoqda bo'lish
 
-### Python kutubxonalari
+### Avtomatik o'rnatish (tavsiya etiladi)
 
-```bash
-pip install PyQt6 PyQt6-WebEngine
-pip install opencv-python numpy
-pip install ultralytics torch torchvision
-pip install python-snap7==2.1.0
-pip install python-docx
-pip install pyserial psutil pyyaml
+GPU bor-yo'qligini o'zi aniqlab, `.venv` yaratadi va mos kutubxonalarni o'rnatadi:
+
+```bat
+install.bat
 ```
+
+Keyin ishga tushirish:
+
+```bat
+run_gui.bat
+```
+
+### Qo'lda o'rnatish
+
+```bat
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements-gpu.txt     REM NVIDIA GPU bilan
+REM yoki:  pip install -r requirements-cpu.txt   (GPU'siz)
+python -m app.main
+```
+
+To'liq o'rnatish qo'llanmasi (mustaqil EXE, Inno Setup va h.k.): [INSTALL.md](INSTALL.md)
 
 ### GStreamer (ixtiyoriy, past kechikish uchun)
 
 GPU H.265 dekod uchun NVIDIA GStreamer plagini o'rnatilishi kerak.
-O'rnatilmagan bo'lsa — dastur avtomatik FFmpeg ga o'tadi.
-
-### Ishga tushirish
-
-```bash
-# Windows
-run_gui.bat
-
-# Yoki to'g'ridan-to'g'ri
-cd app
-python main.py
-```
+O'rnatilmagan bo'lsa — dastur avtomatik PyAV/FFmpeg ga o'tadi.
 
 ---
 
@@ -248,17 +292,22 @@ RailSafeGUI/
 │   ├── main.py             # Ishga tushirish nuqtasi
 │   ├── pages/              # UI sahifalar
 │   ├── widgets/            # Qayta ishlatiladigan komponentlar
-│   ├── core/               # Biznes logika (DB, PLC, tracker)
-│   ├── reports/            # Hisobot generatorlar
-│   ├── utils/              # Yordamchi (tema, til)
+│   ├── core/               # Biznes logika (DB, PLC, tracker, ANPR)
+│   ├── reports/            # Hisobot generatorlar (Word/PDF)
+│   ├── utils/              # Yordamchi (tema, til, video yozuvchi)
 │   ├── i18n/               # Tarjimalar (uz/ru/en)
 │   ├── styles/             # QSS temalar
 │   └── data/               # SQLite DB, loglar
-├── detectors/              # AI deteksiya modullari
+├── detectors/              # AI deteksiya modullari (TensorRT/Ultralytics)
 ├── models/                 # Model fayllar (.pt, .engine)
-├── config/                 # Sozlamalar (gui_config.json)
+├── config/                 # Sozlamalar (gui_config.json, config.yaml)
 ├── polygons/               # Zona polygon fayllar
-└── run_gui.bat             # Windows launcher
+├── install.bat             # Avtomatik o'rnatuvchi (GPU/CPU aniqlaydi)
+├── run_gui.bat             # Windows launcher
+├── requirements-*.txt      # base / gpu / cpu kutubxonalar
+├── RailSafeAI.spec         # PyInstaller (mustaqil EXE)
+├── installer.iss           # Inno Setup (setup.exe)
+└── INSTALL.md              # To'liq o'rnatish qo'llanmasi
 ```
 
 Batafsil kod tuzilmasi: [app/README.md](app/README.md)
@@ -273,6 +322,20 @@ Batafsil kod tuzilmasi: [app/README.md](app/README.md)
 | **PDF** | HTML asosidagi zamonaviy dizayn — brauzerda ko'rish va saqlash |
 
 **Tahlil sahifasi → "Hisobot" tugmasi → Sana tanlang → Word yoki PDF**
+
+---
+
+## So'nggi yaxshilanishlar
+
+- **ANPR** — avtomobil raqamini aniqlash: alohida fon oqimida (real-time'ga
+  ta'sirsiz), full-res kadr, sifat oshirish (deskew/CLAHE/unsharp), per-character
+  konsensus va O'zbek format-tuzatish
+- **O'rnatuvchi** — `install.bat` (GPU/CPU avto-aniqlash), `requirements-*.txt`,
+  PyInstaller/Inno Setup
+- **Ishonchlilik** — statistika yaxlitligi (delta count-loss tuzatildi), thread
+  xavfsizligi, GUI muzlashlari va yopilish crash'lari bartaraf etildi
+- **CPU fallback** — NVIDIA GPU bo'lmasa avtomatik CPU rejimida ishlaydi
+- **Hisobotlar** — Word/PDF endi uz/ru/en tillarida
 
 ---
 

@@ -7,9 +7,13 @@ import json
 import yaml
 import os
 import tempfile
+import logging
+import threading
 from pathlib import Path
 from typing import Dict, List, Optional
 from datetime import datetime
+
+logger = logging.getLogger("RailSafe.config")
 
 # gui/utils/config_manager.py → gui/utils → gui → project_root
 _PROJECT_ROOT  = Path(__file__).parent.parent.parent
@@ -23,6 +27,9 @@ class ConfigManager:
     """Manages system configuration for crossings, cameras, and PLCs"""
 
     def __init__(self, config_file: str = None):
+        # Bir nechta threaddan yoziladi/o'qiladi — RLock bilan himoyalanadi.
+        # RLock reentrant: bir thread ichida ichma-ich chaqirilishi mumkin (deadlock yo'q).
+        self._lock = threading.RLock()
         self.config_file = Path(config_file) if config_file else _GUI_CONFIG
         self.config = self._load_config()
         self._camera_state_cache = None  # Disk o'qishni kamaytirish uchun xotira keshi
@@ -34,7 +41,7 @@ class ConfigManager:
                 with open(self.config_file, 'r', encoding='utf-8') as f:
                     return json.load(f)
             except Exception as e:
-                print(f"[ConfigManager] Config o'qishda xato: {e}, default ishlatiladi")
+                logger.error("Config o'qishda xato: %s, default ishlatiladi", e)
         return {
             "crossings": [],
             "settings": {
@@ -48,195 +55,229 @@ class ConfigManager:
 
     def save_config(self):
         """Atomic write: avval temp faylga yoziladi, keyin rename — buzilish xavfsiz."""
-        self.config["last_updated"] = datetime.now().isoformat()
-        tmp_path = None
-        try:
-            self.config_file.parent.mkdir(parents=True, exist_ok=True)
-            fd, tmp_path = tempfile.mkstemp(
-                dir=self.config_file.parent, suffix=".tmp", prefix=".cfg_")
-            with os.fdopen(fd, 'w', encoding='utf-8') as f:
-                json.dump(self.config, f, indent=2, ensure_ascii=False)
-            os.replace(tmp_path, self.config_file)
-        except Exception as e:
-            print(f"[ConfigManager] Saqlashda xato: {e}")
-            if tmp_path:
-                try:
-                    os.unlink(tmp_path)
-                except Exception:
-                    pass
+        with self._lock:
+            self.config["last_updated"] = datetime.now().isoformat()
+            tmp_path = None
+            try:
+                self.config_file.parent.mkdir(parents=True, exist_ok=True)
+                fd, tmp_path = tempfile.mkstemp(
+                    dir=self.config_file.parent, suffix=".tmp", prefix=".cfg_")
+                with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                    json.dump(self.config, f, indent=2, ensure_ascii=False)
+                os.replace(tmp_path, self.config_file)
+            except Exception as e:
+                logger.error("Saqlashda xato: %s", e)
+                if tmp_path:
+                    try:
+                        os.unlink(tmp_path)
+                    except Exception:
+                        pass
+
+    def _next_id(self, counter_key: str, existing_ids: List[int]) -> int:
+        """Monotonik ID beruvchi. config ichida `counter_key` (masalan
+        next_crossing_id) saqlanadi — o'chirilgan-keyin-qayta qo'shilgan yozuv
+        hech qachon eski ID ni qayta ishlatmaydi, shu bilan tarixiy statistika
+        boshqa yozuvga o'tib ketmaydi.
+        """
+        # Migratsiya: eski configda counter bo'lmasa, mavjud maksimal + 1 dan boshlaymiz
+        cur_max = max(existing_ids) if existing_ids else 0
+        stored = self.config.get(counter_key, 0)
+        new_id = max(stored, cur_max + 1)
+        self.config[counter_key] = new_id + 1
+        return new_id
 
     def get_crossings(self) -> List[Dict]:
         """Get all crossings"""
-        return self.config.get("crossings", [])
+        with self._lock:
+            return self.config.get("crossings", [])
 
     def get_crossing(self, crossing_id: int) -> Optional[Dict]:
         """Get a specific crossing by ID"""
-        for crossing in self.config.get("crossings", []):
-            if crossing["id"] == crossing_id:
-                return crossing
+        with self._lock:
+            for crossing in self.config.get("crossings", []):
+                if crossing.get("id") == crossing_id:
+                    return crossing
         return None
 
     def add_crossing(self, crossing_data: Dict) -> int:
         """Add a new crossing"""
-        # Generate new ID
-        existing_ids = [c["id"] for c in self.config.get("crossings", [])]
-        new_id = max(existing_ids) + 1 if existing_ids else 1
+        with self._lock:
+            # Monotonik ID — o'chirilgan ID lar qayta ishlatilmaydi
+            existing_ids = [c.get("id") for c in self.config.get("crossings", [])
+                            if c.get("id") is not None]
+            new_id = self._next_id("next_crossing_id", existing_ids)
 
-        crossing_data["id"] = new_id
-        crossing_data["created_at"] = datetime.now().isoformat()
-        crossing_data["status"] = "offline"
+            crossing_data["id"] = new_id
+            crossing_data["created_at"] = datetime.now().isoformat()
+            crossing_data["status"] = "offline"
 
-        # Ensure cameras and plc exist
-        if "cameras" not in crossing_data:
-            crossing_data["cameras"] = []
-        if "plc" not in crossing_data:
-            crossing_data["plc"] = {
-                "ip": "",
-                "port": 102,
-                "enabled": False
-            }
+            # Ensure cameras and plc exist
+            if "cameras" not in crossing_data:
+                crossing_data["cameras"] = []
+            if "plc" not in crossing_data:
+                crossing_data["plc"] = {
+                    "ip": "",
+                    "port": 102,
+                    "enabled": False
+                }
 
-        self.config["crossings"].append(crossing_data)
-        self.save_config()
-        return new_id
+            self.config.setdefault("crossings", []).append(crossing_data)
+            self.save_config()
+            return new_id
 
     def update_crossing(self, crossing_id: int, crossing_data: Dict) -> bool:
         """Update an existing crossing"""
-        for i, crossing in enumerate(self.config.get("crossings", [])):
-            if crossing["id"] == crossing_id:
-                crossing_data["id"] = crossing_id
-                crossing_data["updated_at"] = datetime.now().isoformat()
-                self.config["crossings"][i] = crossing_data
-                self.save_config()
-                return True
+        with self._lock:
+            for i, crossing in enumerate(self.config.get("crossings", [])):
+                if crossing.get("id") == crossing_id:
+                    crossing_data["id"] = crossing_id
+                    crossing_data["updated_at"] = datetime.now().isoformat()
+                    self.config["crossings"][i] = crossing_data
+                    self.save_config()
+                    return True
         return False
 
     def delete_crossing(self, crossing_id: int) -> bool:
         """Delete a crossing"""
-        crossings = self.config.get("crossings", [])
-        for i, crossing in enumerate(crossings):
-            if crossing["id"] == crossing_id:
-                del crossings[i]
-                self.save_config()
-                return True
+        with self._lock:
+            crossings = self.config.get("crossings", [])
+            for i, crossing in enumerate(crossings):
+                if crossing.get("id") == crossing_id:
+                    del crossings[i]
+                    self.save_config()
+                    return True
         return False
 
     def add_camera(self, crossing_id: int, camera_data: Dict) -> Optional[int]:
         """Add a camera to a crossing"""
-        crossing = self.get_crossing(crossing_id)
-        if not crossing:
-            return None
+        with self._lock:
+            crossing = self.get_crossing(crossing_id)
+            if not crossing:
+                return None
 
-        # Generate camera ID
-        existing_ids = [c["id"] for c in crossing.get("cameras", [])]
-        new_id = max(existing_ids) + 1 if existing_ids else 1
+            # Monotonik kamera ID — pereezd ichida saqlanadi (next_camera_id)
+            existing_ids = [c.get("id") for c in crossing.get("cameras", [])
+                            if c.get("id") is not None]
+            cur_max = max(existing_ids) if existing_ids else 0
+            stored = crossing.get("next_camera_id", 0)
+            new_id = max(stored, cur_max + 1)
+            crossing["next_camera_id"] = new_id + 1
 
-        camera_data["id"] = new_id
-        camera_data["created_at"] = datetime.now().isoformat()
-        camera_data["status"] = "offline"
+            camera_data["id"] = new_id
+            camera_data["created_at"] = datetime.now().isoformat()
+            camera_data["status"] = "offline"
 
-        crossing["cameras"].append(camera_data)
-        self.update_crossing(crossing_id, crossing)
-        return new_id
+            crossing.setdefault("cameras", []).append(camera_data)
+            self.update_crossing(crossing_id, crossing)
+            return new_id
 
     def update_camera(self, crossing_id: int, camera_id: int, camera_data: Dict) -> bool:
         """Update a camera in a crossing"""
-        crossing = self.get_crossing(crossing_id)
-        if not crossing:
-            return False
+        with self._lock:
+            crossing = self.get_crossing(crossing_id)
+            if not crossing:
+                return False
 
-        for i, camera in enumerate(crossing.get("cameras", [])):
-            if camera["id"] == camera_id:
-                crossing["cameras"][i].update(camera_data)
-                crossing["cameras"][i]["id"] = camera_id
-                crossing["cameras"][i]["updated_at"] = datetime.now().isoformat()
-                self.update_crossing(crossing_id, crossing)
-                return True
+            for i, camera in enumerate(crossing.get("cameras", [])):
+                if camera.get("id") == camera_id:
+                    crossing["cameras"][i].update(camera_data)
+                    crossing["cameras"][i]["id"] = camera_id
+                    crossing["cameras"][i]["updated_at"] = datetime.now().isoformat()
+                    self.update_crossing(crossing_id, crossing)
+                    return True
         return False
 
     def delete_camera(self, crossing_id: int, camera_id: int) -> bool:
         """Delete a camera from a crossing"""
-        crossing = self.get_crossing(crossing_id)
-        if not crossing:
-            return False
+        with self._lock:
+            crossing = self.get_crossing(crossing_id)
+            if not crossing:
+                return False
 
-        cameras = crossing.get("cameras", [])
-        for i, camera in enumerate(cameras):
-            if camera["id"] == camera_id:
-                del cameras[i]
-                self.update_crossing(crossing_id, crossing)
-                return True
+            cameras = crossing.get("cameras", [])
+            for i, camera in enumerate(cameras):
+                if camera.get("id") == camera_id:
+                    del cameras[i]
+                    self.update_crossing(crossing_id, crossing)
+                    return True
         return False
 
     def update_plc(self, crossing_id: int, plc_data: Dict) -> bool:
         """Update PLC configuration for a crossing"""
-        crossing = self.get_crossing(crossing_id)
-        if not crossing:
-            return False
+        with self._lock:
+            crossing = self.get_crossing(crossing_id)
+            if not crossing:
+                return False
 
-        crossing["plc"] = plc_data
-        self.update_crossing(crossing_id, crossing)
-        return True
+            crossing["plc"] = plc_data
+            self.update_crossing(crossing_id, crossing)
+            return True
 
     def get_settings(self) -> Dict:
         """Get application settings"""
-        return self.config.get("settings", {})
+        with self._lock:
+            return self.config.get("settings", {})
 
     def update_settings(self, settings: Dict):
         """Update application settings"""
-        self.config["settings"].update(settings)
-        self.save_config()
+        with self._lock:
+            self.config.setdefault("settings", {}).update(settings)
+            self.save_config()
 
     # --- Kamera holati (paused/resumed) — config/camera_state.json ---
 
     def _load_camera_state(self) -> Dict:
-        if self._camera_state_cache is not None:
+        with self._lock:
+            if self._camera_state_cache is not None:
+                return self._camera_state_cache
+            try:
+                if _CAMERA_STATE.exists():
+                    with open(_CAMERA_STATE, 'r', encoding='utf-8') as f:
+                        self._camera_state_cache = json.load(f)
+                        return self._camera_state_cache
+            except Exception:
+                pass
+            self._camera_state_cache = {"paused": {}}
             return self._camera_state_cache
-        try:
-            if _CAMERA_STATE.exists():
-                with open(_CAMERA_STATE, 'r', encoding='utf-8') as f:
-                    self._camera_state_cache = json.load(f)
-                    return self._camera_state_cache
-        except Exception:
-            pass
-        self._camera_state_cache = {"paused": {}}
-        return self._camera_state_cache
 
     def _save_camera_state(self, state: Dict):
-        self._camera_state_cache = state
-        _CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-        tmp_path = None
-        try:
-            fd, tmp_path = tempfile.mkstemp(dir=_CONFIG_DIR, suffix=".tmp")
-            with os.fdopen(fd, 'w', encoding='utf-8') as f:
-                json.dump(state, f, indent=2)
-            os.replace(tmp_path, _CAMERA_STATE)
-        except Exception as e:
-            print(f"[ConfigManager] Camera state saqlashda xato: {e}")
-            if tmp_path:
-                try:
-                    os.unlink(tmp_path)
-                except Exception:
-                    pass
+        with self._lock:
+            self._camera_state_cache = state
+            _CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+            tmp_path = None
+            try:
+                fd, tmp_path = tempfile.mkstemp(dir=_CONFIG_DIR, suffix=".tmp")
+                with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                    json.dump(state, f, indent=2)
+                os.replace(tmp_path, _CAMERA_STATE)
+            except Exception as e:
+                logger.error("Camera state saqlashda xato: %s", e)
+                if tmp_path:
+                    try:
+                        os.unlink(tmp_path)
+                    except Exception:
+                        pass
 
     def get_paused_cameras(self, crossing_id: int) -> set:
         """Berilgan pereezd uchun to'xtatilgan kamera ID larini qaytaradi."""
-        state = self._load_camera_state()
-        paused = state.get("paused", {}).get(str(crossing_id), [])
-        return set(paused)
+        with self._lock:
+            state = self._load_camera_state()
+            paused = state.get("paused", {}).get(str(crossing_id), [])
+            return set(paused)
 
     def set_camera_paused(self, crossing_id: int, camera_id: int, paused: bool):
         """Kamerani paused/resumed holatini saqlaydi."""
-        state = self._load_camera_state()
-        key = str(crossing_id)
-        paused_list = state.setdefault("paused", {}).get(key, [])
-        if paused:
-            if camera_id not in paused_list:
-                paused_list.append(camera_id)
-        else:
-            paused_list = [c for c in paused_list if c != camera_id]
-        state["paused"][key] = paused_list
-        self._save_camera_state(state)
+        with self._lock:
+            state = self._load_camera_state()
+            key = str(crossing_id)
+            paused_list = state.setdefault("paused", {}).get(key, [])
+            if paused:
+                if camera_id not in paused_list:
+                    paused_list.append(camera_id)
+            else:
+                paused_list = [c for c in paused_list if c != camera_id]
+            state["paused"][key] = paused_list
+            self._save_camera_state(state)
 
     def export_to_yaml(self, crossing_id: int, output_file: str) -> bool:
         """Export crossing configuration to YAML (for backend processing)"""
@@ -244,10 +285,16 @@ class ConfigManager:
         if not crossing:
             return False
 
+        # Haqiqiy sozlangan model yo'lini olamiz (placeholder emas)
+        model_path = self.get_car_detector_config().get(
+            "model_path", str(_PROJECT_ROOT / "models" / "yolo26m.pt"))
+
+        settings = self.get_settings()
+
         # Convert to backend format (config.yaml structure)
         backend_config = {
             "model": {
-                "path": "/path/to/yolo/model.pt",
+                "path": model_path,
                 "target_classes": [2, 5, 7],
                 "class_names": {
                     2: "Yengil avtomobil",
@@ -259,8 +306,8 @@ class ConfigManager:
             },
             "plc": crossing.get("plc", {}),
             "thresholds": {
-                "warning": self.config["settings"].get("warning_threshold", 10.0),
-                "violation": self.config["settings"].get("violation_threshold", 15.0)
+                "warning": settings.get("warning_threshold", 10.0),
+                "violation": settings.get("violation_threshold", 15.0)
             },
             "processing": {
                 "adaptive_mode": True,
@@ -270,9 +317,9 @@ class ConfigManager:
             },
             "cameras": [
                 {
-                    "id": cam["id"],
-                    "name": cam["name"],
-                    "source": cam["source"],
+                    "id": cam.get("id"),
+                    "name": cam.get("name", ""),
+                    "source": cam.get("source", ""),
                     "polygon_file": cam.get("polygon_file", ""),
                     "enabled": cam.get("enabled", False)
                 }
@@ -297,12 +344,12 @@ class ConfigManager:
                 "location": "Unknown",
                 "cameras": [
                     {
-                        "id": cam["id"],
-                        "name": cam["name"],
-                        "source": cam["source"],
+                        "id": cam.get("id"),
+                        "name": cam.get("name", ""),
+                        "source": cam.get("source", ""),
                         "polygon_file": cam.get("polygon_file", ""),
                         "enabled": cam.get("enabled", False),
-                        "type": "main" if cam["id"] == 1 else "additional"
+                        "type": "main" if cam.get("id") == 1 else "additional"
                     }
                     for cam in backend_config.get("cameras", [])
                 ],
@@ -311,7 +358,7 @@ class ConfigManager:
 
             return self.add_crossing(crossing_data)
         except Exception as e:
-            print(f"Error importing YAML: {e}")
+            logger.error("Error importing YAML: %s", e)
             return None
 
     def get_car_detector_config(self, config_yaml_path: str = None) -> Dict:
@@ -360,13 +407,13 @@ class ConfigManager:
                             car_config["imgsz"] = car_config.get("custom_imgsz", 1088)
                             car_config["filter_classes"] = car_config.get("custom_filter_classes")
                             car_config["is_custom_model"] = True
-                            print(f"[ConfigManager] Maxsus model: {custom_path}")
+                            logger.info("Maxsus model: %s", custom_path)
                     else:
                         car_config["is_custom_model"] = False
 
                     return car_config
 
         except Exception as e:
-            print(f"[ConfigManager] Error loading car detector config: {e}")
+            logger.error("Error loading car detector config: %s", e)
 
         return default_config

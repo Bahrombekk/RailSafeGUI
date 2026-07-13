@@ -1,35 +1,37 @@
 @echo off
-REM RailSafe AI - Desktop GUI Launcher for Windows
+setlocal
+chcp 65001 >nul
+title RailSafe AI
+
+cd /d "%~dp0"
 
 echo.
-echo 🚉 RailSafe AI - Aqilliy Temir Yo'l Kesishmalari
-echo ================================================
+echo   RailSafe AI - Aqilliy Temir Yo'l Kesishmalari
+echo   ============================================
 echo.
 
-REM Check if virtual environment exists
-if not exist "venv\" (
-    echo ⚠️  Virtual environment topilmadi. Yaratilmoqda...
-    python -m venv venv
-    echo ✅ Virtual environment yaratildi!
+REM Virtual muhit tekshirish
+if not exist ".venv\Scripts\python.exe" (
+    echo   [XATO] Virtual muhit topilmadi.
+    echo          Avval o'rnatuvchini ishga tushiring:  install.bat
+    echo.
+    pause
+    exit /b 1
 )
 
-REM Activate virtual environment
-echo 🔧 Virtual environment yoqilmoqda...
-call venv\Scripts\activate.bat
-
-REM Install requirements
-echo 📦 Kutubxonalar tekshirilmoqda...
-pip install -q -r requirements_gui.txt
-
-echo.
-echo ▶️  Dastur ishga tushirilmoqda...
+echo   Dastur ishga tushirilmoqda...
 echo.
 
-REM Run the application
-cd app
-python main.py
+REM Dasturni ishga tushirish (paket sifatida - import yo'llari to'g'ri bo'lishi uchun)
+".venv\Scripts\python.exe" -m app.main
+set "EXITCODE=%errorlevel%"
 
-REM Deactivate virtual environment
-call deactivate
+if not "%EXITCODE%"=="0" (
+    echo.
+    echo   [!] Dastur xatolik bilan yakunlandi (kod: %EXITCODE%).
+    echo       Batafsil: app\data\railsafe.log
+    echo.
+    pause
+)
 
-pause
+exit /b %EXITCODE%

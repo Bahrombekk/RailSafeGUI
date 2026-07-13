@@ -1,0 +1,14 @@
+# RailSafe AI — CPU (NVIDIA GPU yo'q) o'rnatish
+# Sekinroq ishlaydi (TensorRT yo'q), lekin GPU'siz mashinada ham ishga tushadi.
+#
+#   pip install -r requirements-cpu.txt
+
+-r requirements-base.txt
+
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+torch==2.10.0
+torchvision==0.25.0
+
+# AI deteksiya
+ultralytics==8.4.19

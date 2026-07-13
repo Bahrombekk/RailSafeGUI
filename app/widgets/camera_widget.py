@@ -1,5 +1,16 @@
 """
-Camera Widget - Displays live camera feed with status and statistics
+Camera Widget - Displays live camera feed with status and statistics.
+
+LEGACY / ISHLATILMAYDI (unused):
+    Bu widget dasturning hech bir joyida import qilinmaydi. Dashboard endi
+    CrossingCard (app/widgets/crossing_card.py) dan foydalanadi, u kadrlarni
+    alohida QThread (CameraWorker) da o'qiydi.
+
+    Bu yerdagi CameraWidget esa RTSP'ni GUI thread'ida QTimer callback ichida
+    `cap.read()` bilan o'qiydi va `open(timeout=10)` ni sinxron chaqiradi —
+    ya'ni GUI'ni bloklaydi. Shu sabab u ishlatilmaydi. Yangi kod uchun
+    CrossingCard/CameraWorker ishlatilsin. Fayl tarixiy sabablarga ko'ra
+    saqlanmoqda; qayta yozilmagan.
 """
 
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
