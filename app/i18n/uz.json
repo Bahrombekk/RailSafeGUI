@@ -482,6 +482,18 @@
           ]
         },
         {
+          "type": "steps",
+          "title": "Kadrga chizib polygon yaratish (tavsiya)",
+          "items": [
+            "Kamera kartasi → \"⋮\" → Tahrirlash",
+            "Polygon Fayli yonidagi \"✏️ Chizish\" tugmasini bosing",
+            "Kamera kadri ochiladi (bir necha soniya kutiladi)",
+            "Chap tugma bilan zona nuqtalarini qo'ying (kamida 3 ta)",
+            "O'ng tugma — oxirgi nuqtani o'chirish; \"Tozalash\" — barchasini",
+            "\"Saqlash\" — polygon avtomatik JSON qilib saqlanadi"
+          ]
+        },
+        {
           "type": "status",
           "title": "Ranglar ma'nosi",
           "items": [
@@ -581,10 +593,10 @@
           "title": "Yangiliklar (1.1.0)",
           "items": [
             "ANPR — poyezd o'tishida avtomobil raqamini aniqlash (alohida oqimda, real-time'ga ta'sirsiz)",
-            "Avtomatik o'rnatuvchi (install.bat) — GPU/CPU ni o'zi aniqlaydi",
-            "NVIDIA GPU bo'lmasa avtomatik CPU rejimi",
-            "Word/PDF hisobotlar uch tilda (uz/ru/en)",
-            "Barqarorlik va ishonchlilik yaxshilandi"
+            "Kamera kadriga to'g'ridan-to'g'ri polygon (zona) CHIZISH — fayl yuklash shart emas",
+            "Offline o'rnatuvchi (setup.exe) — Python/internet kerak emas; GPU'siz ham CPU rejimida ishlaydi",
+            "Word/PDF hisobotlar uch tilda (uz/ru/en) + kesishma TOIFASI (I-IV)",
+            "Oyna boshqaruvi (kichraytirish/kattalashtirish/o'lcham) va barqarorlik yaxshilandi"
           ]
         },
         {

@@ -201,25 +201,32 @@ violations.csv                                # jurnal
 ### Talablar
 
 - **OS**: Windows 10/11 (64-bit)
-- **Python**: 3.10+
 - **GPU**: NVIDIA (TensorRT uchun), CPU ham ishlaydi (avtomatik fallback)
-- **Tarmoq**: Kameralar bilan bir tarmoqda bo'lish
+- **Tarmoq**: Kameralar va PLC bilan bir tarmoqda bo'lish
+- **Python 3.10+** — faqat ishlab chiquvchi/qo'lda o'rnatish uchun (offline setup Python'ni o'zi olib keladi)
 
-### Avtomatik o'rnatish (tavsiya etiladi)
+### 1) Oxirgi foydalanuvchi uchun — offline setup (tavsiya etiladi)
 
-GPU bor-yo'qligini o'zi aniqlab, `.venv` yaratadi va mos kutubxonalarni o'rnatadi:
+Tarqatiladigan **`RailSafeAI_Setup.exe`** ni ishga tushiring:
+
+- Python/internet **KERAK EMAS** — portable Python + barcha kutubxonalar ichida
+- `%LOCALAPPDATA%\Programs\RailSafeAI` ga o'rnatadi (admin so'ramaydi)
+- Start menu / ish stoli yorlig'ini yaratadi
+- Birinchi ishda TensorRT engine quriladi (shu mashina uchun, ~2-5 daq)
+
+> Setup'ni qurish (ishlab chiquvchi): `build_portable.ps1` → `installer.iss` (Inno Setup).
+> Batafsil: [INSTALL.md](INSTALL.md)
+
+### 2) Ishlab chiquvchi uchun (manba'dan)
+
+GPU/CPU'ni avtomatik aniqlab `.venv` yaratadi:
 
 ```bat
-install.bat
+install.bat        REM o'rnatish (bir marta)
+run_gui.bat        REM ishga tushirish
 ```
 
-Keyin ishga tushirish:
-
-```bat
-run_gui.bat
-```
-
-### Qo'lda o'rnatish
+Yoki qo'lda:
 
 ```bat
 python -m venv .venv
@@ -228,8 +235,6 @@ pip install -r requirements-gpu.txt     REM NVIDIA GPU bilan
 REM yoki:  pip install -r requirements-cpu.txt   (GPU'siz)
 python -m app.main
 ```
-
-To'liq o'rnatish qo'llanmasi (mustaqil EXE, Inno Setup va h.k.): [INSTALL.md](INSTALL.md)
 
 ### GStreamer (ixtiyoriy, past kechikish uchun)
 
@@ -279,8 +284,15 @@ PLC da foydalaniladigan manzillar:
 
 ### Polygon zona chizish
 
-Har bir kamera uchun zona poligoni `polygons/` papkasida JSON formatida saqlanadi.
-Dastur ichidan: **Kamera → Sog' tugmasi → Zona sozlash**
+Har bir kamera uchun hisoblash zonasi (polygon) `polygons/` papkasida JSON
+formatida saqlanadi.
+
+**Dastur ichidan chizish (tavsiya):** Kamera kartasi → **"⋮" → Tahrirlash** →
+Polygon Fayli yonidagi **"✏️ Chizish"** tugmasi → kamera kadri ochiladi → sichqoncha
+bilan zona nuqtalarini qo'ying (chap tugma — qo'shish, o'ng tugma — o'chirish, kamida
+3 nuqta) → **Saqlash**. Polygon avtomatik JSON qilib saqlanadi — fayl yuklash shart emas.
+
+Yoki tayyor JSON faylni **"..."** tugmasi orqali yuklash mumkin.
 
 ---
 
@@ -302,11 +314,13 @@ RailSafeGUI/
 ├── models/                 # Model fayllar (.pt, .engine)
 ├── config/                 # Sozlamalar (gui_config.json, config.yaml)
 ├── polygons/               # Zona polygon fayllar
-├── install.bat             # Avtomatik o'rnatuvchi (GPU/CPU aniqlaydi)
-├── run_gui.bat             # Windows launcher
+├── install.bat             # Dev o'rnatuvchi (.venv, GPU/CPU aniqlaydi)
+├── run_gui.bat             # Windows launcher (dev)
 ├── requirements-*.txt      # base / gpu / cpu kutubxonalar
-├── RailSafeAI.spec         # PyInstaller (mustaqil EXE)
-├── installer.iss           # Inno Setup (setup.exe)
+├── build_portable.ps1      # Offline portable to'plamni yig'adi (packaging/portable)
+├── installer.iss           # Inno Setup — offline setup.exe (portable'ni paketlaydi)
+├── installer_assets/       # Ikonka (railsafe.ico) va setup rasmi (EXE_YUZI.png)
+├── packaging/config/       # Deploy uchun bo'sh-holat config shabloni
 └── INSTALL.md              # To'liq o'rnatish qo'llanmasi
 ```
 
@@ -325,16 +339,18 @@ Batafsil kod tuzilmasi: [app/README.md](app/README.md)
 
 ---
 
-## So'nggi yaxshilanishlar
+## So'nggi yaxshilanishlar (v1.1.0)
 
+- **Offline o'rnatuvchi** — `setup.exe` portable Python bilan: maqsad mashinada
+  Python/internet **kerak emas**, torch/deteksiya kafolatli ishlaydi
 - **ANPR** — avtomobil raqamini aniqlash: alohida fon oqimida (real-time'ga
   ta'sirsiz), full-res kadr, sifat oshirish (deskew/CLAHE/unsharp), per-character
   konsensus va O'zbek format-tuzatish
-- **O'rnatuvchi** — `install.bat` (GPU/CPU avto-aniqlash), `requirements-*.txt`,
-  PyInstaller/Inno Setup
-- **Ishonchlilik** — statistika yaxlitligi (delta count-loss tuzatildi), thread
-  xavfsizligi, GUI muzlashlari va yopilish crash'lari bartaraf etildi
-- **CPU fallback** — NVIDIA GPU bo'lmasa avtomatik CPU rejimida ishlaydi
+- **Polygon chizish** — kamera kadriga to'g'ridan-to'g'ri zona chizish (fayl yuklashsiz)
+- **Kesishma toifasi** — I-IV toifani standart jadval bo'yicha hisoblash + hisobot
+- **Oyna boshqaruvi** — ramkasiz (frameless) oyna: minimize/maximize/o'lcham tuzatildi
+- **Ishonchlilik** — statistika yaxlitligi (delta count-loss), thread xavfsizligi,
+  GUI muzlashlari va crash'lar bartaraf; NVIDIA GPU bo'lmasa CPU fallback
 - **Hisobotlar** — Word/PDF endi uz/ru/en tillarida
 
 ---

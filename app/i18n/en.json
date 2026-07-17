@@ -482,6 +482,18 @@
           ]
         },
         {
+          "type": "steps",
+          "title": "Create polygon by drawing (recommended)",
+          "items": [
+            "Camera card → \"⋮\" → Edit",
+            "Click the \"✏️ Draw\" button next to the polygon file",
+            "The camera frame opens (a few seconds to load)",
+            "Left click — add zone points (at least 3)",
+            "Right click — remove last point; \"Clear\" — all",
+            "\"Save\" — the polygon is saved as JSON automatically"
+          ]
+        },
+        {
           "type": "status",
           "title": "Color meanings",
           "items": [
@@ -581,10 +593,10 @@
           "title": "What's new (1.1.0)",
           "items": [
             "ANPR — license plate recognition during train passage (separate thread, no real-time impact)",
-            "Automatic installer (install.bat) — detects GPU/CPU",
-            "Automatic CPU mode when no NVIDIA GPU",
-            "Word/PDF reports in three languages (uz/ru/en)",
-            "Improved stability and reliability"
+            "DRAW the polygon (zone) directly on the camera frame — no file upload needed",
+            "Offline installer (setup.exe) — no Python/internet required; runs on CPU if no GPU",
+            "Word/PDF reports in three languages (uz/ru/en) + crossing CATEGORY (I-IV)",
+            "Improved window controls (minimize/maximize/resize) and stability"
           ]
         },
         {
