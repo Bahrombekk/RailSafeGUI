@@ -615,5 +615,15 @@
     }
   },
   "report.category_btn": "Category (Word)",
-  "stats.toifa": "Category: {toifa}"
+  "stats.toifa": "Category: {toifa}",
+  "dlg.add_camera.draw_polygon": "✏️ Draw",
+  "dlg.polygon.title": "Draw polygon (zone)",
+  "dlg.polygon.hint": "Left click — add point · Right click — remove last · At least 3 points",
+  "dlg.polygon.clear": "Clear",
+  "dlg.polygon.undo": "Undo",
+  "dlg.polygon.err_min": "At least 3 points required",
+  "dlg.polygon.err_snapshot": "Could not grab a frame from the camera. Check the source (RTSP).",
+  "dlg.polygon.saved": "Polygon saved",
+  "common.cancel": "Cancel",
+  "common.save": "Save"
 }

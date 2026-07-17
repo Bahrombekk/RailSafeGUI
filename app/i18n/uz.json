@@ -615,5 +615,15 @@
     }
   },
   "report.category_btn": "Toifa (Word)",
-  "stats.toifa": "Toifa: {toifa}"
+  "stats.toifa": "Toifa: {toifa}",
+  "dlg.add_camera.draw_polygon": "✏️ Chizish",
+  "dlg.polygon.title": "Polygon (zona) chizish",
+  "dlg.polygon.hint": "Chap tugma — nuqta qo'shish · O'ng tugma — oxirgi nuqtani o'chirish · Kamida 3 nuqta",
+  "dlg.polygon.clear": "Tozalash",
+  "dlg.polygon.undo": "Orqaga",
+  "dlg.polygon.err_min": "Kamida 3 ta nuqta kerak",
+  "dlg.polygon.err_snapshot": "Kameradan kadr olib bo'lmadi. Manba (RTSP) to'g'riligini tekshiring.",
+  "dlg.polygon.saved": "Polygon saqlandi",
+  "common.cancel": "Bekor qilish",
+  "common.save": "Saqlash"
 }

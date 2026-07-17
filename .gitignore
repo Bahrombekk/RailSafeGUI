@@ -56,6 +56,10 @@ dist/
 Output/
 *.manifest
 
+# Portable build-artefakt (6.6GB, build_portable.ps1 qayta yaratadi)
+# packaging/config esa manba — saqlanadi
+packaging/portable/
+
 # Yaratilgan hisobotlar (repo'ga kirmasligi kerak)
 *.docx
 *.pdf

@@ -11,8 +11,20 @@ import traceback
 import faulthandler
 from pathlib import Path
 
-# C-darajadagi crash (segfault) ni stderr ga yozish
-faulthandler.enable()
+# Windowed (console=False) EXE build'da sys.stdout/stderr = None bo'ladi.
+# Bu holda faulthandler.enable() va har qanday print() crash qiladi
+# ("RuntimeError: sys.stderr is None"). Shuning uchun None oqimlarni
+# eng birinchi bo'lib yo'naltiramiz.
+if sys.stdout is None:
+    sys.stdout = open(os.devnull, "w", encoding="utf-8")
+if sys.stderr is None:
+    sys.stderr = open(os.devnull, "w", encoding="utf-8")
+
+# C-darajadagi crash (segfault) ni stderr ga yozish (stderr endi mavjud)
+try:
+    faulthandler.enable()
+except Exception:
+    pass
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -21,13 +33,29 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 # emoji kabi belgilar UnicodeEncodeError bermasligi uchun (print xatolari).
 for _stream in (sys.stdout, sys.stderr):
     try:
-        _stream.reconfigure(encoding='utf-8', errors='replace')
+        if _stream is not None:
+            _stream.reconfigure(encoding='utf-8', errors='replace')
     except Exception:
         pass
 
 # Suppress HEVC/ffmpeg codec warnings
 os.environ['OPENCV_LOG_LEVEL'] = 'ERROR'
 os.environ['OPENCV_FFMPEG_LOGLEVEL'] = '-8'
+
+# ─── Frozen (.exe) da torch DLL yuklanishini ta'minlash ───────────────
+# WinError 1114 (c10.dll init) frozen build'da torch/lib bog'liq DLL'lari
+# qidiruv yo'lida bo'lmagani + OpenMP konflikti sabab yuz beradi. Bularni
+# torch import'idan OLDIN to'g'irlaymiz.
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")  # ikki OpenMP konflikti
+if getattr(sys, "frozen", False):
+    _bundle = Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
+    for _sub in ("torch/lib", "_internal/torch/lib", "torch\\lib"):
+        _dll_dir = _bundle / _sub
+        if _dll_dir.is_dir():
+            try:
+                os.add_dll_directory(str(_dll_dir))
+            except Exception:
+                pass
 
 # PyQt6 dan OLDIN torch yuklanishi SHART - Windows da Qt DLL lari
 # c10.dll ni ishga tushirishiga to'sqinlik qiladi
@@ -104,6 +132,11 @@ def main():
     # Set application style
     app.setStyle("Fusion")
 
+    # Oyna/taskbar ikonasi (logo)
+    _icon_path = Path(__file__).parent / "assets" / "images" / "icon_desktop.png"
+    if _icon_path.exists():
+        app.setWindowIcon(QIcon(str(_icon_path)))
+
     # Create and show main window
     window = MainWindow()
     window.show()
@@ -113,4 +146,9 @@ def main():
 
 
 if __name__ == "__main__":
+    # MUHIM (PyInstaller .exe): torch/ultralytics ichki multiprocessing
+    # child jarayonlari frozen exe'ni QAYTA ishga tushirib GUI'ni cheksiz
+    # ochib yuborishining oldini oladi. Har qanday boshqa importdan oldin.
+    import multiprocessing
+    multiprocessing.freeze_support()
     main()

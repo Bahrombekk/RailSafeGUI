@@ -615,5 +615,15 @@
     }
   },
   "report.category_btn": "Категория (Word)",
-  "stats.toifa": "Категория: {toifa}"
+  "stats.toifa": "Категория: {toifa}",
+  "dlg.add_camera.draw_polygon": "✏️ Нарисовать",
+  "dlg.polygon.title": "Рисование полигона (зоны)",
+  "dlg.polygon.hint": "ЛКМ — добавить точку · ПКМ — удалить последнюю · Минимум 3 точки",
+  "dlg.polygon.clear": "Очистить",
+  "dlg.polygon.undo": "Назад",
+  "dlg.polygon.err_min": "Нужно минимум 3 точки",
+  "dlg.polygon.err_snapshot": "Не удалось получить кадр с камеры. Проверьте источник (RTSP).",
+  "dlg.polygon.saved": "Полигон сохранён",
+  "common.cancel": "Отмена",
+  "common.save": "Сохранить"
 }

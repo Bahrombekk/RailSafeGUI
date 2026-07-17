@@ -3,15 +3,18 @@ Dialogs for adding/editing crossings, cameras, and PLCs
 """
 
 import os
+import re
 import json
 
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                               QLineEdit, QPushButton, QGroupBox, QFormLayout,
                               QSpinBox, QCheckBox, QFileDialog, QComboBox,
                               QMessageBox, QTabWidget, QWidget, QRadioButton,
-                              QButtonGroup, QProgressBar, QFrame, QScrollArea)
-from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QThread
-from PyQt6.QtGui import QFont, QPainter, QPen, QColor
+                              QButtonGroup, QProgressBar, QFrame, QScrollArea,
+                              QApplication)
+from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QThread, QPoint
+from PyQt6.QtGui import (QFont, QPainter, QPen, QColor, QPixmap, QImage,
+                         QPolygon)
 
 from app.utils.theme_colors import C
 from app.utils.language import t, LM
@@ -635,6 +638,178 @@ class AddCrossingDialog(QDialog):
         self.accept()
 
 
+def _grab_snapshot(source, timeout=15.0):
+    """RTSP/video manbadan TOZA kadr olish (timeout bilan, UI qotmasligi uchun).
+    RTSP dastlabki kadrlari keyframe kelmasdan dekod qilingani uchun BUZUQ bo'ladi —
+    shuning uchun dekoder sinxronlanguncha bir necha kadr o'qib, OXIRGI (toza)
+    kadrni qaytaramiz. Returns BGR numpy frame yoki None."""
+    import threading
+    import time
+    import cv2
+    result = [None]
+
+    def _work():
+        cap = None
+        try:
+            cap = cv2.VideoCapture(source, cv2.CAP_FFMPEG)
+            try:
+                cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            except Exception:
+                pass
+            t0 = time.time()
+            last = None
+            # ~3 soniya o'qib turamiz — RTSP keyframe intervalidan o'tib, dekoder
+            # to'liq sinxronlanadi, oxirgi kadr TOZA bo'ladi. (buzuq kulrang
+            # kadrlar faqat boshida bo'ladi)
+            grab_secs = min(3.0, max(1.0, timeout - 2.0))
+            while time.time() - t0 < grab_secs:
+                ok, frame = cap.read()
+                if ok and frame is not None and frame.size > 0:
+                    last = frame
+                else:
+                    time.sleep(0.02)
+            result[0] = last
+        except Exception:
+            pass
+        finally:
+            if cap is not None:
+                try:
+                    cap.release()
+                except Exception:
+                    pass
+
+    th = threading.Thread(target=_work, daemon=True)
+    th.start()
+    th.join(timeout)
+    # oxirgi o'qilgan kadrning nusxasi (buferdan mustaqil)
+    f = result[0]
+    return f.copy() if f is not None else None
+
+
+class PolygonCanvas(QWidget):
+    """Kadr ustiga sichqoncha bilan polygon chizish maydoni.
+    Chap tugma — nuqta qo'shish, o'ng tugma — oxirgi nuqtani o'chirish."""
+
+    def __init__(self, pixmap: QPixmap, parent=None):
+        super().__init__(parent)
+        self._pix = pixmap
+        self.setFixedSize(pixmap.size())
+        self.setCursor(Qt.CursorShape.CrossCursor)
+        self.points = []   # QPoint (ko'rsatish koordinatalari)
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.drawPixmap(0, 0, self._pix)
+        pts = self.points
+        if pts:
+            # to'ldirish (yopiq bo'lsa)
+            if len(pts) >= 3:
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(QColor(0, 230, 0, 45))
+                p.drawPolygon(QPolygon(pts))
+            # chiziqlar
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.setPen(QPen(QColor(0, 230, 0), 2))
+            for i in range(len(pts) - 1):
+                p.drawLine(pts[i], pts[i + 1])
+            if len(pts) >= 3:
+                p.setPen(QPen(QColor(0, 230, 0), 2, Qt.PenStyle.DashLine))
+                p.drawLine(pts[-1], pts[0])
+            # nuqtalar
+            p.setPen(QPen(QColor(0, 0, 0), 1))
+            p.setBrush(QColor(255, 200, 0))
+            for pt in pts:
+                p.drawEllipse(pt, 5, 5)
+        p.end()
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.points.append(event.position().toPoint())
+        elif event.button() == Qt.MouseButton.RightButton:
+            if self.points:
+                self.points.pop()
+        self.update()
+
+    def clear(self):
+        self.points = []
+        self.update()
+
+    def undo(self):
+        if self.points:
+            self.points.pop()
+            self.update()
+
+
+class PolygonDrawDialog(QDialog):
+    """Kamera kadri ustiga polygon (zona) chizish dialogi."""
+
+    def __init__(self, frame_bgr, existing_seg=None, parent=None):
+        super().__init__(parent)
+        import cv2
+        import numpy as np
+        self.setWindowTitle(t("dlg.polygon.title"))
+        self.orig_h, self.orig_w = frame_bgr.shape[:2]
+
+        max_w, max_h = 1100, 620
+        self._scale = min(max_w / self.orig_w, max_h / self.orig_h, 1.0)
+        disp_w = int(self.orig_w * self._scale)
+        disp_h = int(self.orig_h * self._scale)
+
+        rgb = np.ascontiguousarray(cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB))
+        qimg = QImage(rgb.data, self.orig_w, self.orig_h,
+                      self.orig_w * 3, QImage.Format.Format_RGB888)
+        pix = QPixmap.fromImage(qimg).scaled(
+            disp_w, disp_h, Qt.AspectRatioMode.IgnoreAspectRatio,
+            Qt.TransformationMode.SmoothTransformation)
+
+        self.canvas = PolygonCanvas(pix)
+        if existing_seg:
+            for i in range(0, len(existing_seg) - 1, 2):
+                self.canvas.points.append(
+                    QPoint(int(existing_seg[i] * self._scale),
+                           int(existing_seg[i + 1] * self._scale)))
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(10)
+
+        hint = QLabel(t("dlg.polygon.hint"))
+        hint.setStyleSheet(f"color: {C('text_muted')}; font-size: 12px;")
+        layout.addWidget(hint)
+        layout.addWidget(self.canvas, alignment=Qt.AlignmentFlag.AlignCenter)
+
+        btns = QHBoxLayout()
+        clear_btn = QPushButton(t("dlg.polygon.clear"))
+        clear_btn.clicked.connect(self.canvas.clear)
+        undo_btn = QPushButton(t("dlg.polygon.undo"))
+        undo_btn.clicked.connect(self.canvas.undo)
+        cancel_btn = QPushButton(t("common.cancel"))
+        cancel_btn.clicked.connect(self.reject)
+        save_btn = QPushButton(t("common.save"))
+        save_btn.setDefault(True)
+        save_btn.clicked.connect(self._on_save)
+        btns.addWidget(clear_btn)
+        btns.addWidget(undo_btn)
+        btns.addStretch()
+        btns.addWidget(cancel_btn)
+        btns.addWidget(save_btn)
+        layout.addLayout(btns)
+
+    def _on_save(self):
+        if len(self.canvas.points) < 3:
+            QMessageBox.warning(self, t("error.title"), t("dlg.polygon.err_min"))
+            return
+        self.accept()
+
+    def get_segmentation(self):
+        """Original kadr koordinatalarida tekis [x1,y1,x2,y2,...]."""
+        seg = []
+        for pt in self.canvas.points:
+            seg.append(round(pt.x() / self._scale, 1))
+            seg.append(round(pt.y() / self._scale, 1))
+        return seg
+
+
 class AddCameraDialog(QDialog):
     """Dialog for adding/editing a camera - auto type assignment"""
 
@@ -738,6 +913,11 @@ class AddCameraDialog(QDialog):
         browse_polygon_btn.clicked.connect(self._browse_polygon)
         polygon_layout.addWidget(browse_polygon_btn)
 
+        # Kadr ustiga polygon CHIZISH (fayl yuklashdan qulayroq)
+        draw_polygon_btn = QPushButton(t("dlg.add_camera.draw_polygon"))
+        draw_polygon_btn.clicked.connect(self._draw_polygon)
+        polygon_layout.addWidget(draw_polygon_btn)
+
         form_layout.addRow(t("dlg.add_camera.polygon"), polygon_layout)
 
         # Enabled
@@ -809,6 +989,70 @@ class AddCameraDialog(QDialog):
             "JSON Files (*.json);;All Files (*)")
         if file_path:
             self.polygon_input.setText(file_path)
+
+    def _draw_polygon(self):
+        """Kamera kadrini olib, ustiga polygon chizib, JSON qilib saqlaydi."""
+        source = self.source_input.text().strip()
+        if not source:
+            QMessageBox.warning(self, t("error.title"),
+                                t("dlg.add_camera.err_source"))
+            return
+
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        frame = _grab_snapshot(source)
+        QApplication.restoreOverrideCursor()
+        if frame is None:
+            QMessageBox.warning(self, t("error.title"),
+                                t("dlg.polygon.err_snapshot"))
+            return
+
+        # Mavjud polygonni (tahrirlash uchun) yuklash
+        existing = None
+        pf = self.polygon_input.text().strip()
+        if pf and os.path.isfile(pf):
+            try:
+                d = json.load(open(pf, encoding="utf-8"))
+                existing = d["annotations"][0]["segmentation"][0]
+            except Exception:
+                existing = None
+
+        dlg = PolygonDrawDialog(frame, existing, self)
+        if not dlg.exec():
+            return
+
+        seg = dlg.get_segmentation()
+        xs, ys = seg[0::2], seg[1::2]
+        bx, by = min(xs), min(ys)
+        bw, bh = max(xs) - bx, max(ys) - by
+
+        name = self.name_input.text().strip() or "camera"
+        safe = re.sub(r"[^\w-]", "_", name)
+        # MUHIM: faylni LOYIHA ILDIZIdagi polygons/ ga saqlaymiz (CWD emas) —
+        # kamera polygonni ildizga nisbatan yuklaydi. Aks holda app/ dan ishga
+        # tushirilsa app/polygons/ ga tushib, topilmay qoladi.
+        from pathlib import Path as _P
+        proj_root = _P(__file__).resolve().parent.parent.parent
+        poly_dir = proj_root / "polygons"
+        poly_dir.mkdir(parents=True, exist_ok=True)
+        abs_path = str(poly_dir / f"paligon_{safe}.json")
+        rel_path = os.path.join("polygons", f"paligon_{safe}.json")
+        data = {
+            "info": {"description": "railsafe-drawn"},
+            "images": [{"id": 1, "width": dlg.orig_w, "height": dlg.orig_h,
+                        "file_name": "snapshot.jpg"}],
+            "annotations": [{"id": 0, "iscrowd": 0, "image_id": 1,
+                             "category_id": 1, "segmentation": [seg],
+                             "bbox": [bx, by, bw, bh], "area": bw * bh}],
+            "categories": [{"id": 1, "name": safe}],
+        }
+        try:
+            with open(abs_path, "w", encoding="utf-8") as f:
+                json.dump(data, f)
+            self.polygon_input.setText(rel_path)   # ildiz-nisbiy yo'l
+            QMessageBox.information(self, t("dlg.polygon.title"),
+                                   t("dlg.polygon.saved"))
+        except Exception as e:
+            QMessageBox.warning(self, t("error.title"), str(e))
 
     def _save(self):
         if not self.name_input.text().strip():
@@ -1603,44 +1847,60 @@ class EngineExportWorker(QThread):
         self.models = models  # [{"abs_path": ..., "imgsz": ..., "name": ...}, ...]
 
     def run(self):
-        import subprocess
         import sys
 
         success_count = 0
         total = len(self.models)
+        # MUHIM: frozen (.exe) da sys.executable = GUI exe (Python interpretatori
+        # EMAS). subprocess [sys.executable, "-c", ...] chaqirilsa, exe "-c" ni
+        # e'tiborsiz qoldirib GUI'ni QAYTA ochadi → u yana engine export'ni
+        # boshlaydi → CHEKSIZ oynalar. Shuning uchun frozen'da IN-PROCESS eksport.
+        frozen = bool(getattr(sys, "frozen", False))
 
         for i, m in enumerate(self.models):
             model_name = m["name"]
             model_path = m["abs_path"]
             imgsz = m["imgsz"]
             batch = m.get("batch", 8)
+            engine_path = os.path.splitext(model_path)[0] + ".engine"
 
             try:
                 self.model_started.emit(i, model_name)
-                self.stage_changed.emit(f"{model_name} yuklanmoqda...")
-
-                # Subprocess orqali export: QThread DLL muammosidan qochish
-                script = (
-                    f"from ultralytics import YOLO; "
-                    f"m = YOLO(r'{model_path}'); "
-                    f"m.export(format='engine', imgsz={imgsz}, half=True, batch={batch})"
-                )
                 self.stage_changed.emit(
                     f"{model_name} — TensorRT engine yaratilmoqda (batch={batch})...\n"
                     f"Bu 2-5 daqiqa davom etishi mumkin"
                 )
-                result = subprocess.run(
-                    [sys.executable, "-c", script],
-                    capture_output=True, text=True, timeout=600
-                )
 
-                engine_path = os.path.splitext(model_path)[0] + ".engine"
-                if result.returncode == 0 and os.path.exists(engine_path):
+                if frozen:
+                    # In-process eksport (subprocess yo'q — GUI qayta ochilmaydi)
+                    from ultralytics import YOLO
+                    YOLO(model_path).export(format="engine", imgsz=imgsz,
+                                            half=True, batch=batch)
+                    ok = os.path.exists(engine_path)
+                    if not ok:
+                        print(f"[EngineExport] {model_name}: engine yaratilmadi")
+                else:
+                    # Dev rejimi: subprocess (QThread DLL muammosidan qochish)
+                    import subprocess
+                    script = (
+                        f"from ultralytics import YOLO; "
+                        f"m = YOLO(r'{model_path}'); "
+                        f"m.export(format='engine', imgsz={imgsz}, half=True, batch={batch})"
+                    )
+                    result = subprocess.run(
+                        [sys.executable, "-c", script],
+                        capture_output=True, text=True, timeout=600
+                    )
+                    ok = result.returncode == 0 and os.path.exists(engine_path)
+                    if not ok:
+                        err = (result.stderr.strip().splitlines()[-1]
+                               if result.stderr.strip() else "noma'lum xato")
+                        print(f"[EngineExport] {model_name} xatolik: {err}")
+
+                if ok:
                     success_count += 1
                     self.model_finished.emit(i, True)
                 else:
-                    err = result.stderr.strip().splitlines()[-1] if result.stderr.strip() else "noma'lum xato"
-                    print(f"[EngineExport] {model_name} xatolik: {err}")
                     self.model_finished.emit(i, False)
 
             except Exception as e:

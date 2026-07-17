@@ -11,21 +11,26 @@ ESLATMA: torch + CUDA + TensorRT ni "muzlatish" (freeze) og'ir va nozik.
 Ishonchli variant — install.bat (venv asosida). Bu spec asosan CPU/oddiy
 tarqatish uchun. GPU build juda katta (>4 GB) bo'ladi.
 """
+import glob as _glob
 from PyInstaller.utils.hooks import collect_all, collect_data_files
 
 datas = []
 binaries = []
 hiddenimports = []
 
-# Loyiha resurslari (exe yonida turishi kerak)
+# Loyiha resurslari.
+# - config: TOZA config (packaging/config) — bo'sh kesishmalar, data yo'q
+# - models: FAQAT .pt (mashinaga xos .engine bundle QILINMAYDI — u har bir
+#   kompyuterda birinchi ishga tushirishda .pt dan quriladi)
+# - polygons/data bundle qilinmaydi — bo'sh holatda o'rnatiladi
 datas += [
-    ('config', 'config'),
-    ('polygons', 'polygons'),
-    ('models', 'models'),
+    ('packaging/config', 'config'),
     ('app/i18n', 'app/i18n'),
     ('app/styles', 'app/styles'),
     ('app/assets', 'app/assets'),
 ]
+# Faqat .pt model fayllari (.engine EMAS)
+datas += [(f, 'models') for f in _glob.glob('models/*.pt')]
 
 # Og'ir paketlarning ma'lumot/binary fayllarini yig'ish
 for pkg in ('ultralytics', 'cv2', 'av'):
@@ -61,7 +66,11 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=['tkinter', 'matplotlib', 'pytest'],
+    # onnx/onnxruntime/onnxslim — ultralytics orqali keladi, lekin ishlashda
+    # kerak emas (TensorRT + PyTorch .pt ishlatiladi). onnx.reference PyInstaller
+    # ning bog'liqlik tahlilini crash qiladi, shuning uchun chiqarib tashlaymiz.
+    excludes=['tkinter', 'matplotlib', 'pytest',
+              'onnx', 'onnxruntime', 'onnxslim'],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
@@ -82,7 +91,7 @@ exe = EXE(
     upx=False,
     console=False,          # GUI dastur - konsol oynasi ko'rsatilmaydi
     disable_windowed_traceback=False,
-    icon=None,
+    icon='installer_assets/railsafe.ico',
 )
 
 coll = COLLECT(

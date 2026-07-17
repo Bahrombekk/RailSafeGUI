@@ -4,8 +4,8 @@ Main Window - Clean single toolbar layout
 
 from PyQt6.QtWidgets import (QMainWindow, QStackedWidget, QStatusBar,
                               QMessageBox, QToolBar, QWidget, QHBoxLayout,
-                              QLabel, QPushButton, QSizePolicy)
-from PyQt6.QtCore import Qt, QTimer
+                              QLabel, QPushButton, QSizePolicy, QApplication)
+from PyQt6.QtCore import Qt, QTimer, QEvent
 from PyQt6.QtGui import QAction, QPixmap
 from pathlib import Path
 
@@ -36,13 +36,32 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("RailSafe")
         self.setMinimumSize(1200, 800)
 
+        # OS sarlavha panelini olib tashlaymiz (frameless), lekin taskbar
+        # MINIMIZE qobiliyatini SAQLAYMIZ (WindowMinimizeButtonHint) — shunda
+        # showMinimized() ishlaydi va oyna taskbar'da ko'rinadi. Sof Qt yechim
+        # (ctypes/nativeEvent YO'Q — access violation'dan xoli).
+        self.setWindowFlags(
+            Qt.WindowType.Window
+            | Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowMinimizeButtonHint
+            | Qt.WindowType.WindowMaximizeButtonHint
+            | Qt.WindowType.WindowSystemMenuHint
+        )
+        self._drag_pos = None      # oynani toolbar'dan sudrab ko'chirish uchun
+        self._drag_win = None
+        self._is_max = True        # soxta-maximize bilan boshlanadi
+        self._normal_geom = None   # tiklash uchun saqlangan geometriya
+
         # Remove default menu bar
         self.setMenuBar(None)
 
         self._load_stylesheet()
         self._setup_ui()
         self._setup_statusbar()
-        self.showMaximized()
+        # Native showMaximized() borderless oynada taskbar ustini yopadi —
+        # buning o'rniga "soxta maximize" (ishchi hududga setGeometry) ishlatamiz.
+        self.show()
+        self._set_maximized(True)
 
         # Startup: avval engine tayyorlansin, keyin detektor ishga tushsin
         QTimer.singleShot(300, self._startup_sequence)
@@ -72,7 +91,7 @@ class MainWindow(QMainWindow):
 
         # Logo — "RailSafe" yozuvidan OLDIN
         self.logo_label = QLabel()
-        _logo = Path(__file__).parent.parent / "assets" / "images" / "Becraund.png"
+        _logo = Path(__file__).parent.parent / "assets" / "images" / "icon_desktop.png"
         if _logo.exists():
             _pm = QPixmap(str(_logo))
             if not _pm.isNull():
@@ -169,15 +188,75 @@ class MainWindow(QMainWindow):
 
         self._apply_toolbar_style()
 
-    def _toggle_maximize(self):
-        if self.isMaximized():
-            self.showNormal()
-            self._btn_maximize.setText("□")
-            self._btn_maximize.setToolTip(t("window.maximize"))
-        else:
-            self.showMaximized()
+    def _screen_workarea(self):
+        scr = self.screen() or QApplication.primaryScreen()
+        return scr.availableGeometry()
+
+    def _set_maximized(self, on):
+        """Soxta maximize/tiklash (native maximized holat borderless'da taskbar
+        ustini yopadi, shuning uchun ishchi hududga setGeometry qilamiz)."""
+        if on:
+            if not self._is_max:
+                self._normal_geom = self.geometry()
+            self.setGeometry(self._screen_workarea())
+            self._is_max = True
             self._btn_maximize.setText("◱")
             self._btn_maximize.setToolTip(t("window.restore"))
+        else:
+            g = self._normal_geom
+            if g is not None and g.width() > 200 and g.height() > 200:
+                self.setGeometry(g)
+            else:
+                wa = self._screen_workarea()
+                w, h = int(wa.width() * 0.75), int(wa.height() * 0.85)
+                self.setGeometry(wa.x() + (wa.width() - w) // 2,
+                                 wa.y() + (wa.height() - h) // 2, w, h)
+            self._is_max = False
+            self._btn_maximize.setText("□")
+            self._btn_maximize.setToolTip(t("window.maximize"))
+
+    def _toggle_maximize(self):
+        self._set_maximized(not self._is_max)
+
+    def changeEvent(self, event):
+        # Minimize'dan tiklanganda soxta-maximize geometriyasini qayta qo'llaymiz
+        # (frameless oyna tiklanganda yuqori panel/geometriya buzilib qolmasligi uchun)
+        if event.type() == QEvent.Type.WindowStateChange:
+            if not (self.windowState() & Qt.WindowState.WindowMinimized):
+                if getattr(self, "_is_max", False):
+                    QTimer.singleShot(0, lambda: self.setGeometry(self._screen_workarea()))
+        super().changeEvent(event)
+
+    # ── Frameless oynani toolbar sohasidan sudrab ko'chirish ──────────
+    def _in_toolbar(self, pos) -> bool:
+        return hasattr(self, "toolbar") and 0 <= pos.y() <= self.toolbar.height()
+
+    def mousePressEvent(self, event):
+        if (event.button() == Qt.MouseButton.LeftButton
+                and self._in_toolbar(event.position().toPoint())):
+            self._drag_pos = event.globalPosition().toPoint()
+            self._drag_win = self.frameGeometry().topLeft()
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if (self._drag_pos is not None
+                and event.buttons() & Qt.MouseButton.LeftButton
+                and not getattr(self, "_is_max", False)):
+            delta = event.globalPosition().toPoint() - self._drag_pos
+            self.move(self._drag_win + delta)
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        self._drag_pos = None
+        self._drag_win = None
+        super().mouseReleaseEvent(event)
+
+    def mouseDoubleClickEvent(self, event):
+        # Toolbar'ga ikki marta bosish — kattalashtirish/tiklash
+        if (event.button() == Qt.MouseButton.LeftButton
+                and self._in_toolbar(event.position().toPoint())):
+            self._toggle_maximize()
+        super().mouseDoubleClickEvent(event)
 
     def _apply_toolbar_style(self):
         """Apply current theme colors to toolbar"""
@@ -243,6 +322,8 @@ class MainWindow(QMainWindow):
 
     def _setup_statusbar(self):
         self.statusbar = QStatusBar()
+        # Frameless oynada xavfsiz resize (o'ng-past burchakda ushlagich) — sof Qt
+        self.statusbar.setSizeGripEnabled(True)
         self.setStatusBar(self.statusbar)
 
         # Markaziy soat label
