@@ -59,6 +59,8 @@
   "chart.trains_30d": "Trains (30 days)",
   "chart.heatmap_7d": "Weekly occupancy heatmap (7 days × 24 hours)",
   "chart.hourly_today": "Hourly (today)",
+  "chart.hourly_title": "Today's Statistics (hourly)",
+  "chart.hourly_total": "Total: {total} (L: {light}, H: {heavy})",
   "chart.monthly": "Monthly trend (30 days)",
   "chart.distribution": "Distribution",
   "chart.movement": "Train movement",
@@ -100,6 +102,7 @@
   "dlg.add_crossing.err_name": "Please enter crossing name!",
   "dlg.add_crossing.err_loc": "Please enter crossing location!",
   "dlg.add_crossing.err_ip": "Please enter PLC IP address!",
+  "dlg.add_crossing.err_ip_invalid": "Invalid IP address. Example: 192.168.1.10",
   "dlg.add_crossing.import_ok": "Data loaded! ({count} cameras)",
   "dlg.add_crossing.placeholder_name": "e.g.: Crossing 1",
   "dlg.add_crossing.placeholder_loc": "e.g.: Main St, Downtown",
@@ -116,6 +119,7 @@
   "dlg.add_camera.save": "Save",
   "dlg.add_camera.err_name": "Please enter camera name!",
   "dlg.add_camera.err_source": "Please enter camera source!",
+  "dlg.add_camera.err_source_invalid": "Invalid source. Use rtsp://…, http(s)://… or a path to an existing video file.",
   "dlg.add_camera.placeholder_name": "e.g.: North direction",
   "dlg.add_camera.placeholder_source": "rtsp://... or /path/to/video.mp4",
   "dlg.add_camera.browse_video": "Select Video",
@@ -128,6 +132,47 @@
   "settings.title": "Settings",
   "settings.tab.main": "Main",
   "settings.tab.advanced": "Advanced",
+  "settings.tab.integration": "Integration",
+  "integ.locked_title": "Protected section",
+  "integ.locked_sub": "Integration settings are for the responsible staff member only. Enter the section password to continue.",
+  "integ.set_password_title": "Set a section password",
+  "integ.set_sub": "First use: set a password for the integration section. Only the responsible staff member should know it.",
+  "integ.password_ph": "Password",
+  "integ.new_password_ph": "New password (at least 6 characters)",
+  "integ.confirm_password_ph": "Repeat the password",
+  "integ.unlock": "Unlock",
+  "integ.set_password": "Set password",
+  "integ.wrong_password": "Wrong password",
+  "integ.password_short": "Password must be at least 6 characters",
+  "integ.password_mismatch": "Passwords do not match",
+  "integ.pull_section": "Incoming API — external system reads from us",
+  "integ.pull_title": "API server",
+  "integ.pull_sub": "An external system fetches statistics itself via http://<computer-ip>:<port>/api/v1/...",
+  "integ.port": "Port",
+  "integ.api_key": "API key",
+  "integ.push_section": "Push to external site — we send the data",
+  "integ.push_title": "Automatic push to site",
+  "integ.push_sub": "Statistics are periodically sent to the site's API (login → token → send)",
+  "integ.base_url": "Site URL",
+  "integ.username": "Login",
+  "integ.password": "Password",
+  "integ.interval": "Send interval",
+  "integ.min_suffix": " min",
+  "integ.test_btn": "Test connection",
+  "integ.testing": "Testing...",
+  "integ.test_ok": "Connection successful — data sent!",
+  "integ.test_fail": "Error: {msg}",
+  "integ.url_required": "Site URL is empty",
+  "integ.status_never": "Nothing sent yet",
+  "integ.status_last": "Last successful send: {time}",
+  "integ.status_error": "Last error: {err}",
+  "integ.docs_section": "Documentation for site developers",
+  "integ.save_spec": "Save API sample...",
+  "integ.spec_hint": "The site side needs only 2 endpoints. Save the specification (how to build them) and a working sample server, then hand them to the developers.",
+  "integ.spec_saved": "Files saved:\n{path}\n\n- INTEGRATION_PUSH_SPEC.md (specification)\n- sample_push_receiver.py (sample server)",
+  "integ.spec_missing": "Sample files not found (docs folder missing).",
+  "integ.change_password": "Change section password",
+  "integ.password_changed": "Password changed",
   "settings.interface": "Interface",
   "settings.language": "Language:",
   "settings.theme": "Theme:",
@@ -177,6 +222,7 @@
   "error.crossing_open": "Error opening crossing: {e}",
   "error.report": "Error generating report.",
   "dashboard.empty": "No crossings. Click '+ Add Crossing' in the toolbar.",
+  "dashboard.ai_off": "⚠ AI detection is OFF — the model was not found or failed to load. Vehicle counting and violation detection are disabled. Check the model in Settings.",
   "report.title": "Download Report",
   "report.hint": "Select a date range and download a Word format report.",
   "report.today": "Today",
@@ -310,6 +356,8 @@
   "about.nav.plc": "PLC and safety",
   "about.nav.polygon": "Zone and occupancy",
   "about.nav.troubleshooting": "Troubleshooting",
+  "about.nav.integration": "Integration (API)",
+  "about.section.integration": "External system integration (API)",
   "about.section.start": "Starting the system from zero",
   "about.section.crossing": "Adding a new crossing",
   "about.section.camera": "Adding and checking a camera",
@@ -585,6 +633,61 @@
         }
       ]
     },
+    "integration": {
+      "lead": "RailSafe AI shares statistics with external systems in two ways: an external system reads FROM US (API server), or the app itself PUSHES data to a site. Both are managed from Settings → Integration — the section is password-protected, and no reinstall or rebuild is needed.",
+      "blocks": [
+        {
+          "type": "steps",
+          "title": "Enabling the API server (external system reads from us)",
+          "items": [
+            "Open Settings → Integration tab. On first use you set a section password — only the responsible staff member should know it.",
+            "Turn on \"API server\". Optionally set the port (default 8750) and an API key, then press Save.",
+            "Verify: open http://localhost:8750/api/v1/health in a browser. No app restart is needed — the service reloads on save."
+          ]
+        },
+        {
+          "type": "info",
+          "title": "Available endpoints (GET, JSON)",
+          "items": [
+            "/api/v1/health - server status and time.",
+            "/api/v1/crossings - list of crossings and cameras.",
+            "/api/v1/stats/today - today's totals for all crossings (light/heavy/trains).",
+            "/api/v1/stats/hourly?crossing_id=1 - 24-hour distribution (any day via date=).",
+            "/api/v1/stats/daily?crossing_id=1&from=2026-07-01&to=2026-07-20 - daily values for a period.",
+            "/api/v1/stats/weekly?crossing_id=1 and /api/v1/stats/monthly?crossing_id=1 - 7 days / 30 days.",
+            "/api/v1/trains/today?crossing_id=1 - today's train passes (count, duration).",
+            "/api/v1/trains/range?crossing_id=1&from=...&to=... - train passes for a period."
+          ]
+        },
+        {
+          "type": "steps",
+          "title": "Automatic push to a site",
+          "items": [
+            "Turn on Settings → Integration → \"Automatic push to site\".",
+            "Enter the site URL, login and password — the app obtains a token automatically and sends data at the chosen interval (default 5 minutes). It re-logins by itself when the token expires.",
+            "Use the \"Test connection\" button to try it immediately — the result is shown right there.",
+            "For the site developers: the \"Save API sample\" button exports the specification and a working sample server — they only need to build 2 endpoints."
+          ]
+        },
+        {
+          "type": "tip",
+          "title": "Protection (API key)",
+          "items": [
+            "If api_key is set, every request must include the X-API-Key header (or ?api_key= parameter) with that value.",
+            "If api_key is empty, the API is open - leave it that way only on a trusted local network."
+          ]
+        },
+        {
+          "type": "warning",
+          "title": "Security note",
+          "items": [
+            "The API returns statistics only - camera RTSP addresses and passwords are never exposed.",
+            "To connect from another computer, allow the chosen port (8750) in Windows Firewall.",
+            "Do not expose the API directly to the internet - use it on a local/corporate network or via VPN only."
+          ]
+        }
+      ]
+    },
     "version": {
       "lead": "RailSafe AI is a local desktop product for railway crossing monitoring.",
       "blocks": [
@@ -592,6 +695,7 @@
           "type": "tip",
           "title": "What's new (1.1.0)",
           "items": [
+            "INTEGRATION — API server for external systems (pull) and automatic push to a site; password-protected settings section, ready-made sample for developers",
             "ANPR — license plate recognition during train passage (separate thread, no real-time impact)",
             "DRAW the polygon (zone) directly on the camera frame — no file upload needed",
             "Offline installer (setup.exe) — no Python/internet required; runs on CPU if no GPU",

@@ -3,6 +3,7 @@ Configuration Manager for Railway Crossing System
 Manages crossings, cameras, and PLC configurations
 """
 
+import copy
 import json
 import yaml
 import os
@@ -15,7 +16,7 @@ from datetime import datetime
 
 logger = logging.getLogger("RailSafe.config")
 
-# gui/utils/config_manager.py → gui/utils → gui → project_root
+# app/core/config.py → app/core → app → project_root
 _PROJECT_ROOT  = Path(__file__).parent.parent.parent
 _CONFIG_DIR    = _PROJECT_ROOT / "config"
 _GUI_CONFIG    = _CONFIG_DIR / "gui_config.json"
@@ -87,16 +88,22 @@ class ConfigManager:
         return new_id
 
     def get_crossings(self) -> List[Dict]:
-        """Get all crossings"""
+        """Get all crossings.
+
+        Chuqur nusxa qaytaradi — chaqiruvchi (API/push fon oqimlari) iteratsiya
+        qilayotganda GUI oqimi ro'yxatni o'zgartirsa "list changed size during
+        iteration" bo'lmasligi uchun. Ichki mutatsiya qiluvchi metodlar bevosita
+        self.config ustida ishlaydi, shu sababli bu ularga ta'sir qilmaydi.
+        """
         with self._lock:
-            return self.config.get("crossings", [])
+            return copy.deepcopy(self.config.get("crossings", []))
 
     def get_crossing(self, crossing_id: int) -> Optional[Dict]:
-        """Get a specific crossing by ID"""
+        """Get a specific crossing by ID (chuqur nusxa — get_crossings bilan bir xil sabab)."""
         with self._lock:
             for crossing in self.config.get("crossings", []):
                 if crossing.get("id") == crossing_id:
-                    return crossing
+                    return copy.deepcopy(crossing)
         return None
 
     def add_crossing(self, crossing_data: Dict) -> int:
@@ -214,9 +221,9 @@ class ConfigManager:
             return True
 
     def get_settings(self) -> Dict:
-        """Get application settings"""
+        """Get application settings (chuqur nusxa — fon oqimlari xavfsiz o'qishi uchun)."""
         with self._lock:
-            return self.config.get("settings", {})
+            return copy.deepcopy(self.config.get("settings", {}))
 
     def update_settings(self, settings: Dict):
         """Update application settings"""

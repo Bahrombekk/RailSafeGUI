@@ -25,7 +25,8 @@ _NAV_ITEMS = [
     ("polygon", "06", "about.nav.polygon", "about.section.polygon"),
     ("analytics", "07", "about.nav.analytics", "about.section.analytics"),
     ("troubleshooting", "08", "about.nav.troubleshooting", "about.section.troubleshooting"),
-    ("version", "09", "about.nav.version", "about.section.version"),
+    ("integration", "09", "about.nav.integration", "about.section.integration"),
+    ("version", "10", "about.nav.version", "about.section.version"),
 ]
 
 

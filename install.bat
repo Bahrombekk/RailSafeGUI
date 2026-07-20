@@ -82,6 +82,11 @@ echo [5/5] O'rnatish tekshirilmoqda...
 if !errorlevel! neq 0 (
     echo   [OGOHLANTIRISH] Ba'zi kutubxonalar import bo'lmadi - yuqoridagi xatoga qarang.
 )
+REM torch/ultralytics AI yadrosi — buzuq CUDA/torch jimgina o'tib ketmasin
+"%VPY%" -c "import torch; from ultralytics import YOLO; print('  [OK] torch', torch.__version__, '| CUDA:', torch.cuda.is_available())"
+if !errorlevel! neq 0 (
+    echo   [OGOHLANTIRISH] torch/ultralytics import bo'lmadi - AI aniqlash ishlamaydi.
+)
 
 echo.
 echo ============================================================

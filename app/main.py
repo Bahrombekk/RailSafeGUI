@@ -6,6 +6,7 @@ Aqilliy Temir Yo'l Kesishmalari Monitoring Tizimi
 import sys
 import os
 import logging
+import logging.handlers
 import threading
 import traceback
 import faulthandler
@@ -76,14 +77,20 @@ from PyQt6.QtWebEngineWidgets import QWebEngineView as _QWEView  # noqa: F401
 from app.pages.main_window import MainWindow
 
 # ─── Logging ──────────────────────────────────────────────
+# WARNING darajasi: PLC uzilishi, RTSP qayta ulanishi, stats-push xatolari
+# kabi ogohlantirishlar log'ga tushishi uchun (ERROR ularni yashirar edi).
+# RotatingFileHandler: log fayli cheksiz o'smasin (5 MB × 3 zaxira).
 _log_dir = Path(__file__).parent / "data"
 _log_dir.mkdir(exist_ok=True)
-logging.basicConfig(
-    filename=str(_log_dir / "railsafe.log"),
-    level=logging.ERROR,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
+_log_handler = logging.handlers.RotatingFileHandler(
+    str(_log_dir / "railsafe.log"),
+    maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8",
 )
+_log_handler.setFormatter(logging.Formatter(
+    "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+))
+logging.basicConfig(level=logging.WARNING, handlers=[_log_handler])
 _logger = logging.getLogger("RailSafe")
 
 # snap7 TCP xatolarini log faylidan yashirish (PLCManager o'z print() dan foydalanadi)

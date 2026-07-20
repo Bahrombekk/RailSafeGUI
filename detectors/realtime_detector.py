@@ -801,7 +801,16 @@ class RealtimeMultiCameraDetector:
     def stop(self):
         self._running = False
         if self._worker_thread:
-            self._worker_thread.join(timeout=2.0)
+            self._worker_thread.join(timeout=5.0)
+            if self._worker_thread.is_alive():
+                # Worker inference'da qotib qolgan. Backend'ni (TRT context/GPU
+                # buferlar) hozir yopsak, execute_async o'rtasida crash bo'lardi.
+                # Resurslarni ochiq qoldiramiz — jarayon tugashida OS tozalaydi.
+                logger.warning("[RealtimeDetector] worker 5s ichida tugamadi — "
+                               "backend resurslari yopilmaydi (crash oldini olish)")
+                self._worker_thread = None
+                self._is_loaded = False
+                return
             self._worker_thread = None
 
         # Backend resurslarini bo'shatish (thread pool, TRT engine/context/GPU buferlar).

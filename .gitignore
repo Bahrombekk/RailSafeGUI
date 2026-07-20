@@ -70,6 +70,26 @@ app/toifa_hisobot.docx
 hisobot_*.pdf
 hisobot_*.docx
 
-# Runtime ma'lumotlar (baza WAL/SHM)
+# Runtime ma'lumotlar (baza, log, WAL/SHM) — repo'ga kirmasligi kerak
+*.db
 *.db-shm
 *.db-wal
+*.log
+app/data/
+gui/
+
+# Maxfiy config (RTSP parollari, push login/parol) — repo'da SAQLANMAYDI.
+# Shablon: packaging/config/gui_config.json (bo'sh) yoki config/gui_config.example.json
+config/gui_config.json
+config/gui_config2.json
+config/camera_state.json
+
+# Model og'irliklari (katta, hardware-bog'liq .engine) — LFS/relizdan olinadi.
+# packaging/build ularni models/ dan nusxalaydi; git'da versiyalanmaydi.
+models/*.pt
+models/*.engine
+models/*.onnx
+
+# Tasodifiy axlat (buzilgan pip redirect: `pip install "av >=12.0.0"`)
+=*
+about_preview.html

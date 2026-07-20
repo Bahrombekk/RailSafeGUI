@@ -3,6 +3,7 @@ Dashboard View - GPU MAKSIMAL ISHLATISH
 TensorRT native inference (208 FPS) yoki PyTorch/ONNX fallback
 """
 
+import logging
 import os
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QScrollArea,
                               QGridLayout, QSizePolicy)
@@ -11,6 +12,8 @@ from app.widgets.crossing_card import CrossingCard
 from app.utils.theme_colors import C
 from app.core.database import StatsDB
 from app.utils.language import t, LM
+
+_log = logging.getLogger("RailSafe.dashboard")
 
 try:
     from detectors import RealtimeMultiCameraDetector
@@ -48,22 +51,40 @@ class Dashboard(QWidget):
         """Engine eksport tugagandan keyin chaqiriladi — detektor yuklash + kameralar boshlash"""
         self._init_shared_detector()
         self._load_crossings()
+        self._update_ai_banner()
+
+    def _update_ai_banner(self):
+        """AI aniqlash o'chiq bo'lsa (model yo'q/yuklanmadi) operatorga doimiy
+        ogohlantiruvchi banner ko'rsatish."""
+        if self._ai_banner is None:
+            return
+        off = getattr(self, "_ai_off", False)
+        self._ai_banner.setText(t("dashboard.ai_off"))
+        self._ai_banner.setStyleSheet(
+            "QLabel { background: #7f1d1d; color: #ffffff; font-weight: bold; "
+            "padding: 8px 12px; border-radius: 6px; }")
+        self._ai_banner.setVisible(off)
 
     def _init_shared_detector(self):
         """
         RealtimeMultiCameraDetector - TensorRT native yoki Ultralytics fallback
         """
+        self._ai_off = False   # operatorga banner ko'rsatish kerakmi?
         if not CAR_DETECTOR_AVAILABLE:
+            _log.warning("[Dashboard] detektor kutubxonasi yo'q (import xato) — AI o'chiq")
+            self._ai_off = True
             return
 
         try:
             car_config = self.config_manager.get_car_detector_config()
             if not car_config.get("enabled", False):
+                # Ataylab o'chirilgan — bu normal holat, banner shart emas.
                 return
 
             model_path = car_config.get("model_path", "")
             if not model_path or not os.path.exists(model_path):
-                print(f"[Dashboard] Model not found: {model_path}")
+                _log.warning("[Dashboard] Model topilmadi: %s — AI o'chiq", model_path)
+                self._ai_off = True
                 return
 
             self.car_detector = RealtimeMultiCameraDetector(
@@ -82,22 +103,28 @@ class Dashboard(QWidget):
             if self.car_detector.load():
                 stats = self.car_detector.get_stats()
                 model_label = "MAXSUS" if self.is_custom_model else stats['model_type'].upper()
-                print(f"[Dashboard] Detector yuklandi! Mode: {model_label}")
-
-                print(f"[Dashboard] Model type: {stats['model_type'].upper()}")
+                _log.info("[Dashboard] Detector yuklandi! Mode: %s (type: %s)",
+                          model_label, stats['model_type'].upper())
             else:
+                _log.error("[Dashboard] Detector load() muvaffaqiyatsiz — AI o'chiq")
                 self.car_detector = None
+                self._ai_off = True
 
         except Exception as e:
-            print(f"[Dashboard] Detector error: {e}")
-            import traceback
-            traceback.print_exc()
+            _log.exception("[Dashboard] Detector xato: %s — AI o'chiq", e)
             self.car_detector = None
+            self._ai_off = True
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(0)
+
+        # AI aniqlash o'chiq bo'lsa ko'rinadigan ogohlantirish banneri
+        self._ai_banner = QLabel()
+        self._ai_banner.setWordWrap(True)
+        self._ai_banner.setVisible(False)
+        layout.addWidget(self._ai_banner)
 
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
@@ -254,6 +281,11 @@ class Dashboard(QWidget):
         if self._empty_label is not None:
             try:
                 self._empty_label.setText(t("dashboard.empty"))
+            except RuntimeError:
+                pass
+        if getattr(self, "_ai_banner", None) is not None:
+            try:
+                self._update_ai_banner()
             except RuntimeError:
                 pass
 

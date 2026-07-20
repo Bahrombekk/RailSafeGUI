@@ -64,10 +64,28 @@ class PLCManager:
 
     # ── Doimiy client boshqaruvi ─────────────────────────────────────
 
+    @staticmethod
+    def _safe_close(client):
+        """snap7 clientni xavfsiz uzish+ozod qilish (istisnolarni yutadi)."""
+        try:
+            client.disconnect()
+        except Exception:
+            pass
+        try:
+            client.destroy()
+        except Exception:
+            pass
+
     def _ensure_client(self):
         """Doimiy snap7 clientni tayyorlash. Ulanmagan bo'lsa — ulanadi.
         Connect alohida threadda timeout bilan bajariladi: osilib qolgan
         connect worker loopni cheksiz bloklamasin.
+
+        MUHIM (native use-after-free oldini olish): connect osilib qolsa
+        (thread hali `client.connect()` ichida), asosiy thread client'ni
+        destroy QILMAYDI — bu C-obyektni jonli connect() ostida ozod qilib
+        crash keltirib chiqarardi. O'rniga clientni "cancelled" deb belgilaymiz;
+        connect thread o'zi tugagach (connect'dan chiqib) uni tozalaydi.
         Ulanmasa Exception ko'taradi (worker try/except uni hisoblaydi).
         """
         if self._client is not None:
@@ -83,37 +101,49 @@ class PLCManager:
         except Exception:
             pass  # snap7 versiyasi qo'llab-quvvatlamasa — o'tkazib yuboramiz
 
-        err = {}
+        state = {}
+        state_lock = threading.Lock()
 
         def _do_connect():
+            e = None
             try:
                 client.connect(self.device_ip, 0, 1, tcp_port=self.device_port)
-            except Exception as e:
-                err['e'] = e
+            except Exception as ex:
+                e = ex
+            # connect() dan CHIQDIK — endi client'ga tegish xavfsiz
+            with state_lock:
+                state['done'] = True
+                state['e'] = e
+                take_over = state.get('cancelled', False)
+            if take_over:
+                # Asosiy thread bizni kutmay ketgan (timeout) — tozalash bizda
+                self._safe_close(client)
 
         t = threading.Thread(target=_do_connect, daemon=True,
                              name=f"plc-connect-{self.device_ip}")
         t.start()
         t.join(self._connect_timeout)
 
-        connected = False
-        if not t.is_alive() and 'e' not in err:
-            try:
-                connected = client.get_connected()
-            except Exception:
-                connected = 'e' not in err
+        with state_lock:
+            if not state.get('done', False):
+                # Connect osilib qoldi — client'ga TEGMAYMIZ. connect thread
+                # tugagach o'zi tozalaydi (take_over).
+                state['cancelled'] = True
+                raise ConnectionError("connect timeout")
+            err = state.get('e')
 
-        if t.is_alive() or 'e' in err or not connected:
-            # Ulanmadi — osilgan yoki xato bo'lgan clientni tashlab yuboramiz
-            try:
-                client.disconnect()
-            except Exception:
-                pass
-            try:
-                client.destroy()
-            except Exception:
-                pass
-            raise ConnectionError(err.get('e', "connect timeout"))
+        # Bu nuqtada connect thread connect()'dan chiqqan — client xavfsiz
+        if err is not None:
+            self._safe_close(client)
+            raise ConnectionError(err)
+
+        try:
+            connected = client.get_connected()
+        except Exception:
+            connected = False
+        if not connected:
+            self._safe_close(client)
+            raise ConnectionError("not connected")
 
         self._client = client
         return client
@@ -123,14 +153,15 @@ class PLCManager:
         client = self._client
         self._client = None
         if client is not None:
-            try:
-                client.disconnect()
-            except Exception:
-                pass
-            try:
-                client.destroy()
-            except Exception:
-                pass
+            self._safe_close(client)
+
+    def _poll_backoff(self) -> float:
+        """Ketma-ket xatolarda pollni siyraklashtirish (eksponensial backoff).
+        Qora-tuynuk (javob bermaydigan) IP'da har 0.5s'da yangi osilgan connect
+        thread yaratilib to'planib ketmasligi uchun: 0.5→1→2→4→8→10s (cap)."""
+        if self._consecutive_errors <= 0:
+            return self.poll_interval
+        return min(self.poll_interval * (2 ** min(self._consecutive_errors, 5)), 10.0)
 
     def _read_state(self) -> bool:
         """PLC dan poyezd holatini o'qish (doimiy client orqali).
@@ -202,8 +233,8 @@ class PLCManager:
         while self._running:
             now = time.monotonic()
 
-            # PLC holatini o'qish
-            if now - self._last_poll >= self.poll_interval:
+            # PLC holatini o'qish (xatolarda backoff bilan siyraklashadi)
+            if now - self._last_poll >= self._poll_backoff():
                 self._last_poll = now
                 try:
                     new_state = self._read_state()

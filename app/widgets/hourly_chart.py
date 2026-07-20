@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import List, Dict
 
 from app.utils.theme_colors import C
+from app.utils.language import t, LM
 
 
 class HourlyBarChart(QWidget):
@@ -250,9 +251,9 @@ class HourlyChartPanel(QWidget):
         layout.setSpacing(8)
 
         # Title
-        title = QLabel("Bugungi Statistika (soatlik)")
-        title.setStyleSheet(f"color: {C('text_primary')}; font-size: 14px; font-weight: bold; background: transparent;")
-        layout.addWidget(title)
+        self._title = QLabel(t("chart.hourly_title"))
+        self._title.setStyleSheet(f"color: {C('text_primary')}; font-size: 14px; font-weight: bold; background: transparent;")
+        layout.addWidget(self._title)
 
         # Divider
         div = QFrame()
@@ -261,24 +262,29 @@ class HourlyChartPanel(QWidget):
         layout.addWidget(div)
 
         # Legend
-        legend_layout = __import__('PyQt6.QtWidgets', fromlist=['QHBoxLayout']).QHBoxLayout()
+        from PyQt6.QtWidgets import QHBoxLayout
+        legend_layout = QHBoxLayout()
         legend_layout.setSpacing(16)
 
-        light_dot = QLabel(f"● Yengil")
-        light_dot.setStyleSheet(f"color: {C('accent_blue')}; font-size: 10px; background: transparent;")
-        legend_layout.addWidget(light_dot)
+        self._light_dot = QLabel(f"● {t('stats.light')}")
+        self._light_dot.setStyleSheet(f"color: {C('accent_blue')}; font-size: 10px; background: transparent;")
+        legend_layout.addWidget(self._light_dot)
 
-        heavy_dot = QLabel(f"● Og'ir")
-        heavy_dot.setStyleSheet(f"color: {C('accent_orange')}; font-size: 10px; background: transparent;")
-        legend_layout.addWidget(heavy_dot)
+        self._heavy_dot = QLabel(f"● {t('stats.heavy')}")
+        self._heavy_dot.setStyleSheet(f"color: {C('accent_orange')}; font-size: 10px; background: transparent;")
+        legend_layout.addWidget(self._heavy_dot)
 
         legend_layout.addStretch()
 
-        self._total_label = QLabel("Jami: 0")
+        self._total_light = 0
+        self._total_heavy = 0
+        self._total_label = QLabel(t("chart.hourly_total").format(total=0, light=0, heavy=0))
         self._total_label.setStyleSheet(f"color: {C('accent_green')}; font-size: 11px; font-weight: bold; background: transparent;")
         legend_layout.addWidget(self._total_label)
 
         layout.addLayout(legend_layout)
+
+        LM.language_changed.connect(self._retranslate)
 
         # Chart
         self.chart = HourlyBarChart()
@@ -293,6 +299,20 @@ class HourlyChartPanel(QWidget):
 
     def set_data(self, data: List[Dict]):
         self.chart.set_data(data)
-        total_light = sum(d["light"] for d in data)
-        total_heavy = sum(d["heavy"] for d in data)
-        self._total_label.setText(f"Jami: {total_light + total_heavy} (Y: {total_light}, O: {total_heavy})")
+        self._total_light = sum(d["light"] for d in data)
+        self._total_heavy = sum(d["heavy"] for d in data)
+        self._update_total_label()
+
+    def _update_total_label(self):
+        self._total_label.setText(t("chart.hourly_total").format(
+            total=self._total_light + self._total_heavy,
+            light=self._total_light, heavy=self._total_heavy))
+
+    def _retranslate(self, _lang=None):
+        try:
+            self._title.setText(t("chart.hourly_title"))
+            self._light_dot.setText(f"● {t('stats.light')}")
+            self._heavy_dot.setText(f"● {t('stats.heavy')}")
+            self._update_total_label()
+        except RuntimeError:
+            pass  # widget o'chirilgan

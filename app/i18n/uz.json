@@ -59,6 +59,8 @@
   "chart.trains_30d": "Poyezdlar (30 kun)",
   "chart.heatmap_7d": "Haftalik bandlik xaritasi (7 kun x 24 soat)",
   "chart.hourly_today": "Soatlik (bugun)",
+  "chart.hourly_title": "Bugungi Statistika (soatlik)",
+  "chart.hourly_total": "Jami: {total} (Y: {light}, O: {heavy})",
   "chart.monthly": "Oylik trend (30 kun)",
   "chart.distribution": "Taqsimot",
   "chart.movement": "Poyezd harakati",
@@ -100,6 +102,7 @@
   "dlg.add_crossing.err_name": "Pereezd nomini kiriting!",
   "dlg.add_crossing.err_loc": "Pereezd manzilini kiriting!",
   "dlg.add_crossing.err_ip": "PLC IP manzilini kiriting!",
+  "dlg.add_crossing.err_ip_invalid": "IP manzil noto'g'ri. Masalan: 192.168.1.10",
   "dlg.add_crossing.import_ok": "Ma'lumotlar yuklandi! ({count} ta kamera)",
   "dlg.add_crossing.placeholder_name": "Masalan: Pereezd 1",
   "dlg.add_crossing.placeholder_loc": "Masalan: Toshkent, Chilonzor tumani",
@@ -116,6 +119,7 @@
   "dlg.add_camera.save": "Saqlash",
   "dlg.add_camera.err_name": "Kamera nomini kiriting!",
   "dlg.add_camera.err_source": "Kamera manbasini kiriting!",
+  "dlg.add_camera.err_source_invalid": "Manba noto'g'ri. rtsp://…, http(s)://… yoki mavjud video fayl yo'lini kiriting.",
   "dlg.add_camera.placeholder_name": "Masalan: Shimoliy yo'nalish",
   "dlg.add_camera.placeholder_source": "rtsp://... yoki /path/to/video.mp4",
   "dlg.add_camera.browse_video": "Videoni Tanlang",
@@ -128,6 +132,47 @@
   "settings.title": "Sozlamalar",
   "settings.tab.main": "Asosiy",
   "settings.tab.advanced": "Qo'shimcha",
+  "settings.tab.integration": "Integratsiya",
+  "integ.locked_title": "Himoyalangan bo'lim",
+  "integ.locked_sub": "Integratsiya sozlamalari faqat mas'ul xodim uchun. Davom etish uchun bo'lim parolini kiriting.",
+  "integ.set_password_title": "Bo'lim parolini o'rnating",
+  "integ.set_sub": "Birinchi ishlatish: integratsiya bo'limi uchun parol o'rnating. Bu parolni faqat mas'ul xodim bilishi kerak.",
+  "integ.password_ph": "Parol",
+  "integ.new_password_ph": "Yangi parol (kamida 6 belgi)",
+  "integ.confirm_password_ph": "Parolni takrorlang",
+  "integ.unlock": "Ochish",
+  "integ.set_password": "Parol o'rnatish",
+  "integ.wrong_password": "Parol noto'g'ri",
+  "integ.password_short": "Parol kamida 6 belgi bo'lishi kerak",
+  "integ.password_mismatch": "Parollar mos kelmadi",
+  "integ.pull_section": "Kiruvchi API — tashqi tizim bizdan o'qiydi",
+  "integ.pull_title": "API server",
+  "integ.pull_sub": "Tashqi tizim http://<kompyuter-ip>:<port>/api/v1/... orqali statistikani o'zi so'rab oladi",
+  "integ.port": "Port",
+  "integ.api_key": "API kalit",
+  "integ.push_section": "Tashqi saytga yuborish — biz saytga jo'natamiz",
+  "integ.push_title": "Saytga avtomatik yuborish",
+  "integ.push_sub": "Statistika belgilangan davr bilan sayt API'siga yuborib turiladi (login → token → yuborish)",
+  "integ.base_url": "Sayt URL",
+  "integ.username": "Login",
+  "integ.password": "Parol",
+  "integ.interval": "Yuborish davri",
+  "integ.min_suffix": " daq",
+  "integ.test_btn": "Ulanishni tekshirish",
+  "integ.testing": "Tekshirilmoqda...",
+  "integ.test_ok": "Ulanish muvaffaqiyatli — ma'lumot yuborildi!",
+  "integ.test_fail": "Xato: {msg}",
+  "integ.url_required": "Sayt URL kiritilmagan",
+  "integ.status_never": "Hali yuborilmagan",
+  "integ.status_last": "Oxirgi muvaffaqiyatli yuborish: {time}",
+  "integ.status_error": "Oxirgi xato: {err}",
+  "integ.docs_section": "Sayt dasturchilari uchun hujjat",
+  "integ.save_spec": "API namunasini saqlash...",
+  "integ.spec_hint": "Sayt tomonida atigi 2 ta endpoint kerak. Spetsifikatsiya (qanday yaratish) va ishlaydigan namuna serverni saqlab, dasturchilarga bering.",
+  "integ.spec_saved": "Fayllar saqlandi:\n{path}\n\n- INTEGRATION_PUSH_SPEC.md (spetsifikatsiya)\n- sample_push_receiver.py (namuna server)",
+  "integ.spec_missing": "Namuna fayllar topilmadi (docs papkasi yo'q).",
+  "integ.change_password": "Bo'lim parolini o'zgartirish",
+  "integ.password_changed": "Parol o'zgartirildi",
   "settings.interface": "Interfeys",
   "settings.language": "Til:",
   "settings.theme": "Mavzu:",
@@ -177,6 +222,7 @@
   "error.crossing_open": "Pereezdni ochishda xatolik: {e}",
   "error.report": "Hisobotni yaratishda xatolik yuz berdi.",
   "dashboard.empty": "Pereezdlar yo'q. Toolbar dan '+ Pereezd Qo'shish' bosing.",
+  "dashboard.ai_off": "⚠ AI aniqlash O'CHIQ — model topilmadi yoki yuklanmadi. Mashina hisobi va qoidabuzarlik aniqlash ishlamaydi. Sozlamalardan modelni tekshiring.",
   "report.title": "Hisobot yuklash",
   "report.hint": "Sana oralig'ini tanlang va Word formatida hisobot yuklang.",
   "report.today": "Bugun",
@@ -310,6 +356,8 @@
   "about.nav.plc": "PLC va xavfsizlik",
   "about.nav.polygon": "Polygon va bandlik",
   "about.nav.troubleshooting": "Muammo yechish",
+  "about.nav.integration": "Integratsiya (API)",
+  "about.section.integration": "Tashqi tizim integratsiyasi (API)",
   "about.section.start": "Dasturni 0 dan ishga tushirish",
   "about.section.crossing": "Yangi pereezd qo'shish",
   "about.section.camera": "Kamera qo'shish va tekshirish",
@@ -585,6 +633,61 @@
         }
       ]
     },
+    "integration": {
+      "lead": "RailSafe AI statistikani tashqi tizimlarga ikki usulda beradi: tashqi tizim BIZDAN o'qiydi (API server) yoki dastur O'ZI saytga yuborib turadi (push). Ikkalasi ham Sozlamalar → Integratsiya bo'limidan boshqariladi — bu bo'lim parol bilan himoyalangan, qayta o'rnatish yoki build shart emas.",
+      "blocks": [
+        {
+          "type": "steps",
+          "title": "API serverni yoqish (tashqi tizim bizdan o'qiydi)",
+          "items": [
+            "Sozlamalar → Integratsiya tabini oching. Birinchi safar bo'lim uchun parol o'rnatiladi — uni faqat mas'ul xodim bilsin.",
+            "\"API server\" ni yoqing. Kerak bo'lsa portni (standart 8750) va API kalitni kiriting, so'ng Saqlash tugmasini bosing.",
+            "Tekshirish: brauzerda http://localhost:8750/api/v1/health oching. Dasturni qayta ishga tushirish SHART EMAS — saqlaganda o'zi qayta yuklanadi."
+          ]
+        },
+        {
+          "type": "info",
+          "title": "Mavjud endpointlar (GET, JSON)",
+          "items": [
+            "/api/v1/health - server holati va vaqti.",
+            "/api/v1/crossings - pereezdlar va kameralar ro'yxati.",
+            "/api/v1/stats/today - barcha pereezdlar bugungi jami (yengil/og'ir/poyezd).",
+            "/api/v1/stats/hourly?crossing_id=1 - 24 soatlik taqsimot (date= bilan istalgan kun).",
+            "/api/v1/stats/daily?crossing_id=1&from=2026-07-01&to=2026-07-20 - sana oralig'ida kunlik.",
+            "/api/v1/stats/weekly?crossing_id=1 va /api/v1/stats/monthly?crossing_id=1 - 7 kun / 30 kun.",
+            "/api/v1/trains/today?crossing_id=1 - bugungi poyezd o'tishlari (soni, davomiyligi).",
+            "/api/v1/trains/range?crossing_id=1&from=...&to=... - oraliqdagi poyezd o'tishlari."
+          ]
+        },
+        {
+          "type": "steps",
+          "title": "Saytga avtomatik yuborish (push)",
+          "items": [
+            "Sozlamalar → Integratsiya → \"Saytga avtomatik yuborish\" ni yoqing.",
+            "Sayt URL, login va parolni kiriting — dastur avtomatik token olib, belgilangan davrda (standart 5 daqiqa) ma'lumot jo'natib turadi. Token eskirsa o'zi qayta login qiladi.",
+            "\"Ulanishni tekshirish\" tugmasi bilan darhol sinab ko'ring — natija shu yerning o'zida ko'rinadi.",
+            "Sayt dasturchilariga: \"API namunasini saqlash\" tugmasi spetsifikatsiya va ishlaydigan namuna serverni beradi — ular atigi 2 ta endpoint yaratadi."
+          ]
+        },
+        {
+          "type": "tip",
+          "title": "Himoya (API kalit)",
+          "items": [
+            "api_key ga qiymat yozilsa, har bir so'rovda X-API-Key header (yoki ?api_key= parametri) shu qiymatga teng bo'lishi shart.",
+            "api_key bo'sh qolsa, API ochiq bo'ladi - faqat ishonchli lokal tarmoqda shunday qoldiring."
+          ]
+        },
+        {
+          "type": "warning",
+          "title": "Xavfsizlik eslatmasi",
+          "items": [
+            "API faqat statistika beradi - kamera RTSP manzillari va parollari hech qachon qaytarilmaydi.",
+            "Tashqi kompyuterdan ulanish uchun Windows Firewall'da tanlangan portga (8750) ruxsat bering.",
+            "Internetga to'g'ridan-to'g'ri ochmang - faqat lokal/korporativ tarmoq yoki VPN orqali ulang."
+          ]
+        }
+      ]
+    },
     "version": {
       "lead": "RailSafe AI - pereezd monitoringi uchun lokal desktop mahsulot.",
       "blocks": [
@@ -592,6 +695,7 @@
           "type": "tip",
           "title": "Yangiliklar (1.1.0)",
           "items": [
+            "INTEGRATSIYA — tashqi tizim uchun API server (pull) va saytga avtomatik yuborish (push); parol bilan himoyalangan sozlamalar bo'limi, dasturchilar uchun tayyor namuna",
             "ANPR — poyezd o'tishida avtomobil raqamini aniqlash (alohida oqimda, real-time'ga ta'sirsiz)",
             "Kamera kadriga to'g'ridan-to'g'ri polygon (zona) CHIZISH — fayl yuklash shart emas",
             "Offline o'rnatuvchi (setup.exe) — Python/internet kerak emas; GPU'siz ham CPU rejimida ishlaydi",

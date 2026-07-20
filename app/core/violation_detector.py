@@ -88,8 +88,16 @@ class ViolationDetector:
         self.delay_seconds = max(0.0, float(seconds))
 
     def on_plc_signal(self):
-        """PLC: poyezd kelmoqda → armlash."""
+        """PLC: poyezd kelmoqda → armlash.
+
+        MUHIM: allaqachon armed bo'lsa hech narsa qilinmaydi. PLC signalining
+        bitta "yo'q poyezd" polli (marginal aloqada tez-tez uchraydi) grace →
+        qayta-arm keltirib chiqarganda, to'plangan pending dalillar (best_frame)
+        o'chib ketmasligi va grace kechikishi qaytadan boshlanmasligi uchun.
+        """
         with self._lock:
+            if self._armed:
+                return
             self._armed = True
             self._arm_time = time.monotonic()
             self._seen_tracks.clear()
@@ -97,19 +105,38 @@ class ViolationDetector:
         print(f"[ViolationDetector] ARMED — {self.delay_seconds}s grace period")
 
     def on_plc_clear(self, crossing_name: str = "", camera_name: str = ""):
-        """PLC: signal tugadi → pending tracklar ni flush qilish."""
+        """PLC: signal tugadi → qolgan pending tracklarni flush qilish.
+
+        Flush I/O (JPEG kodlash + disk) ALOHIDA fon threadida bajariladi —
+        aks holda poyezd tugashida GUI threadi (bu metod QTimer orqali GUI'da
+        chaqiriladi) bir necha yuz ms muzlab qolardi. Dublikat yozuv esa
+        _write_evidence ichidagi `_written` bayrog'i bilan oldi olinadi
+        (worker threadi shu info'ni parallel yozishga urinishi mumkin).
+        """
         with self._lock:
             pending_snapshot = dict(self._pending)
             self._pending.clear()
             self._armed = False
 
-        for tid, info in pending_snapshot.items():
-            if info.get('best_frame') is not None:
-                try:
-                    self._write_evidence(info, crossing_name or "unknown",
-                                         camera_name or "unknown")
-                except Exception as e:
-                    logger.error("Flush xato tid=%s: %s", tid, e)
+        to_flush = {k: v for k, v in pending_snapshot.items()
+                    if v.get('best_frame') is not None}
+        if to_flush:
+            threading.Thread(
+                target=self._flush_pending,
+                args=(to_flush, crossing_name, camera_name),
+                daemon=True, name="violation-flush").start()
+
+    def _flush_pending(self, pending_snapshot: dict,
+                       crossing_name: str, camera_name: str):
+        """pending tracklarni fayllarga yozish (fon threadida)."""
+        for key, info in pending_snapshot.items():
+            try:
+                self._write_evidence(
+                    info,
+                    info.get('crossing_name') or crossing_name or "unknown",
+                    info.get('camera_name') or camera_name or "unknown")
+            except Exception as e:
+                logger.error("Flush xato %s: %s", key, e)
 
         with self._lock:
             saved = self.violations_saved
@@ -128,30 +155,39 @@ class ViolationDetector:
         # Shared holatni (armed, seen, pending) lock ostida snapshot qilamiz —
         # PLC thread (on_plc_signal/on_plc_clear) bir vaqtda o'zgartirishi mumkin,
         # shuning uchun iteratsiya nusxa ustida boradi ("dict changed size" oldini olish).
+        # Track ID lar faqat BITTA kamera ichida unikal (har PolygonTracker
+        # 1 dan boshlaydi). Bitta ViolationDetector esa pereezddagi HAMMA
+        # kameraga ulashilgan — shuning uchun seen/pending ni (camera, tid)
+        # kompozit kalit bilan boshqaramiz, aks holda A kameraning #5 track'i
+        # B kameraning #5 qoidabuzarini yashirib qo'yardi (yoki dalil B'ning
+        # kadridan noto'g'ri olinardi).
         with self._lock:
             if not self._armed:
                 return
             seen_snap = set(self._seen_tracks)
-            pending_snap = dict(self._pending)  # qiymatlar (info) bir xil obyekt referensi
+            # Faqat SHU kameraning pending'lari — boshqa kamera track'lari bu
+            # kadrda "polygondan chiqdi" deb noto'g'ri flush bo'lib ketmasin.
+            pending_snap = {k: v for k, v in self._pending.items()
+                            if k[0] == camera_name}
             arm_time = self._arm_time
 
         now = time.monotonic()
         if (now - arm_time) < self.delay_seconds:
             return  # Hali grace period
 
-        # Hozirgi polygon ichidagi track IDlar → tez qidirish uchun
+        # Hozirgi polygon ichidagi track IDlar → tez qidirish uchun (lokal id)
         current_ids = {trk['id']: trk for trk in in_poly_tracks}
 
         # 1) Yangi violatorlar → keyin lock ostida qo'shiladi
         new_pending = {}
         for trk in in_poly_tracks:
-            tid = trk['id']
-            if tid in seen_snap or tid in pending_snap or tid in new_pending:
+            key = (camera_name, trk['id'])
+            if key in seen_snap or key in pending_snap or key in new_pending:
                 continue
             enter_t = trk.get('enter_time')
             if enter_t is None or (now - enter_t) < self.min_track_stable_sec:
                 continue
-            new_pending[tid] = {
+            new_pending[key] = {
                 'retries': 0,
                 'best_text': '',
                 'best_conf': 0.0,
@@ -163,24 +199,27 @@ class ViolationDetector:
                 'reads': [],        # konsensus uchun (text, conf) validatsiyalangan o'qishlar
                 'last_try': 0.0,    # oxirgi OCR urinishi (throttle uchun)
                 'init_time': now,
+                'camera_name': camera_name,   # flush'da to'g'ri kamera nomi uchun
+                'crossing_name': crossing_name,
             }
-            print(f"[ViolationDetector] Yangi violator track#{tid} kuzatilmoqda")
+            print(f"[ViolationDetector] Yangi violator {camera_name}#{trk['id']} kuzatilmoqda")
 
         # 2) Pending tracklar (mavjud + yangi) — qayta urinish.
         #    Og'ir I/O (plate recognition, frame.copy) LOCK TASHQARISIDA bajariladi.
         #    Yangi violatorlar ham shu frameda qayta ishlanadi (asl xatti-harakat).
         flush_infos = []   # yoziladigan info lar
-        done_ids = set()   # pending dan olib tashlanadigan + seen ga qo'shiladigan tid lar
+        done_ids = set()   # pending dan olib tashlanadigan + seen ga qo'shiladigan kalitlar
         all_pending = dict(pending_snap)
         all_pending.update(new_pending)
-        for tid, info in all_pending.items():
-            if tid in seen_snap:
-                done_ids.add(tid)  # allaqachon qayta ishlangan
+        for key, info in all_pending.items():
+            tid = key[1]  # lokal track id (shu kamerada)
+            if key in seen_snap:
+                done_ids.add(key)  # allaqachon qayta ishlangan
                 continue
 
             if tid not in current_ids:
                 # Mashina polygon dan chiqib ketdi → qo'lda flush
-                done_ids.add(tid)
+                done_ids.add(key)
                 flush_infos.append(info)
                 continue
 
@@ -241,23 +280,23 @@ class ViolationDetector:
             # Ishonchli o'qildi yoki maksimal urinishlar tugadi
             if (info['best_conf'] >= self.min_plate_conf or
                     info['retries'] >= self.max_retries):
-                done_ids.add(tid)
+                done_ids.add(key)
                 flush_infos.append(info)
 
-        # 3) Shared holatni lock ostida yangilash
+        # 3) Shared holatni lock ostida yangilash (kalitlar kompozit: (camera, tid))
         with self._lock:
             # Flush qilinganlarni pending dan olib, seen ga qo'shamiz
-            for tid in done_ids:
-                self._pending.pop(tid, None)
-                self._seen_tracks.add(tid)
+            for key in done_ids:
+                self._pending.pop(key, None)
+                self._seen_tracks.add(key)
             # Yangi (flush bo'lmagan) violatorlarni pending ga qo'shamiz —
             # faqat signal hali ham aktiv bo'lsa (on_plc_clear disarm qilmagan bo'lsa).
             if self._armed:
-                for tid, info in new_pending.items():
-                    if tid in done_ids:
+                for key, info in new_pending.items():
+                    if key in done_ids:
                         continue  # shu frameda flush bo'ldi — qayta qo'shilmaydi
-                    if tid not in self._seen_tracks and tid not in self._pending:
-                        self._pending[tid] = info
+                    if key not in self._seen_tracks and key not in self._pending:
+                        self._pending[key] = info
 
         # 4) Saqlash — I/O LOCK TASHQARISIDA (counter esa _write_evidence ichida
         #    lock ostida yangilanadi).
@@ -321,6 +360,14 @@ class ViolationDetector:
 
     def _write_evidence(self, info: dict, crossing_name: str, camera_name: str):
         """Eng yaxshi natija bilan fayllarni yozish."""
+        # Dublikat oldini olish: shu info process_frame (worker) va on_plc_clear
+        # (flush) tomonidan bir vaqtda yozilishga urinishi mumkin — atomik
+        # bayroq bilan faqat bir marta yoziladi.
+        with self._lock:
+            if info.get('_written'):
+                return
+            info['_written'] = True
+
         frame = info['best_frame']
         trk = info.get('best_trk') or info['trk']
         origin_x, origin_y = info.get('best_origin', (0, 0))

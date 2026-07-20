@@ -16,6 +16,8 @@ from app.pages.dialogs import (AddCrossingDialog, AddCameraDialog, SettingsDialo
 from app.pages.about_page import AboutPage
 from app.pages.analytics_page import AnalyticsPage
 from app.core.config import ConfigManager
+from app.core.stats_api import StatsApiServer
+from app.core.stats_push import StatsPushClient
 from app.utils.theme_colors import set_theme, C
 from app.utils.language import t, LM
 
@@ -62,6 +64,14 @@ class MainWindow(QMainWindow):
         # buning o'rniga "soxta maximize" (ishchi hududga setGeometry) ishlatamiz.
         self.show()
         self._set_maximized(True)
+
+        # Tashqi integratsiya API (settings.integration.enabled bo'lsa ishlaydi)
+        self.stats_api = StatsApiServer(self.dashboard.stats_db, self.config_manager)
+        self.stats_api.start()
+
+        # Tashqi saytga statistika yuborish (settings.integration_push)
+        self.stats_push = StatsPushClient(self.dashboard.stats_db, self.config_manager)
+        self.stats_push.start()
 
         # Startup: avval engine tayyorlansin, keyin detektor ishga tushsin
         QTimer.singleShot(300, self._startup_sequence)
@@ -466,11 +476,24 @@ class MainWindow(QMainWindow):
 
     def _show_settings(self):
         old_settings = self.config_manager.get_settings().copy()
-        dialog = SettingsDialog(self.config_manager)
+        dialog = SettingsDialog(
+            self.config_manager,
+            stats_db=getattr(self.dashboard, 'stats_db', None) if hasattr(self, 'dashboard') else None,
+            push_client=getattr(self, 'stats_push', None))
         if dialog.exec():
             self._load_stylesheet()
             self._apply_toolbar_style()
             self._apply_statusbar_style()
+
+            # Integratsiya sozlamalari o'zgargan bo'lishi mumkin — qayta ishga tushirish
+            try:
+                if hasattr(self, 'stats_api'):
+                    self.stats_api.stop()
+                    self.stats_api.start()
+                if hasattr(self, 'stats_push'):
+                    self.stats_push.restart()
+            except Exception as e:
+                print(f"[Settings] Integratsiya restart xatosi: {e}")
 
             # Model o'zgargan bo'lsa detektorni qayta yuklash
             new_settings = self.config_manager.get_settings()
@@ -541,6 +564,16 @@ class MainWindow(QMainWindow):
                 self.status_timer.stop()
             except (RuntimeError, Exception):
                 pass
+            try:
+                if hasattr(self, 'stats_api'):
+                    self.stats_api.stop()
+            except (RuntimeError, Exception) as e:
+                print(f"[CloseEvent] Stats API stop error: {e}")
+            try:
+                if hasattr(self, 'stats_push'):
+                    self.stats_push.stop()
+            except (RuntimeError, Exception) as e:
+                print(f"[CloseEvent] Stats Push stop error: {e}")
             try:
                 self._cleanup_detail_views()
             except (RuntimeError, Exception) as e:

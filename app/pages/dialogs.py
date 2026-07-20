@@ -5,20 +5,46 @@ Dialogs for adding/editing crossings, cameras, and PLCs
 import os
 import re
 import json
+import hmac
+import shutil
+import hashlib
+import secrets
+import threading
+from pathlib import Path
 
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                               QLineEdit, QPushButton, QGroupBox, QFormLayout,
                               QSpinBox, QCheckBox, QFileDialog, QComboBox,
                               QMessageBox, QTabWidget, QWidget, QRadioButton,
                               QButtonGroup, QProgressBar, QFrame, QScrollArea,
-                              QApplication)
+                              QApplication, QStackedWidget)
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QThread, QPoint
 from PyQt6.QtGui import (QFont, QPainter, QPen, QColor, QPixmap, QImage,
                          QPolygon)
 
 from app.utils.theme_colors import C
 from app.utils.language import t, LM
+from app.utils.ui_guards import no_wheel as _no_wheel
 from app.core.plc import SNAP7_AVAILABLE as _SNAP7_OK
+
+
+# ─── Integratsiya bo'limi paroli (PBKDF2) ────────────────────────────
+
+def _hash_admin_password(password: str, salt_hex: str = None) -> str:
+    """PBKDF2-HMAC-SHA256, 100k iteratsiya. Format: "<salt>$<hash>"."""
+    if salt_hex is None:
+        salt_hex = secrets.token_hex(16)
+    h = hashlib.pbkdf2_hmac(
+        "sha256", password.encode("utf-8"), bytes.fromhex(salt_hex), 100_000)
+    return f"{salt_hex}${h.hex()}"
+
+
+def _verify_admin_password(password: str, stored: str) -> bool:
+    try:
+        salt_hex, _ = stored.split("$", 1)
+    except (ValueError, AttributeError):
+        return False
+    return hmac.compare_digest(_hash_admin_password(password, salt_hex), stored)
 
 
 class StyledCheckBox(QWidget):
@@ -33,6 +59,8 @@ class StyledCheckBox(QWidget):
         self.setFixedHeight(28)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setMouseTracking(True)
+        # Klaviatura bilan boshqarish (Tab bilan fokus, Space/Enter bilan almashtirish)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
     def isChecked(self) -> bool:
         return self._checked
@@ -45,6 +73,13 @@ class StyledCheckBox(QWidget):
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             self.setChecked(not self._checked)
+
+    def keyPressEvent(self, event):
+        if event.key() in (Qt.Key.Key_Space, Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            self.setChecked(not self._checked)
+            event.accept()
+        else:
+            super().keyPressEvent(event)
 
     def enterEvent(self, event):
         self._hovered = True
@@ -96,6 +131,13 @@ class StyledCheckBox(QWidget):
         painter.drawText(text_x, 0, self.width() - text_x, self.height(),
                         Qt.AlignmentFlag.AlignVCenter, self._text)
 
+        # Klaviatura fokusi ko'rsatkichi
+        if self.hasFocus():
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.setPen(QPen(QColor(C('accent_brand')), 1, Qt.PenStyle.DashLine))
+            painter.drawRoundedRect(box_x - 2, box_y - 2,
+                                    box_size + 4, box_size + 4, 6, 6)
+
 
 class ToggleSwitch(QWidget):
     """Modern iOS/macOS-style toggle switch"""
@@ -108,6 +150,8 @@ class ToggleSwitch(QWidget):
         self.setFixedSize(48, 26)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
+        # Klaviatura bilan boshqarish (Tab bilan fokus, Space/Enter bilan almashtirish)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
     def isChecked(self) -> bool:
         return self._checked
@@ -122,6 +166,13 @@ class ToggleSwitch(QWidget):
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             self.setChecked(not self._checked)
+
+    def keyPressEvent(self, event):
+        if event.key() in (Qt.Key.Key_Space, Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            self.setChecked(not self._checked)
+            event.accept()
+        else:
+            super().keyPressEvent(event)
 
     def enterEvent(self, event):
         self._hovered = True
@@ -153,6 +204,13 @@ class ToggleSwitch(QWidget):
         painter.setBrush(QColor("#ffffff"))
         painter.drawEllipse(knob_x, knob_y, knob_size, knob_size)
 
+        # Klaviatura fokusi ko'rsatkichi
+        if self.hasFocus():
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.setPen(QPen(QColor(C('accent_brand')), 1, Qt.PenStyle.DashLine))
+            painter.drawRoundedRect(0, 0, self.width() - 1, self.height() - 1,
+                                    radius, radius)
+
 
 class StyledSpinBox(QSpinBox):
     """Styled spinbox for manual input"""
@@ -163,6 +221,7 @@ class StyledSpinBox(QSpinBox):
         self.setSuffix(suffix)
         self.setMinimumWidth(180)
         self.setMinimumHeight(38)
+        _no_wheel(self)
         self.setStyleSheet(f"""
             QSpinBox {{
                 background: {C('bg_input')};
@@ -493,13 +552,13 @@ class AddCrossingDialog(QDialog):
         plc_layout.addRow(t("dlg.add_crossing.ip"), self.plc_ip)
 
         # Device Port
-        self.plc_port = QSpinBox()
+        self.plc_port = _no_wheel(QSpinBox())
         self.plc_port.setRange(1, 65535)
         self.plc_port.setValue(plc.get("port", 102))
         plc_layout.addRow(t("dlg.add_crossing.port"), self.plc_port)
 
         # Device Type
-        self.plc_type = QComboBox()
+        self.plc_type = _no_wheel(QComboBox())
         self.plc_type.addItems(["Siemens S7-1200", "Siemens S7-1500", "Modbus TCP", "Boshqa"])
         self.plc_type.setCurrentText(plc.get("type", "Siemens S7-1200"))
         plc_layout.addRow(t("dlg.add_crossing.plc_type"), self.plc_type)
@@ -609,9 +668,19 @@ class AddCrossingDialog(QDialog):
             QMessageBox.warning(self, t("error.title"), t("dlg.add_crossing.err_loc"))
             return
 
-        if self.plc_enabled.isChecked() and not self.plc_ip.text().strip():
-            QMessageBox.warning(self, t("error.title"), t("dlg.add_crossing.err_ip"))
-            return
+        if self.plc_enabled.isChecked():
+            plc_ip = self.plc_ip.text().strip()
+            if not plc_ip:
+                QMessageBox.warning(self, t("error.title"), t("dlg.add_crossing.err_ip"))
+                return
+            # IPv4 shaklini tekshirish (noto'g'ri IP jimgina "ulanmadi" bo'lmasin)
+            import ipaddress
+            try:
+                ipaddress.ip_address(plc_ip)
+            except ValueError:
+                QMessageBox.warning(self, t("error.title"),
+                                    t("dlg.add_crossing.err_ip_invalid"))
+                return
 
         # Prepare data
         crossing_data = {
@@ -684,6 +753,24 @@ def _grab_snapshot(source, timeout=15.0):
     # oxirgi o'qilgan kadrning nusxasi (buferdan mustaqil)
     f = result[0]
     return f.copy() if f is not None else None
+
+
+class _SnapshotWorker(QThread):
+    """RTSP snapshot'ni FON threadida oladi — GUI muzlamasin.
+    done: frame (numpy array) yoki None."""
+    done = pyqtSignal(object)
+
+    def __init__(self, source, parent=None):
+        super().__init__(parent)
+        self._source = source
+
+    def run(self):
+        frame = None
+        try:
+            frame = _grab_snapshot(self._source)
+        except Exception:
+            frame = None
+        self.done.emit(frame)
 
 
 class PolygonCanvas(QWidget):
@@ -863,7 +950,7 @@ class AddCameraDialog(QDialog):
         form_layout.addRow(t("dlg.add_camera.name"), self.name_input)
 
         # Camera type with labels
-        self.type_combo = QComboBox()
+        self.type_combo = _no_wheel(QComboBox())
         self.type_combo.addItems([t("dlg.add_camera.type_main"), t("dlg.add_camera.type_additional")])
 
         if self.is_edit:
@@ -991,7 +1078,10 @@ class AddCameraDialog(QDialog):
             self.polygon_input.setText(file_path)
 
     def _draw_polygon(self):
-        """Kamera kadrini olib, ustiga polygon chizib, JSON qilib saqlaydi."""
+        """Kamera kadrini olib, ustiga polygon chizib, JSON qilib saqlaydi.
+
+        Snapshot olish (RTSP dan ~3s kadr o'qish) FON threadida — aks holda
+        kamera javob bermasa GUI 15s gacha muzlab qolardi."""
         source = self.source_input.text().strip()
         if not source:
             QMessageBox.warning(self, t("error.title"),
@@ -999,8 +1089,13 @@ class AddCameraDialog(QDialog):
             return
 
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
-        frame = _grab_snapshot(source)
+        self._snap_worker = _SnapshotWorker(source, self)
+        self._snap_worker.done.connect(self._on_snapshot_ready)
+        self._snap_worker.start()
+
+    def _on_snapshot_ready(self, frame):
         QApplication.restoreOverrideCursor()
+        self._snap_worker = None
         if frame is None:
             QMessageBox.warning(self, t("error.title"),
                                 t("dlg.polygon.err_snapshot"))
@@ -1059,8 +1154,18 @@ class AddCameraDialog(QDialog):
             QMessageBox.warning(self, t("error.title"), t("dlg.add_camera.err_name"))
             return
 
-        if not self.source_input.text().strip():
+        source = self.source_input.text().strip()
+        if not source:
             QMessageBox.warning(self, t("error.title"), t("dlg.add_camera.err_source"))
+            return
+
+        # Manba shaklini tekshirish: xato URL'ni saqlab qo'yib, keyin kamerada
+        # jimgina "Ulanmadi" bo'lib chiqishidan ko'ra darhol ogohlantiramiz.
+        low = source.lower()
+        if not (low.startswith(("rtsp://", "http://", "https://"))
+                or os.path.isfile(source)):
+            QMessageBox.warning(self, t("error.title"),
+                                t("dlg.add_camera.err_source_invalid"))
             return
 
         # Determine type
@@ -1126,10 +1231,13 @@ class AddCameraDialog(QDialog):
 class SettingsDialog(QDialog):
     """Application settings dialog - improved tabbed design"""
 
-    def __init__(self, config_manager, parent=None):
+    def __init__(self, config_manager, parent=None, stats_db=None, push_client=None):
         super().__init__(parent)
         self.config_manager = config_manager
         self.settings = config_manager.get_settings()
+        self._stats_db = stats_db          # push testi uchun (payload qurish)
+        self._push_client = push_client    # ishlab turgan klient holati (status)
+        self._integ_unlocked = False
         self.setWindowTitle(t("settings.title"))
         self.setFixedSize(620, 720)
         self.setStyleSheet(_dialog_style() + f"""
@@ -1180,7 +1288,7 @@ class SettingsDialog(QDialog):
                 padding: 12px 0;
                 font-size: 13px;
                 font-weight: 500;
-                min-width: 280px;
+                min-width: 186px;
             }}
             QTabWidget#stgTabs QTabBar::tab:selected {{
                 color: {C('accent_brand')};
@@ -1251,6 +1359,7 @@ class SettingsDialog(QDialog):
         tabs.setObjectName("stgTabs")
         tabs.addTab(self._create_main_tab(), t("settings.tab.main"))
         tabs.addTab(self._create_advanced_tab(), t("settings.tab.advanced"))
+        tabs.addTab(self._create_integration_tab(), t("settings.tab.integration"))
         root.addWidget(tabs, 1)
 
         # Footer
@@ -1375,7 +1484,7 @@ class SettingsDialog(QDialog):
         mon_v.setContentsMargins(0, 4, 0, 4)
         mon_v.setSpacing(0)
 
-        self.warning_threshold = QSpinBox()
+        self.warning_threshold = _no_wheel(QSpinBox())
         self.warning_threshold.setRange(0, 9999)
         self.warning_threshold.setSuffix(t("settings.sec"))
         self.warning_threshold.setValue(int(self.settings.get("warning_threshold", 10)))
@@ -1384,7 +1493,7 @@ class SettingsDialog(QDialog):
             t("settings.warning").rstrip(":"), self.warning_threshold))
         mon_v.addWidget(self._pref_divider())
 
-        self.violation_threshold = QSpinBox()
+        self.violation_threshold = _no_wheel(QSpinBox())
         self.violation_threshold.setRange(0, 9999)
         self.violation_threshold.setSuffix(t("settings.sec"))
         self.violation_threshold.setValue(int(self.settings.get("violation_threshold", 15)))
@@ -1546,7 +1655,7 @@ class SettingsDialog(QDialog):
         v_pref_v.setContentsMargins(0, 4, 0, 4)
         v_pref_v.setSpacing(0)
 
-        self.violation_delay_spin = QSpinBox()
+        self.violation_delay_spin = _no_wheel(QSpinBox())
         self.violation_delay_spin.setRange(0, 120)
         self.violation_delay_spin.setSuffix(t("settings.sec"))
         self.violation_delay_spin.setValue(
@@ -1658,7 +1767,7 @@ class SettingsDialog(QDialog):
         return lbl
 
     def _make_combo(self, items: list, current: int):
-        cb = QComboBox()
+        cb = _no_wheel(QComboBox())
         cb.addItems(items)
         cb.setCurrentIndex(current)
         cb.setFixedHeight(36)
@@ -1715,6 +1824,424 @@ class SettingsDialog(QDialog):
         row.addStretch()
         return card
 
+    # ── Integratsiya tabi (parol bilan himoyalangan) ────────────────────
+
+    def _create_integration_tab(self) -> QWidget:
+        """Tab 3: Tashqi tizim integratsiyasi — administrator paroli talab qilinadi"""
+        self._integ_stack = QStackedWidget()
+        self._integ_stack.setStyleSheet("background: transparent;")
+        self._integ_stack.addWidget(self._create_integ_lock_page())      # 0 - qulf
+        self._integ_stack.addWidget(self._create_integ_settings_page())  # 1 - sozlamalar
+        return self._integ_stack
+
+    def _create_integ_lock_page(self) -> QWidget:
+        page = QWidget()
+        page.setStyleSheet("background: transparent;")
+        v = QVBoxLayout(page)
+        v.setContentsMargins(40, 20, 40, 20)
+        v.setSpacing(10)
+        v.addStretch()
+
+        icon = QLabel("🔒")
+        icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        icon.setStyleSheet("font-size: 40px; background: transparent; border: none;")
+        v.addWidget(icon)
+
+        has_hash = bool(self.settings.get("integration_admin_hash"))
+        title = QLabel(t("integ.locked_title") if has_hash else t("integ.set_password_title"))
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title.setStyleSheet(
+            f"color: {C('text_primary')}; font-size: 16px; font-weight: bold;"
+            " background: transparent; border: none;")
+        v.addWidget(title)
+
+        sub = QLabel(t("integ.locked_sub") if has_hash else t("integ.set_sub"))
+        sub.setWordWrap(True)
+        sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        sub.setStyleSheet(
+            f"color: {C('text_muted')}; font-size: 12px;"
+            " background: transparent; border: none;")
+        v.addWidget(sub)
+        v.addSpacing(8)
+
+        self._integ_pass1 = QLineEdit()
+        self._integ_pass1.setEchoMode(QLineEdit.EchoMode.Password)
+        self._integ_pass1.setPlaceholderText(
+            t("integ.password_ph") if has_hash else t("integ.new_password_ph"))
+        self._integ_pass1.setFixedSize(300, 38)
+        self._integ_pass1.returnPressed.connect(self._integ_try_unlock)
+        v.addWidget(self._integ_pass1, 0, Qt.AlignmentFlag.AlignHCenter)
+
+        self._integ_pass2 = None
+        if not has_hash:
+            self._integ_pass2 = QLineEdit()
+            self._integ_pass2.setEchoMode(QLineEdit.EchoMode.Password)
+            self._integ_pass2.setPlaceholderText(t("integ.confirm_password_ph"))
+            self._integ_pass2.setFixedSize(300, 38)
+            self._integ_pass2.returnPressed.connect(self._integ_try_unlock)
+            v.addWidget(self._integ_pass2, 0, Qt.AlignmentFlag.AlignHCenter)
+
+        self._integ_lock_err = QLabel("")
+        self._integ_lock_err.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._integ_lock_err.setStyleSheet(
+            f"color: {C('accent_red')}; font-size: 12px;"
+            " background: transparent; border: none;")
+        v.addWidget(self._integ_lock_err)
+
+        unlock_btn = QPushButton(
+            t("integ.unlock") if has_hash else t("integ.set_password"))
+        unlock_btn.setObjectName("successButton")
+        unlock_btn.setFixedSize(300, 40)
+        unlock_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        unlock_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: {C('accent_brand')}; color: {C('bg_secondary')};
+                border: none; border-radius: 6px; font-size: 13px; font-weight: bold;
+            }}
+            QPushButton:hover {{ background: {C('accent_teal')}; }}
+        """)
+        unlock_btn.clicked.connect(self._integ_try_unlock)
+        v.addWidget(unlock_btn, 0, Qt.AlignmentFlag.AlignHCenter)
+        v.addStretch()
+        return page
+
+    def _integ_try_unlock(self):
+        stored = self.settings.get("integration_admin_hash", "")
+        pwd = self._integ_pass1.text()
+        if stored:
+            if not _verify_admin_password(pwd, stored):
+                self._integ_lock_err.setText(t("integ.wrong_password"))
+                return
+        else:
+            # Birinchi ishlatish — parol o'rnatish
+            if len(pwd) < 6:
+                self._integ_lock_err.setText(t("integ.password_short"))
+                return
+            if self._integ_pass2 is None or pwd != self._integ_pass2.text():
+                self._integ_lock_err.setText(t("integ.password_mismatch"))
+                return
+            new_hash = _hash_admin_password(pwd)
+            self.config_manager.update_settings({"integration_admin_hash": new_hash})
+            self.settings["integration_admin_hash"] = new_hash
+        self._integ_lock_err.setText("")
+        self._integ_unlocked = True
+        self._integ_stack.setCurrentIndex(1)
+        self._refresh_push_status()
+
+    def _integ_field_row(self, label_text: str, widget) -> QWidget:
+        """Karta ichida: chapda label (118px), o'ngda kengayadigan maydon."""
+        row_w = QWidget()
+        row_w.setStyleSheet("background: transparent;")
+        row = QHBoxLayout(row_w)
+        row.setContentsMargins(20, 8, 20, 8)
+        row.setSpacing(12)
+        lbl = QLabel(label_text)
+        lbl.setFixedWidth(118)
+        lbl.setStyleSheet(
+            f"color: {C('text_primary')}; font-size: 13px;"
+            " background: transparent; border: none;")
+        row.addWidget(lbl)
+        row.addWidget(widget, 1)
+        return row_w
+
+    def _create_integ_settings_page(self) -> QScrollArea:
+        scroll = QScrollArea()
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+        content = QWidget()
+        content.setStyleSheet("background: transparent;")
+        layout = QVBoxLayout(content)
+        layout.setSpacing(12)
+        layout.setContentsMargins(20, 16, 20, 16)
+
+        pull_cfg = self.settings.get("integration") or {}
+        push_cfg = self.settings.get("integration_push") or {}
+
+        # ── Kiruvchi API (pull) ──
+        layout.addWidget(self._stg_section(t("integ.pull_section")))
+        pull_toggle = QFrame()
+        pull_toggle.setObjectName("stgPullCard")
+        pull_on = bool(pull_cfg.get("enabled", False))
+        pull_toggle.setStyleSheet(self._toggle_card_qss(pull_on, "stgPullCard"))
+        pc = QHBoxLayout(pull_toggle)
+        pc.setContentsMargins(20, 16, 20, 16)
+        pc.setSpacing(16)
+        ptxt = QVBoxLayout()
+        ptxt.setSpacing(4)
+        p_main = QLabel(t("integ.pull_title"))
+        p_main.setStyleSheet(
+            f"color: {C('text_primary')}; font-size: 14px; font-weight: 600;"
+            " background: transparent; border: none;")
+        ptxt.addWidget(p_main)
+        p_sub = QLabel(t("integ.pull_sub"))
+        p_sub.setWordWrap(True)
+        p_sub.setStyleSheet(
+            f"color: {C('text_muted')}; font-size: 11px;"
+            " background: transparent; border: none;")
+        ptxt.addWidget(p_sub)
+        pc.addLayout(ptxt, 1)
+        self.integ_pull_enabled = ToggleSwitch(checked=pull_on)
+        self.integ_pull_enabled.toggled.connect(
+            lambda on: pull_toggle.setStyleSheet(self._toggle_card_qss(on, "stgPullCard")))
+        pc.addWidget(self.integ_pull_enabled, 0, Qt.AlignmentFlag.AlignVCenter)
+        layout.addWidget(pull_toggle)
+
+        pull_card, pull_v = self._stg_card()
+        pull_v.setContentsMargins(0, 4, 0, 4)
+        pull_v.setSpacing(0)
+        self.integ_pull_port = _no_wheel(QSpinBox())
+        self.integ_pull_port.setRange(1024, 65535)
+        self.integ_pull_port.setValue(int(pull_cfg.get("port", 8750)))
+        self.integ_pull_port.setFixedSize(120, 36)
+        pull_v.addWidget(self._pref_row(t("integ.port"), self.integ_pull_port))
+        pull_v.addWidget(self._pref_divider())
+        self.integ_pull_key = QLineEdit(str(pull_cfg.get("api_key", "") or ""))
+        self.integ_pull_key.setFixedHeight(36)
+        pull_v.addWidget(self._integ_field_row(t("integ.api_key"), self.integ_pull_key))
+        layout.addWidget(pull_card)
+
+        # ── Tashqi saytga yuborish (push) ──
+        layout.addSpacing(6)
+        layout.addWidget(self._stg_section(t("integ.push_section")))
+        push_toggle = QFrame()
+        push_toggle.setObjectName("stgPushCard")
+        push_on = bool(push_cfg.get("enabled", False))
+        push_toggle.setStyleSheet(self._toggle_card_qss(push_on, "stgPushCard"))
+        sc = QHBoxLayout(push_toggle)
+        sc.setContentsMargins(20, 16, 20, 16)
+        sc.setSpacing(16)
+        stxt = QVBoxLayout()
+        stxt.setSpacing(4)
+        s_main = QLabel(t("integ.push_title"))
+        s_main.setStyleSheet(
+            f"color: {C('text_primary')}; font-size: 14px; font-weight: 600;"
+            " background: transparent; border: none;")
+        stxt.addWidget(s_main)
+        s_sub = QLabel(t("integ.push_sub"))
+        s_sub.setWordWrap(True)
+        s_sub.setStyleSheet(
+            f"color: {C('text_muted')}; font-size: 11px;"
+            " background: transparent; border: none;")
+        stxt.addWidget(s_sub)
+        sc.addLayout(stxt, 1)
+        self.integ_push_enabled = ToggleSwitch(checked=push_on)
+        self.integ_push_enabled.toggled.connect(
+            lambda on: push_toggle.setStyleSheet(self._toggle_card_qss(on, "stgPushCard")))
+        sc.addWidget(self.integ_push_enabled, 0, Qt.AlignmentFlag.AlignVCenter)
+        layout.addWidget(push_toggle)
+
+        push_card, push_v = self._stg_card()
+        push_v.setContentsMargins(0, 4, 0, 4)
+        push_v.setSpacing(0)
+
+        self.integ_push_url = QLineEdit(str(push_cfg.get("base_url", "") or ""))
+        self.integ_push_url.setPlaceholderText("https://sayt.uz")
+        self.integ_push_url.setFixedHeight(36)
+        push_v.addWidget(self._integ_field_row(t("integ.base_url"), self.integ_push_url))
+        push_v.addWidget(self._pref_divider())
+
+        self.integ_push_user = QLineEdit(str(push_cfg.get("username", "") or ""))
+        self.integ_push_user.setFixedHeight(36)
+        push_v.addWidget(self._integ_field_row(t("integ.username"), self.integ_push_user))
+        push_v.addWidget(self._pref_divider())
+
+        self.integ_push_pass = QLineEdit(str(push_cfg.get("password", "") or ""))
+        self.integ_push_pass.setEchoMode(QLineEdit.EchoMode.Password)
+        self.integ_push_pass.setFixedHeight(36)
+        push_v.addWidget(self._integ_field_row(t("integ.password"), self.integ_push_pass))
+        push_v.addWidget(self._pref_divider())
+
+        self.integ_push_interval = _no_wheel(QSpinBox())
+        self.integ_push_interval.setRange(1, 1440)
+        self.integ_push_interval.setSuffix(t("integ.min_suffix"))
+        self.integ_push_interval.setValue(int(push_cfg.get("interval_minutes", 5)))
+        self.integ_push_interval.setFixedSize(120, 36)
+        push_v.addWidget(self._pref_row(t("integ.interval"), self.integ_push_interval))
+        push_v.addWidget(self._pref_divider())
+
+        # Test qatori: tugma + holat
+        test_wrap = QWidget()
+        test_wrap.setStyleSheet("background: transparent;")
+        test_h = QHBoxLayout(test_wrap)
+        test_h.setContentsMargins(20, 10, 20, 10)
+        test_h.setSpacing(12)
+        self._integ_test_btn = QPushButton(f"🔌  {t('integ.test_btn')}")
+        self._integ_test_btn.setFixedSize(210, 36)
+        self._integ_test_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._integ_test_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: {C('bg_input')}; color: {C('text_primary')};
+                border: 1px solid {C('border_light')}; border-radius: 6px;
+                font-size: 12px;
+            }}
+            QPushButton:hover {{ background: {C('bg_hover')}; }}
+            QPushButton:disabled {{ color: {C('text_muted')}; }}
+        """)
+        self._integ_test_btn.clicked.connect(self._test_push)
+        test_h.addWidget(self._integ_test_btn)
+        self._integ_status_lbl = QLabel("")
+        self._integ_status_lbl.setWordWrap(True)
+        self._integ_status_lbl.setStyleSheet(
+            f"color: {C('text_muted')}; font-size: 11px;"
+            " background: transparent; border: none;")
+        test_h.addWidget(self._integ_status_lbl, 1)
+        push_v.addWidget(test_wrap)
+        layout.addWidget(push_card)
+
+        # ── Dasturchilar uchun hujjat ──
+        layout.addSpacing(6)
+        layout.addWidget(self._stg_section(t("integ.docs_section")))
+        doc_card, doc_v = self._stg_card()
+        doc_v.setContentsMargins(20, 14, 20, 14)
+        doc_v.setSpacing(10)
+        doc_hint = QLabel(t("integ.spec_hint"))
+        doc_hint.setWordWrap(True)
+        doc_hint.setStyleSheet(
+            f"color: {C('text_muted')}; font-size: 11px;"
+            " background: transparent; border: none;")
+        doc_v.addWidget(doc_hint)
+        doc_row = QHBoxLayout()
+        doc_row.setSpacing(10)
+        spec_btn = QPushButton(f"📄  {t('integ.save_spec')}")
+        spec_btn.setFixedSize(240, 36)
+        spec_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        spec_btn.setStyleSheet(self._integ_test_btn.styleSheet())
+        spec_btn.clicked.connect(self._save_spec_files)
+        doc_row.addWidget(spec_btn)
+        doc_row.addStretch()
+        doc_v.addLayout(doc_row)
+        layout.addWidget(doc_card)
+
+        # ── Parolni o'zgartirish ──
+        pwd_row = QHBoxLayout()
+        pwd_row.addStretch()
+        pwd_btn = QPushButton(t("integ.change_password"))
+        pwd_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        pwd_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent; color: {C('text_muted')};
+                border: none; font-size: 11px; text-decoration: underline;
+            }}
+            QPushButton:hover {{ color: {C('text_primary')}; }}
+        """)
+        pwd_btn.clicked.connect(self._change_integ_password)
+        pwd_row.addWidget(pwd_btn)
+        layout.addLayout(pwd_row)
+
+        layout.addStretch()
+        scroll.setWidget(content)
+        return scroll
+
+    def _refresh_push_status(self):
+        st = self._push_client.get_status() if self._push_client else None
+        if not st or not st.get("last_attempt"):
+            self._integ_status_lbl.setText(t("integ.status_never"))
+            return
+        parts = []
+        if st.get("last_success"):
+            parts.append(t("integ.status_last",
+                           time=st["last_success"].replace("T", " ")))
+        if st.get("last_error"):
+            parts.append(t("integ.status_error", err=st["last_error"]))
+        self._integ_status_lbl.setText("\n".join(parts) or t("integ.status_never"))
+
+    def _test_push(self):
+        """Joriy maydonlar bilan bir marta sinov yuborish (fon oqimida)."""
+        from app.core.stats_push import StatsPushClient, DEFAULT_SETTINGS as _PUSH_DEF
+
+        s = dict(_PUSH_DEF)
+        s.update(self.settings.get("integration_push") or {})
+        s["base_url"] = self.integ_push_url.text().strip()
+        s["username"] = self.integ_push_user.text().strip()
+        s["password"] = self.integ_push_pass.text()
+        s["enabled"] = True
+        if not s["base_url"]:
+            self._integ_status_lbl.setText(
+                t("integ.test_fail", msg=t("integ.url_required")))
+            return
+
+        if self._stats_db is None:
+            from app.core.database import StatsDB
+            self._stats_db = StatsDB()
+
+        self._integ_test_btn.setEnabled(False)
+        self._integ_status_lbl.setText(t("integ.testing"))
+        self._push_test_result = None
+
+        def work():
+            client = StatsPushClient(self._stats_db, self.config_manager)
+            try:
+                ok, msg = client.send_snapshot(s)
+            except Exception as e:
+                ok, msg = False, str(e)
+            self._push_test_result = (ok, msg)
+
+        threading.Thread(target=work, daemon=True, name="PushTest").start()
+        self._push_test_ticks = 0
+        self._push_test_timer = QTimer(self)
+        self._push_test_timer.timeout.connect(self._poll_push_test)
+        self._push_test_timer.start(200)
+
+    def _poll_push_test(self):
+        self._push_test_ticks += 1
+        result = self._push_test_result
+        if result is None:
+            if self._push_test_ticks > 200:  # 40 sek — himoya chegarasi
+                result = (False, "timeout")
+            else:
+                return
+        self._push_test_timer.stop()
+        self._integ_test_btn.setEnabled(True)
+        ok, msg = result
+        if ok:
+            self._integ_status_lbl.setText(f"✅ {t('integ.test_ok')}")
+        else:
+            self._integ_status_lbl.setText(f"❌ {t('integ.test_fail', msg=msg)}")
+
+    def _save_spec_files(self):
+        """Spetsifikatsiya + namuna serverni tanlangan papkaga nusxalash."""
+        root = Path(__file__).parent.parent.parent
+        src_spec = root / "docs" / "INTEGRATION_PUSH_SPEC.md"
+        src_srv = root / "docs" / "examples" / "sample_push_receiver.py"
+        if not src_spec.exists() or not src_srv.exists():
+            QMessageBox.warning(self, "RailSafe", t("integ.spec_missing"))
+            return
+        dest = QFileDialog.getExistingDirectory(self, t("integ.save_spec"))
+        if not dest:
+            return
+        try:
+            shutil.copy2(src_spec, dest)
+            shutil.copy2(src_srv, dest)
+            QMessageBox.information(
+                self, "RailSafe", t("integ.spec_saved", path=dest))
+        except Exception as e:
+            QMessageBox.warning(self, "RailSafe", str(e))
+
+    def _change_integ_password(self):
+        from PyQt6.QtWidgets import QInputDialog
+        p1, ok = QInputDialog.getText(
+            self, t("integ.change_password"), t("integ.new_password_ph"),
+            QLineEdit.EchoMode.Password)
+        if not ok:
+            return
+        if len(p1) < 6:
+            QMessageBox.warning(self, "RailSafe", t("integ.password_short"))
+            return
+        p2, ok = QInputDialog.getText(
+            self, t("integ.change_password"), t("integ.confirm_password_ph"),
+            QLineEdit.EchoMode.Password)
+        if not ok:
+            return
+        if p1 != p2:
+            QMessageBox.warning(self, "RailSafe", t("integ.password_mismatch"))
+            return
+        new_hash = _hash_admin_password(p1)
+        self.config_manager.update_settings({"integration_admin_hash": new_hash})
+        self.settings["integration_admin_hash"] = new_hash
+        QMessageBox.information(self, "RailSafe", t("integ.password_changed"))
+
     def _save(self):
         """Save settings"""
         lang_map = {0: "uz", 1: "ru", 2: "en"}
@@ -1735,6 +2262,25 @@ class SettingsDialog(QDialog):
             "violation_delay_sec": int(self.violation_delay_spin.value()),
             "model_type": model_type,
         }
+
+        # Integratsiya — faqat parol bilan ochilgan bo'lsa saqlanadi
+        if self._integ_unlocked:
+            pull = dict(self.settings.get("integration") or {})
+            pull.setdefault("host", "0.0.0.0")
+            pull["enabled"] = self.integ_pull_enabled.isChecked()
+            pull["port"] = int(self.integ_pull_port.value())
+            pull["api_key"] = self.integ_pull_key.text().strip()
+            settings["integration"] = pull
+
+            push = dict(self.settings.get("integration_push") or {})
+            push.setdefault("days_back", 1)
+            push.setdefault("verify_tls", True)
+            push["enabled"] = self.integ_push_enabled.isChecked()
+            push["base_url"] = self.integ_push_url.text().strip()
+            push["username"] = self.integ_push_user.text().strip()
+            push["password"] = self.integ_push_pass.text()
+            push["interval_minutes"] = int(self.integ_push_interval.value())
+            settings["integration_push"] = push
 
         self.config_manager.update_settings(settings)
         # Trigger dynamic language switch (emits language_changed signal)

@@ -1054,10 +1054,25 @@ class CrossingCard(QWidget):
                 self._plc_was_connected = connected
                 if not connected:
                     # Aloqa uzildi — grace/timer to'xtatish
+                    was_running = self._plc_active or self._plc_in_grace
                     self._plc_in_grace = False
                     self._grace_timer.stop()
                     self._plc_active = False
                     self._update_plc_ui(False, connected=False)
+                    # MUHIM: poyezd davom etayotganda aloqa uzilsa, yozib olish
+                    # va ViolationDetector "armed" holatda abadiy qolib ketardi —
+                    # natijada har kirgan mashina qoidabuzar deb yozilardi.
+                    # Grace tugashidagi kabi to'xtatib, disarm qilamiz. (Train
+                    # count/DB bu yerda yozilmaydi: poyezd holati noaniq.)
+                    if was_running:
+                        self._train_timer.stop()
+                        for _w in self.camera_workers:
+                            _w.plc_danger = False
+                        try:
+                            self._stop_recording()
+                        except Exception:
+                            _log.exception("[PLC uzilish] recording to'xtatishda xato")
+                        self._on_plc_signal_clear()
                     return
                 else:
                     # Aloqa qayta tiklandi

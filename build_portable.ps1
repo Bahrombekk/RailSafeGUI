@@ -3,7 +3,18 @@
 $ErrorActionPreference = "Continue"
 Set-Location $PSScriptRoot
 
-$BASE = "C:\Users\User\AppData\Local\Programs\Python\Python310"
+# Python 3.10 yadrosining joyi — mashinaga bog'lab qo'ymaymiz, avtomatik aniqlaymiz.
+# BASE muhit o'zgaruvchisi bilan majburan ko'rsatish ham mumkin: $env:RAILSAFE_PY_BASE
+$BASE = $env:RAILSAFE_PY_BASE
+if (-not $BASE) {
+    $found = & py -3.10 -c "import sys; print(sys.base_prefix)" 2>$null
+    if ($LASTEXITCODE -eq 0 -and $found) { $BASE = $found.Trim() }
+}
+if (-not $BASE -or -not (Test-Path $BASE)) {
+    Write-Error "Python 3.10 topilmadi. `py -3.10` o'rnating yoki `\$env:RAILSAFE_PY_BASE` ni belgilang."
+    exit 1
+}
+Write-Output "[0/7] Python yadrosi: $BASE"
 $OUT  = "packaging\portable"
 $PY   = "$OUT\python"
 

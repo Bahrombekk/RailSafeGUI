@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                               QFrame, QScrollArea, QSizePolicy, QSpacerItem,
                               QPushButton, QGridLayout, QGraphicsDropShadowEffect,
                               QDialog, QDateEdit, QFileDialog, QMessageBox)
-from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QDate
+from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QDate, QThread
 from PyQt6.QtGui import QColor
 from datetime import datetime, date, timedelta
 
@@ -20,6 +20,7 @@ from app.widgets.heatmap import HeatmapChart
 from app.reports.word import generate_report
 from app.reports.pdf import build_html_report
 from app.utils.language import t, LM
+from app.utils.ui_guards import no_wheel
 
 logger = logging.getLogger("RailSafe.reports")
 
@@ -38,6 +39,29 @@ def _open_file(path: str) -> None:
             subprocess.Popen(["xdg-open", path])
     except Exception as e:
         logger.warning("Faylni ochib bo'lmadi (%s): %s", path, e)
+
+
+class _ReportWorker(QThread):
+    """Word/kategoriya hisobotini FON threadida yaratadi.
+
+    1 yillik oraliqda hisobot qurish (ko'p DB so'rov + python-docx jadval/rasm)
+    GUI threadida bajarilsa butun oyna muzlab qolardi. Shu ish shu yerga
+    ko'chiriladi; natija signal orqali GUI threadiga qaytadi."""
+    finished_ok = pyqtSignal(bool, str)  # (ok, file_path)
+
+    def __init__(self, fn, args, file_path, parent=None):
+        super().__init__(parent)
+        self._fn = fn
+        self._args = args
+        self._file_path = file_path
+
+    def run(self):
+        try:
+            ok = bool(self._fn(*self._args))
+        except Exception as e:
+            logger.exception("Hisobot yaratishda xato: %s", e)
+            ok = False
+        self.finished_ok.emit(ok, self._file_path)
 
 
 class ReportDialog(QDialog):
@@ -120,7 +144,7 @@ class ReportDialog(QDialog):
         from_lbl.setStyleSheet(f"font-size: 11px; color: {C('text_muted')};")
         date_row.addWidget(from_lbl)
 
-        self.date_from = QDateEdit()
+        self.date_from = no_wheel(QDateEdit())
         self.date_from.setCalendarPopup(True)
         self.date_from.setDate(QDate.currentDate().addDays(-30))
         self.date_from.setDisplayFormat("dd.MM.yyyy")
@@ -130,7 +154,7 @@ class ReportDialog(QDialog):
         to_lbl.setStyleSheet(f"font-size: 11px; color: {C('text_muted')};")
         date_row.addWidget(to_lbl)
 
-        self.date_to = QDateEdit()
+        self.date_to = no_wheel(QDateEdit())
         self.date_to.setCalendarPopup(True)
         self.date_to.setDate(QDate.currentDate())
         self.date_to.setDisplayFormat("dd.MM.yyyy")
@@ -237,13 +261,10 @@ class ReportDialog(QDialog):
         if not file_path:
             return
 
-        ok = generate_report(self.config_manager, self.stats_db, d_from, d_to, file_path)
-
-        if ok:
-            _open_file(file_path)
-            self.accept()
-        else:
-            QMessageBox.warning(self, t("error.title"), t("error.report"))
+        self._run_report_async(
+            generate_report,
+            (self.config_manager, self.stats_db, d_from, d_to, file_path),
+            file_path)
 
     def _export_category(self):
         """Kesishma TOIFASI hisoboti (standart jadval bo'yicha) — Word."""
@@ -259,8 +280,26 @@ class ReportDialog(QDialog):
         if not file_path:
             return
         from app.reports.category import generate_category_report
-        ok = generate_category_report(self.config_manager, self.stats_db,
-                                      d_from, d_to, file_path)
+        self._run_report_async(
+            generate_category_report,
+            (self.config_manager, self.stats_db, d_from, d_to, file_path),
+            file_path)
+
+    def _run_report_async(self, fn, args, file_path):
+        """Hisobot yaratishni fon threadida bajarish — GUI muzlamasin.
+        Ish davomida dialog o'chiriladi va kutish kursori ko'rsatiladi."""
+        from PyQt6.QtWidgets import QApplication
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        self.setEnabled(False)
+        self._report_worker = _ReportWorker(fn, args, file_path, self)
+        self._report_worker.finished_ok.connect(self._on_report_done)
+        self._report_worker.start()
+
+    def _on_report_done(self, ok, file_path):
+        from PyQt6.QtWidgets import QApplication
+        QApplication.restoreOverrideCursor()
+        self.setEnabled(True)
+        self._report_worker = None
         if ok:
             _open_file(file_path)
             self.accept()

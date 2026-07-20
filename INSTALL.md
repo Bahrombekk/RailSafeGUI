@@ -60,24 +60,31 @@ python -m app.main
 
 ---
 
-## 3-usul: Mustaqil EXE (foydalanuvchida Python yo'q bo'lsa)
+## 3-usul: Offline portable `setup.exe` (foydalanuvchida Python yo'q bo'lsa)
 
-Python o'rnatmasdan tarqatish uchun `.exe` yaratish:
+Internetsiz, Python o'rnatmasdan tarqatish uchun **tavsiya etilgan** end-user yo'li.
+Ishlab chiquvchi mashinasida to'plam yig'iladi:
 
 ```
-build_exe.bat
+powershell -ExecutionPolicy Bypass -File build_portable.ps1
 ```
 
-Natija: `dist\RailSafeAI\RailSafeAI.exe`
-
-Rasmiy Windows `setup.exe` yaratish uchun (ixtiyoriy):
+So'ng rasmiy Windows `setup.exe` yaratish:
 1. [Inno Setup](https://jrsoftware.org/isdl.php) o'rnating
 2. `installer.iss` faylini Inno Setup Compiler'da oching → **Compile (F9)**
-3. Natija: `Output\RailSafeAI_Setup.exe`
+3. Natija: `Output\RailSafeAI_Setup.exe` (foydalanuvchiga shu beriladi)
 
-> **Ogohlantirish:** GPU (torch+CUDA+TensorRT) build juda katta (>4 GB) va
-> nozik. Ishlab chiqarish serverlari uchun **1-usul (install.bat)** afzalroq.
-> EXE build asosan CPU/oddiy tarqatish uchun.
+> Portable to'plam qurilgan `.venv` (GPU yoki CPU) dan olinadi — GPU mashina
+> uchun GPU venv'da, CPU mashina uchun CPU venv'da yig'ing.
+> **Muhim:** manba kod o'zgargach (mas. yangi funksiya) `setup.exe` ni QAYTA
+> qurish shart — portable to'plam avtomatik yangilanmaydi.
+
+### Legacy (tavsiya etilmaydi): PyInstaller `.exe`
+
+`build_exe.bat` + `RailSafeAI.spec` orqali frozen `.exe` ham bor, lekin
+torch+CUDA freeze og'ir va nozik (c10.dll init xatolari) — shu sabab **tashlab
+qo'yilgan**. Yangi tarqatishlarda 3-usul (portable) yoki 1-usul (install.bat)
+ishlating.
 
 ---
 
@@ -85,11 +92,17 @@ Rasmiy Windows `setup.exe` yaratish uchun (ixtiyoriy):
 
 O'rnatgandan so'ng:
 
-1. **Kameralar/PLC** — `config/gui_config.json` ni tahrirlang yoki dastur
+1. **Config faylini yarating** — `config/gui_config.json` maxfiy (RTSP parollari)
+   bo'lgani uchun repo'da yo'q. Namunani nusxalang:
+   ```
+   copy config\gui_config.example.json config\gui_config.json
+   ```
+   (Portable/installer bilan bo'sh config o'zi keladi.)
+2. **Kameralar/PLC** — `config/gui_config.json` ni tahrirlang yoki dastur
    ichidan **Dashboard → "+"** orqali qo'shing.
-2. **Model** — `config/config.yaml` da `custom_model_path` to'g'ri ekanini
+3. **Model** — `config/config.yaml` da `custom_model_path` to'g'ri ekanini
    tekshiring (standart: `models/pereezd_yolo26n.pt`).
-3. **Til/tema** — dastur ichida **Sozlamalar** dan tanlang.
+4. **Til/tema** — dastur ichida **Sozlamalar** dan tanlang.
 
 Batafsil: asosiy [README.md](README.md).
 
