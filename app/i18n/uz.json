@@ -66,12 +66,18 @@
   "chart.movement": "Poyezd harakati",
   "chart.cameras_section": "Kameralar",
   "chart.weekly_section": "Haftalik (7 kun)",
-  "chart.heatmap_section": "Bandlik xaritasi (7 kun x 24 soat)",
+  "chart.heatmap_section": "Yo'l holati xaritasi (7 kun x 24 soat)",
   "legend.light": "Yengil",
   "legend.heavy": "Og'ir",
   "legend.low": "Kam",
   "legend.medium": "O'rtacha",
   "legend.high": "Ko'p",
+  "legend.los_a": "Bo'sh (A)",
+  "legend.los_b": "Normal (B)",
+  "legend.los_c": "Gavjum (C)",
+  "legend.los_d": "Juda gavjum (D)",
+  "legend.los_e": "To'liq band, to'xtashlar (E)",
+  "legend.los_f": "ZATOR — tirbandlik (F)",
   "legend.trains": "Poyezd soni",
   "summary.total_transport": "Jami transport",
   "summary.today": "bugungi",
@@ -586,6 +592,19 @@
           "type": "tip",
           "title": "Rasmiy ish uchun tavsiya",
           "text": "Oy oxirida 30 kunlik hisobotni saqlang va pereezd sozlamalarini JSON eksport orqali zaxiralab boring."
+        },
+        {
+          "type": "tip",
+          "title": "Sichqoncha bilan batafsil ko'rish",
+          "text": "Har bir grafik va xarita ustida kursorni ushlab turing — o'sha kun, soat yoki katak uchun aniq sonlar chiqadi. Grafikdagi mayda yozuvlarni o'qishga urinish shart emas."
+        },
+        {
+          "type": "info",
+          "title": "Yo'l holati xaritasi",
+          "items": [
+            "Bitta xaritada uchta ma'lumot: o'tgan mashina (son), yo'l holati (rang), zator sababi (oq nuqta).",
+            "Batafsil izoh 'Yo'l holati' bo'limida."
+          ]
         }
       ]
     },
@@ -629,6 +648,16 @@
             "Tanlangan sana oralig'ida ma'lumot borligini tekshiring.",
             "Fayl saqlanadigan papkaga yozish ruxsati borligini tekshiring.",
             "Word fayl ochiq turgan bo'lsa yopib, qayta eksport qiling."
+          ]
+        },
+        {
+          "type": "info",
+          "title": "Yangi savollar",
+          "items": [
+            "Ramka mashinadan orqada qolsa — dasturni qayta ishga tushiring (eski versiya ishlab turgan bo'lishi mumkin).",
+            "Zator xaritasi ko'rinmasa — turish vaqti hali yig'ilmagan; Tizim holati bo'limida tekshirish mumkin.",
+            "Ishga tushirishda 'engine yaratilmoqda' yozuvi chiqsa — bu bir martalik jarayon (2-5 daqiqa), kamera soni o'zgarganda takrorlanishi mumkin.",
+            "Kamera qo'shgandan keyin tezlik pasaysa — Tizim holati bo'limida engine 'dynamic' ekanini tekshiring."
           ]
         }
       ]
@@ -726,6 +755,127 @@
             "Kameralar RTSP orqali ochilishi kerak.",
             "PLC va kameralar kompyuter bilan bir lokal tarmoqda bo'lishi kerak."
           ]
+        },
+        {
+          "type": "info",
+          "title": "So'nggi yaxshilanishlar",
+          "items": [
+            "Zator baholash — endi har bir mashinaning zonada turgan vaqti bo'yicha (faqat mashina soni bilan probkani aniqlab bo'lmaydi).",
+            "Bandlik, zator va zonadan foydalanish BITTA xaritaga jamlandi; tafsilotlar kursor ostida chiqadi.",
+            "Deteksiya ramkasi mashinaga aniq tushadi — kechikish kompensatsiya qilinadi (ANPR aniqligi uchun muhim).",
+            "AI modeli kamera soniga o'zi moslashadi (dynamic engine) — kamera qo'shganda qayta sozlash kerak emas.",
+            "Barcha grafiklarda sichqoncha izohlari; sonlar hech qayerda kesilmaydi; ranglar mavzuga (yorug'/qorong'i/harbiy) moslashadi."
+          ]
+        }
+      ]
+    },
+    "road": {
+      "lead": "Yo'l holati xaritasi bitta jadvalda 7 kun x 24 soatni ko'rsatadi: katakdagi son — o'tgan mashina, rangi — yo'l holati.",
+      "blocks": [
+        {
+          "type": "info",
+          "title": "Ranglar nimani bildiradi",
+          "items": [
+            "Bo'sh (A) — yo'l erkin, mashina kam.",
+            "Normal (B) — oddiy harakat.",
+            "Gavjum (C) — mashina ko'p, lekin oqim yuradi.",
+            "Juda gavjum (D) — yo'l sig'imiga yaqin.",
+            "To'liq band, to'xtashlar (E) — navbat paydo bo'ladi.",
+            "ZATOR — tirbandlik (F) — transport uzoq turib qoladi."
+          ]
+        },
+        {
+          "type": "warning",
+          "title": "Katakda kichik son, lekin rang qizil — bu xato emas",
+          "items": [
+            "Probkada mashina KAM o'tadi: oqim pasayadi, lekin yo'l band bo'ladi.",
+            "Shu sabab faqat mashina soniga qarab baholash mumkin emas — to'liq to'xtashda son 0 ga tushadi.",
+            "Tizim ikkinchi ko'rsatkichni ham hisobga oladi: har bir mashinaning zonada TURGAN vaqti. Probkada u bir necha barobar oshadi.",
+            "Katakdagi oq nuqta — baho aynan turish vaqtidan kelib chiqqanini bildiradi (mashina kam o'tgan, chunki uzoq turgan)."
+          ]
+        },
+        {
+          "type": "tip",
+          "title": "Batafsil ko'rish",
+          "text": "Kursorni katak ustiga olib borsangiz: o'tgan mashina soni, har mashinaning zonada turgan vaqti, zona necha daqiqa band bo'lgani va holat nomi chiqadi. Xuddi shu usul barcha grafiklarda ishlaydi — ustun yoki nuqta ustiga olib boring."
+        },
+        {
+          "type": "info",
+          "title": "Chegara qanday belgilanadi",
+          "items": [
+            "Shkala sozlamalardagi ogohlantirish chegarasiga bog'langan.",
+            "Chegara 30 sekund bo'lsa: 12s gacha bo'sh, 30s gacha gavjum, 45s gacha juda gavjum, 90s dan oshsa ZATOR.",
+            "Chegarani Sozlamalar > Asosiy bo'limida o'zgartirish mumkin."
+          ]
+        },
+        {
+          "type": "warning",
+          "title": "Ma'lumot to'planishi kerak",
+          "text": "Turish vaqti dastur ishga tushgan paytdan yig'iladi — eski kunlar uchun qayta hisoblab bo'lmaydi. Ma'lumot to'planmaguncha rang faqat mashina soniga qarab beriladi va oq nuqtalar ko'rinmaydi."
+        }
+      ]
+    },
+    "metrics": {
+      "lead": "Ekranda ko'rinadigan har bir sonning aniq ma'nosi.",
+      "blocks": [
+        {
+          "type": "info",
+          "title": "Transport hisobi",
+          "items": [
+            "Yengil transport — avtomobil va mototsikllar.",
+            "Og'ir transport — avtobus va yuk mashinalari.",
+            "Jami — yengil + og'ir.",
+            "Mashina zonaga KIRGANDA bir marta sanaladi; zonada turgan vaqti sanoqqa ta'sir qilmaydi.",
+            "Hisob har kuni yarim kechada noldan boshlanadi."
+          ]
+        },
+        {
+          "type": "info",
+          "title": "Zona ko'rsatkichlari",
+          "items": [
+            "Bandlik — ayni damda zona ichidagi transport soni.",
+            "Zona vaqti — zonada eng uzoq turib qolgan transportning vaqti; ogohlantirish chegarasidan oshsa sariq, buzilish chegarasidan oshsa qizil.",
+            "Turish vaqti (o'rtacha) — bir mashinaning zonada turgan vaqti; zator baholash uchun ishlatiladi.",
+            "Zonadan foydalanish — zonada kamida bitta mashina bo'lgan vaqt (daqiqa/soat). Bu zator o'lchovi EMAS: gavjum lekin erkin oqadigan soatlarda ham yuqori bo'ladi."
+          ]
+        },
+        {
+          "type": "info",
+          "title": "Poyezd va PLC",
+          "items": [
+            "Poyezd soni — PLC signali bo'yicha (shlagbaum yopilishi) hisoblanadi.",
+            "Davomiylik — signal yoqilgandan o'chgangacha o'tgan vaqt.",
+            "PLC o'chirilgan bo'lsa poyezd sanog'i yuritilmaydi."
+          ]
+        },
+        {
+          "type": "info",
+          "title": "Texnik ko'rsatkichlar",
+          "items": [
+            "FPS — sekundda qayta ishlangan kadr soni.",
+            "Amaliy sig'im (P) — oxirgi 30 kundagi soatlik oqimlarning 95-foizli qiymati; yuklanish darajasi shunga nisbatan hisoblanadi.",
+            "Toifa (I-IV) — kesishma toifasi, standart jadval bo'yicha kunlik transport va poyezd soniga qarab aniqlanadi."
+          ]
+        },
+        {
+          "type": "tip",
+          "title": "Eslatma",
+          "text": "Har bir ko'rsatkich ustiga kursorni olib borsangiz, shu izohning qisqa varianti darhol chiqadi."
+        }
+      ]
+    },
+    "system": {
+      "lead": "Bu bo'lim dasturning HOZIRGI holatini ko'rsatadi — texnik yordam so'raganda shu ma'lumotlarni yuboring.",
+      "blocks": [
+        {
+          "type": "tip",
+          "title": "Nima uchun kerak",
+          "items": [
+            "GPU topilmagan bo'lsa AI sekin ishlaydi — shu yerda ko'rinadi.",
+            "Engine 'fixed' bo'lsa kamera soni o'zgarganda tezlik pasayadi; 'dynamic' bo'lsa kamera soniga o'zi moslashadi.",
+            "Turish vaqti yozuvlari 'hali yig'ilmoqda' bo'lsa, zator xaritasi to'liq ishlashi uchun bir-ikki kun kerak.",
+            "Jurnal fayli (railsafe.log) xatolik sabablarini aniqlashda yordam beradi."
+          ]
         }
       ]
     }
@@ -741,5 +891,59 @@
   "dlg.polygon.err_snapshot": "Kameradan kadr olib bo'lmadi. Manba (RTSP) to'g'riligini tekshiring.",
   "dlg.polygon.saved": "Polygon saqlandi",
   "common.cancel": "Bekor qilish",
-  "common.save": "Saqlash"
+  "common.save": "Saqlash",
+  "legend.dwell_driven": "nuqta — zator (mashina kam o'tgan, chunki uzoq turgan)",
+  "chart.heatmap_hint": "Katakdagi son — shu soatda o'tgan mashina. Rang — yo'l holati. Nuqta bo'lsa: mashina kam o'tgan, chunki zonada uzoq turgan (zator). Batafsil ko'rish uchun sichqonchani katak ustiga olib boring.",
+  "heatmap.tip_flow": "O'tgan mashina: {count} ta",
+  "heatmap.tip_dwell": "Har mashina zonada turgan: {sec} sekund",
+  "heatmap.tip_util": "Zona band bo'lgan: {min} daqiqa (60 daqiqadan)",
+  "heatmap.tip_level": "Holat: {level}",
+  "heatmap.tip_from_dwell": "Mashina kam o'tgan, chunki zonada uzoq turgan",
+  "tip.total_transport": "Bugun zonadan o'tgan barcha transport: yengil + og'ir. Har mashina zonaga kirganda BIR marta sanaladi.",
+  "tip.light": "Yengil transport: avtomobil va mototsikllar.",
+  "tip.heavy": "Og'ir transport: avtobus va yuk mashinalari.",
+  "tip.trains": "Bugun o'tgan poyezdlar soni. PLC signali bo'yicha hisoblanadi (shlagbaum yopilishi).",
+  "tip.crossings": "Tizimga qo'shilgan kesishmalar soni.",
+  "tip.cameras": "Ishlayotgan / jami kameralar soni.",
+  "tip.zone_now": "Ayni damda zona ichidagi transport soni.",
+  "tip.zone_time": "Zonada eng uzoq turib qolgan transportning vaqti. {warn} sekunddan oshsa sariq, {viol} sekunddan oshsa qizil bo'ladi.",
+  "tip.fps": "Kamera oqimi tezligi: sekundda qayta ishlangan kadr soni.",
+  "tip.stats_today": "Hisob har kuni yarim kechada noldan boshlanadi.",
+  "tip.trains_count": "Poyezd: {count} ta",
+  "tip.trains_avg": "O'rtacha davomiylik: {sec} sekund",
+  "tip.share": "Ulush: {pct}%",
+  "about.nav.road": "Yo'l holati",
+  "about.section.road": "Yo'l holati va zator xaritasi",
+  "about.nav.metrics": "Ko'rsatkichlar",
+  "about.section.metrics": "Ko'rsatkichlar lug'ati",
+  "about.nav.system": "Tizim holati",
+  "about.section.system": "Tizim holati va jihozlar",
+  "about.sys.app": "Dastur",
+  "about.sys.ai": "AI va jihoz",
+  "about.sys.engine": "Tezlashtirilgan modellar (engine)",
+  "about.sys.config": "Konfiguratsiya",
+  "about.sys.data": "Yig'ilgan ma'lumot",
+  "about.sys.mode": "Ishlash rejimi",
+  "about.sys.no_gpu": "topilmadi (CPU rejimi)",
+  "about.sys.not_installed": "o'rnatilmagan",
+  "about.sys.engine_none": "Engine fayl yo'q — dastur PyTorch rejimida ishlaydi (sekinroq)",
+  "about.sys.engine_bad": "o'qilmadi (qayta yaratiladi)",
+  "about.sys.engine_dynamic": "dynamic (kamera soniga moslashadi)",
+  "about.sys.engine_fixed": "fixed (qat'iy batch)",
+  "about.sys.crossings": "Kesishmalar",
+  "about.sys.cameras": "Kameralar",
+  "about.sys.enabled": "yoqilgan",
+  "about.sys.with_zone": "zonasi bor",
+  "about.sys.model": "Model",
+  "about.sys.thresholds": "Ogohlantirish / buzilish chegarasi",
+  "about.sys.theme": "Mavzu",
+  "about.sys.language": "Til",
+  "about.sys.db_size": "Baza hajmi",
+  "about.sys.hours": "Soatlik yozuvlar",
+  "about.sys.dwell": "Turish vaqti yozuvlari",
+  "about.sys.avg": "o'rtacha",
+  "about.sys.collecting": "hali yig'ilmoqda",
+  "about.sys.log": "Jurnal fayli",
+  "about.sys.not_loaded": "yuklanmagan",
+  "about.sys.model_default": "standart (COCO)"
 }

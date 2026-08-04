@@ -174,3 +174,27 @@ def get_theme() -> str:
 def C(key: str) -> str:
     """Get color by key. Usage: C('bg_card')"""
     return THEMES.get(_current_theme, THEMES["dark"]).get(key, "#ff00ff")
+
+
+def luminance(color) -> float:
+    """Rangning ko'z bilan sezilarli yorqinligi 0..1 (QColor yoki "#rrggbb")."""
+    from PyQt6.QtGui import QColor
+    c = color if isinstance(color, QColor) else QColor(str(color))
+    return (0.299 * c.red() + 0.587 * c.green() + 0.114 * c.blue()) / 255.0
+
+
+def contrast_on(bg, dark=None, light=None):
+    """Fon ustida O'QILADIGAN rang qaytaradi (QColor).
+
+    NEGA KERAK: qat'iy oq matn/belgi light mavzuda oq fon bilan qo'shilib
+    ketadi (ko'rinmaydi). Shuning uchun fon yorqinligiga qarab to'q yoki
+    yorug' variant tanlanadi.
+
+    Args:
+        dark: yorqin fon uchun rang (default — deyarli qora)
+        light: to'q fon uchun rang (default — deyarli oq)
+    """
+    from PyQt6.QtGui import QColor
+    if luminance(bg) > 0.58:
+        return QColor(dark) if dark is not None else QColor(16, 22, 18, 240)
+    return QColor(light) if light is not None else QColor(255, 255, 255, 232)

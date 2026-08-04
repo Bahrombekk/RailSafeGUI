@@ -16,7 +16,8 @@ from datetime import datetime, date, timedelta
 from app.utils.theme_colors import C
 from app.widgets.hourly_chart import HourlyBarChart, TrainHourlyBarChart
 from app.widgets.charts import DonutChart, LineChart, BarChart, SparkLine, TrainBarChart
-from app.widgets.heatmap import HeatmapChart
+from app.widgets.heatmap import HeatmapChart, ODM_LEVELS, level_rgb
+from app.utils.numfmt import fmt_full
 from app.reports.word import generate_report
 from app.reports.pdf import build_html_report
 from app.utils.language import t, LM
@@ -607,22 +608,31 @@ class AnalyticsPage(QWidget):
         total_cams = sum(len(cr.get("cameras", [])) for cr in crossings)
 
         date_lbl = date_to.strftime("%d.%m.%Y") if date_to else t("summary.today")
+        # Sonlar minglar ajratgichi bilan ("1 511 023") — o'qishga qulay va
+        # kartochka kengligiga qarab shrift kichrayadi (_summary_card).
+        # Har kartochkada sichqoncha uchun sodda tushuntirish (tip).
         cards_data = [
-            (t("summary.total_transport"), str(total), C('accent_brand'), date_lbl),
-            (t("summary.light"), str(total_light), C('accent_blue'), date_lbl),
-            (t("summary.heavy"), str(total_heavy), C('accent_orange'), date_lbl),
-            (t("summary.trains"), str(total_trains), C('accent_teal'), date_lbl),
-            (t("summary.crossings"), str(len(crossings)), C('accent_green'), t("summary.active")),
-            (t("summary.cameras"), str(total_cams), C('accent_purple'), t("summary.connected")),
+            (t("summary.total_transport"), total, C('accent_brand'), date_lbl,
+             t("tip.total_transport") + " " + t("tip.stats_today")),
+            (t("summary.light"), total_light, C('accent_blue'), date_lbl,
+             t("tip.light") + " " + t("tip.stats_today")),
+            (t("summary.heavy"), total_heavy, C('accent_orange'), date_lbl,
+             t("tip.heavy") + " " + t("tip.stats_today")),
+            (t("summary.trains"), total_trains, C('accent_teal'), date_lbl,
+             t("tip.trains")),
+            (t("summary.crossings"), len(crossings), C('accent_green'),
+             t("summary.active"), t("tip.crossings")),
+            (t("summary.cameras"), total_cams, C('accent_purple'),
+             t("summary.connected"), t("tip.cameras")),
         ]
 
-        for i, (label, value, color, sub) in enumerate(cards_data):
-            card = self._summary_card(label, value, color, sub, f"sum_{i}")
+        for i, (label, value, color, sub, tip) in enumerate(cards_data):
+            card = self._summary_card(label, value, color, sub, f"sum_{i}", tip)
             grid.addWidget(card, 0, i)
 
         return container
 
-    def _summary_card(self, label, value, color, subtitle, obj_name):
+    def _summary_card(self, label, value, color, subtitle, obj_name, tip=None):
         card = QFrame()
         card.setObjectName(obj_name)
         card.setStyleSheet(f"""
@@ -644,8 +654,14 @@ class AnalyticsPage(QWidget):
         lbl.setStyleSheet(f"color: {C('text_muted')}; font-size: 11px;")
         layout.addWidget(lbl)
 
-        val = QLabel(value)
-        val.setStyleSheet(f"color: {color}; font-size: 30px; font-weight: bold;")
+        # Son: minglar ajratilgan. Uzun sonda shrift kichrayadi — aks holda
+        # ma'lumot ko'payganda kartochkaga sig'may qolardi (1 511 023).
+        text = fmt_full(value) if isinstance(value, (int, float)) else str(value)
+        size = 30 if len(text) <= 5 else (26 if len(text) <= 7 else
+                                         (22 if len(text) <= 9 else 18))
+        val = QLabel(text)
+        val.setStyleSheet(
+            f"color: {color}; font-size: {size}px; font-weight: bold;")
         # Blesk effekt
         glow = QGraphicsDropShadowEffect()
         glow.setColor(QColor(color))
@@ -657,6 +673,12 @@ class AnalyticsPage(QWidget):
         sub = QLabel(subtitle)
         sub.setStyleSheet(f"color: {C('text_dim')}; font-size: 10px;")
         layout.addWidget(sub)
+
+        if tip:
+            # Sichqoncha ustiga borganda sodda tushuntirish. Kartochkaga ham,
+            # bolalariga ham qo'yamiz — kursor qayerda bo'lsa ham chiqadi.
+            for wdg in (card, lbl, val, sub):
+                wdg.setToolTip(tip)
 
         return card
 
@@ -760,21 +782,96 @@ class AnalyticsPage(QWidget):
         return merged or []
 
     def _build_global_heatmap(self, crossings, date_to: date = None):
-        """Barcha pereezdlar uchun umumiy heatmap (7 kun x 24 soat)"""
+        """Barcha pereezdlar uchun umumiy heatmap (7 kun x 24 soat).
+        Sig'im ma'lumoti yetarli bo'lsa ОДМ z-shkala (A-F), aks holda nisbiy."""
         card = self._chart_card(t("chart.heatmap_7d"), "gc_heatmap")
-        legend = QHBoxLayout()
-        legend.addWidget(self._legend_dot(C('accent_green'), t("legend.low")))
-        legend.addWidget(self._legend_dot(C('accent_yellow'), t("legend.medium")))
-        legend.addWidget(self._legend_dot(C('accent_red'), t("legend.high")))
-        legend.addStretch()
-        card.layout().addLayout(legend)
+
+        # Umumiy amaliy sig'im = kesishmalar sig'imlari yig'indisi
+        total_cap = 0
+        for cr in crossings:
+            cap = self.stats_db.get_practical_capacity(cr["id"], date_to)
+            if cap <= 0:
+                total_cap = 0
+                break
+            total_cap += cap
+
+        # Zator signali: kesishmalar bo'yicha eng YOMON (eng uzun) turish vaqti —
+        # bitta kesishmada zator bo'lsa, o'sha soat tarmoq uchun og'ir hisoblanadi.
+        dwell_agg = self._aggregate_dwell(crossings, date_to)
+        has_dwell = any(v > 0 for d in dwell_agg for v in d.get("hours", []))
+        card.layout().addLayout(self._heatmap_legend(total_cap > 0, has_dwell))
+        card.layout().addWidget(self._chart_hint(t("chart.heatmap_hint")))
 
         heatmap = HeatmapChart()
         heatmap.setMinimumHeight(200)
         heatmap_data = self._aggregate_heatmap(crossings, date_to)
         heatmap.set_data(heatmap_data)
+        if total_cap > 0:
+            heatmap.set_capacity(total_cap)
+        if has_dwell:
+            heatmap.set_congestion(dwell_agg, self._warning_threshold())
         card.layout().addWidget(heatmap)
         return card
+
+    def _chart_hint(self, text: str) -> QLabel:
+        """Diagramma ostidagi kichik tushuntirish — oddiy foydalanuvchi
+        xaritani izohsiz o'qiy olishi uchun."""
+        lbl = QLabel(text)
+        lbl.setWordWrap(True)
+        lbl.setStyleSheet(
+            f"color: {C('text_muted')}; font-size: 10px; border: none;"
+            " background: transparent; padding: 0 2px 2px 2px;")
+        return lbl
+
+    def _warning_threshold(self) -> float:
+        """Sozlamalardagi ogohlantirish chegarasi (sekund) — turish vaqti
+        shkalasining asosi."""
+        try:
+            return float(self.config_manager.get_settings().get(
+                "warning_threshold", 10.0)) or 10.0
+        except Exception:
+            return 10.0
+
+    def _aggregate_dwell(self, crossings, date_to: date = None):
+        """Global xarita uchun turish vaqti: kesishmalar bo'yicha MAKSIMUM
+        (yig'indi/o'rtacha emas — bitta kesishmadagi zator yashirilmasin)."""
+        merged = None
+        for cr in crossings:
+            data = self.stats_db.get_dwell_heatmap(cr["id"], date_to)
+            if not data:
+                continue
+            if merged is None:
+                merged = [{"day": d["day"], "date": d["date"],
+                           "hours": list(d["hours"])} for d in data]
+            else:
+                for i, d in enumerate(data):
+                    if i >= len(merged):
+                        break
+                    for h in range(24):
+                        merged[i]["hours"][h] = max(
+                            merged[i]["hours"][h], d["hours"][h])
+        return merged or []
+
+    def _heatmap_legend(self, odm_mode: bool, show_dwell_note: bool = False):
+        """Heatmap legendasi: ОДМ rejimida A-F darajalar, aks holda 3 rang.
+        show_dwell_note — katakdagi nuqta belgisining izohi qo'shiladi."""
+        legend = QHBoxLayout()
+        if odm_mode:
+            # Ranglar mavzuga qarab o'zgaradi — legenda ham `level_rgb` dan
+            # oladi, aks holda xarita bilan mos kelmay qolardi.
+            for i, (_u, key, _rgb) in enumerate(ODM_LEVELS):
+                r, g, b = level_rgb(i)
+                legend.addWidget(self._legend_dot(
+                    f"rgb({r}, {g}, {b})", t(f"legend.los_{key.lower()}")))
+        else:
+            legend.addWidget(self._legend_dot(C('accent_green'), t("legend.low")))
+            legend.addWidget(self._legend_dot(C('accent_yellow'), t("legend.medium")))
+            legend.addWidget(self._legend_dot(C('accent_red'), t("legend.high")))
+        if show_dwell_note:
+            legend.addWidget(self._legend_dot(C('text_primary'),
+                                              t("legend.dwell_driven")))
+        legend.addStretch()
+        return legend
 
     def _aggregate_heatmap(self, crossings, date_to: date = None):
         merged = None
@@ -1040,17 +1137,31 @@ class AnalyticsPage(QWidget):
         # ─── Heatmap (7 kun x 24 soat) ───────────────────────
         main_layout.addWidget(self._hdiv())
         hm_card = self._mini_card(t("chart.heatmap_section"), f"mc_hm_{cid}")
-        hm_legend = QHBoxLayout()
-        hm_legend.addWidget(self._legend_dot(C('accent_green'), t("legend.low")))
-        hm_legend.addWidget(self._legend_dot(C('accent_yellow'), t("legend.medium")))
-        hm_legend.addWidget(self._legend_dot(C('accent_red'), t("legend.high")))
-        hm_legend.addStretch()
-        hm_card.layout().addLayout(hm_legend)
+        capacity = self.stats_db.get_practical_capacity(cid, date_to)
+        warn_s = self._warning_threshold()
+
+        # BITTA xarita, uchta ma'lumot:
+        #   son   — soatda o'tgan mashina
+        #   rang  — yo'l holati: oqim va turish vaqti darajasining YOMONI
+        #   nuqta — rang turish vaqtidan kelgan (mashina kam o'tgan, chunki zator)
+        # Zonadan foydalanish (band daqiqa) tooltipda ko'rinadi — u probka
+        # o'lchovi emas, shuning uchun rangga ta'sir qilmaydi.
+        dwell_data = self.stats_db.get_dwell_heatmap(cid, date_to)
+        has_dwell = any(v > 0 for d in dwell_data for v in d.get("hours", []))
+        occ_data = self.stats_db.get_occupancy_heatmap(cid, date_to)
+
+        hm_card.layout().addLayout(self._heatmap_legend(capacity > 0, has_dwell))
+        hm_card.layout().addWidget(self._chart_hint(t("chart.heatmap_hint")))
 
         heatmap = HeatmapChart()
         heatmap.setMinimumHeight(170)
         heatmap_data = self.stats_db.get_heatmap_data(cid, date_to)
         heatmap.set_data(heatmap_data)
+        if capacity > 0:
+            heatmap.set_capacity(capacity)
+        if has_dwell:
+            heatmap.set_congestion(dwell_data, warn_s)
+        heatmap.set_utilization(occ_data)
         hm_card.layout().addWidget(heatmap)
         main_layout.addWidget(hm_card)
 

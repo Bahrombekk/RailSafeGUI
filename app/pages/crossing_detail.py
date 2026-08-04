@@ -18,7 +18,7 @@ import logging
 
 from app.utils.theme_colors import C
 from app.utils.language import t, LM
-from app.core.tracker import PolygonTracker
+from app.core.tracker import PolygonTracker, boxes_for_drawing
 from app.widgets.hourly_chart import HourlyChartPanel
 
 # RTSP ultra-low-latency: UDP transport (TCP dan tezroq), minimal buffer
@@ -211,10 +211,15 @@ class DetailCameraWorker(QThread):
     def __init__(self, source: str, camera_name: str = "Camera", display_width: int = 1920,
                  car_detector: 'CarDetector' = None, detection_enabled: bool = True,
                  polygon_file: str = None, warning_threshold: float = 10.0,
-                 violation_threshold: float = 15.0, is_custom_model: bool = False):
+                 violation_threshold: float = 15.0, is_custom_model: bool = False,
+                 detector_key: str = None):
         super().__init__()
         self.source = source
         self.camera_name = camera_name
+        # Detektor lug'atlarining kaliti — kamera nomi emas, unikal ID bo'lishi kerak
+        # (izoh: app/widgets/crossing_card.py CameraWorker.__init__).
+        # "detail_" prefiksi card worker'i bilan bir xil kamerada to'qnashmasligi uchun.
+        self.detector_key = detector_key or f"detail_{camera_name}"
         self.display_width = display_width
         self._running = True
         self._mutex = QMutex()
@@ -292,7 +297,12 @@ class DetailCameraWorker(QThread):
                     _fps_t = time.perf_counter()
                     _cam_fps = 0.0
                     _poly_loaded = False
-                    _tracker = None  # PolygonTracker (polygon yuklangandan keyin yaratiladi)
+                    _tracker = None  # PolygonTracker (birinchi kadrda yaratiladi)
+                    _has_poly = False  # polygon maskasi bormi (statistika uchun)
+                    # Klass nomlari bir marta (property har chaqiruvda dict nusxalaydi)
+                    _cls_names = getattr(self.car_detector, 'class_names', None) or {}
+                    # Detektor natija kadri vaqtini beradimi (eski CarDetector bermaydi)
+                    _detector_has_ts = hasattr(self.car_detector, 'last_capture_time')
                     _last_stats_emit = 0.0      # Stats throttle: max 4/sec
                     _last_in_poly = -1          # Polygon holatini kuzatish (darhol emit)
 
@@ -337,18 +347,23 @@ class DetailCameraWorker(QThread):
                             if self.polygon_file:
                                 self._poly_pts, self._poly_mask = _load_polygon(
                                     self.polygon_file, w, h)
-                            if self._poly_mask is not None:
-                                light_cls = PolygonTracker.CUSTOM_LIGHT if self.is_custom_model else None
-                                heavy_cls = PolygonTracker.CUSTOM_HEAVY if self.is_custom_model else None
-                                _tracker = PolygonTracker(
-                                    poly_mask=self._poly_mask,
-                                    iou_threshold=0.3,
-                                    max_age=2.0,
-                                    frame_width=w,
-                                    frame_height=h,
-                                    light_classes=light_cls,
-                                    heavy_classes=heavy_cls,
-                                )
+                            _has_poly = self._poly_mask is not None
+                            # Tracker HAR DOIM yaratiladi — polygonsiz kamerada
+                            # bo'sh (nol) maska bilan. Hisoblash ishlamaydi
+                            # (zona yo'q), lekin tracking va box
+                            # ekstrapolyatsiyasi ishlaydi.
+                            light_cls = PolygonTracker.CUSTOM_LIGHT if self.is_custom_model else None
+                            heavy_cls = PolygonTracker.CUSTOM_HEAVY if self.is_custom_model else None
+                            _tracker = PolygonTracker(
+                                poly_mask=(self._poly_mask if _has_poly
+                                           else np.zeros((h, w), dtype=np.uint8)),
+                                iou_threshold=0.3,
+                                max_age=2.0,
+                                frame_width=w,
+                                frame_height=h,
+                                light_classes=light_cls,
+                                heavy_classes=heavy_cls,
+                            )
 
                         # Car detection - NON-BLOCKING
                         detection_count = 0
@@ -356,22 +371,35 @@ class DetailCameraWorker(QThread):
                         max_time = 0.0
                         if self.detection_enabled and self.car_detector is not None:
                             try:
-                                detections, det_frame = self.car_detector.detect_async(
-                                    frame, camera_id=f"detail_{self.camera_name}")
+                                # _det_frame ATAYLAB ishlatilmaydi — pastdagi izohga qarang
+                                detections, _det_frame = self.car_detector.detect_async(
+                                    frame, camera_id=self.detector_key)
                                 detection_count = len(detections)
+                                # Deteksiyalar tegishli bo'lgan kadrning vaqti —
+                                # tracker shu vaqtdan hozirgi vaqtga
+                                # ekstrapolyatsiya qiladi (box orqada qolmaydi).
+                                _obs_t = None
+                                if _detector_has_ts:
+                                    _obs_t = self.car_detector.last_capture_time(
+                                        self.detector_key)
                                 # Tracking + counting (har doim chaqiriladi — eski tracklar expire bo'lishi uchun)
-                                in_poly_bboxes = None
-                                if _tracker is not None:
-                                    _tracker.process_detections(detections)
+                                _tracker.process_detections(detections, obs_time=_obs_t)
+                                # Statistika faqat polygon bo'lganda (zona yo'q
+                                # bo'lsa hisoblanadigan narsa ham yo'q)
+                                if _has_poly:
                                     in_poly_count = _tracker.get_inside_count()
                                     max_time = _tracker.get_max_time()
-                                    if detections:
-                                        in_poly_bboxes = _tracker.get_in_polygon_bboxes()
-                                if detections:
-                                    # det_frame = aniqlashan kadr, uning ustiga chizish (100% mos)
-                                    draw_on = det_frame if det_frame is not None else frame
+                                # MUHIM: boxlar JONLI kadrga chiziladi, det_frame ga
+                                # EMAS (det_frame — eski kadr, oqim orqaga sakraydi).
+                                # Box mashinadan orqada qolmasligi uchun tracker
+                                # tezligi bilan hozirgi vaqtga ekstrapolyatsiya
+                                # qilinadi. Batafsil: app/core/tracker.py
+                                # get_predicted_boxes / boxes_for_drawing.
+                                draw_dets, in_poly_bboxes = boxes_for_drawing(
+                                    _tracker, detections, _cls_names)
+                                if draw_dets:
                                     frame = self.car_detector.draw_detections(
-                                        draw_on, detections,
+                                        frame, draw_dets,
                                         thickness=2, font_scale=0.6,
                                         in_polygon_bboxes=in_poly_bboxes)
                                     h, w = frame.shape[:2]
@@ -417,7 +445,10 @@ class DetailCameraWorker(QThread):
                         if _poly_changed or (_now_stats - _last_stats_emit) >= 0.25:
                             _last_stats_emit = _now_stats
                             _last_in_poly = in_poly_count
-                            if _tracker is not None:
+                            # Polygonsiz kamerada tracker faqat box
+                            # ekstrapolyatsiyasi uchun ishlatiladi — statistika
+                            # eskisidek deteksiya soni bo'yicha yuboriladi.
+                            if _has_poly and _tracker is not None:
                                 self.stats_updated.emit(
                                     _tracker.light_count,
                                     _tracker.heavy_count,
@@ -1012,6 +1043,7 @@ class CrossingDetail(QWidget):
                 warning_threshold=warn_t,
                 violation_threshold=viol_t,
                 is_custom_model=self.is_custom_model,
+                detector_key=f"detail_c{self.crossing_id}_cam{cam_id}",
             )
             worker.frame_ready.connect(
                 lambda lbl=label, w=worker: self._on_frame(lbl, w)
@@ -1236,6 +1268,7 @@ class CrossingDetail(QWidget):
             warning_threshold=warn_t,
             violation_threshold=viol_t,
             is_custom_model=self.is_custom_model,
+            detector_key=f"detail_c{self.crossing_id}_cam{cam_id}",
         )
         worker.frame_ready.connect(lambda lbl=label, w=worker: self._on_frame(lbl, w))
         worker.status_changed.connect(lambda s, cid=cam_id: self._on_camera_status(cid, s))
@@ -1289,6 +1322,8 @@ class CrossingDetail(QWidget):
         row_cam.addStretch()
         v_cam = QLabel(f"{active}/{cameras_count}")
         v_cam.setStyleSheet(f"color: {C('accent_brand')}; font-size: 14px; font-weight: bold; background: transparent;")
+        for _w in (self._stat_cameras_lbl, v_cam):
+            _w.setToolTip(t("tip.cameras"))
         row_cam.addWidget(v_cam)
         layout.addLayout(row_cam)
 
@@ -1300,6 +1335,8 @@ class CrossingDetail(QWidget):
         row_light.addStretch()
         self._stat_light_label = QLabel("0")
         self._stat_light_label.setStyleSheet(f"color: {C('accent_blue')}; font-size: 14px; font-weight: bold; background: transparent;")
+        for _w in (self._stat_light_lbl, self._stat_light_label):
+            _w.setToolTip(t("tip.light") + " " + t("tip.stats_today"))
         row_light.addWidget(self._stat_light_label)
         layout.addLayout(row_light)
 
@@ -1311,6 +1348,8 @@ class CrossingDetail(QWidget):
         row_heavy.addStretch()
         self._stat_heavy_label = QLabel("0")
         self._stat_heavy_label.setStyleSheet(f"color: {C('accent_orange')}; font-size: 14px; font-weight: bold; background: transparent;")
+        for _w in (self._stat_heavy_lbl, self._stat_heavy_label):
+            _w.setToolTip(t("tip.heavy") + " " + t("tip.stats_today"))
         row_heavy.addWidget(self._stat_heavy_label)
         layout.addLayout(row_heavy)
 
@@ -1322,6 +1361,8 @@ class CrossingDetail(QWidget):
         row_total.addStretch()
         self._stat_total_label = QLabel("0")
         self._stat_total_label.setStyleSheet(f"color: {C('accent_green')}; font-size: 14px; font-weight: bold; background: transparent;")
+        for _w in (self._stat_total_lbl, self._stat_total_label):
+            _w.setToolTip(t("tip.total_transport") + " " + t("tip.stats_today"))
         row_total.addWidget(self._stat_total_label)
         layout.addLayout(row_total)
 
@@ -1501,6 +1542,21 @@ class CrossingDetail(QWidget):
                 self._stat_heavy_lbl.setText(t("stats.heavy"))
             if hasattr(self, '_stat_total_lbl'):
                 self._stat_total_lbl.setText(t("stats.total"))
+            # Sichqoncha izohlari yangi tilda
+            _today = " " + t("tip.stats_today")
+            for _attrs, _tip in (
+                    (('_stat_cameras_lbl',), t("tip.cameras")),
+                    (('_stat_light_lbl', '_stat_light_label'),
+                     t("tip.light") + _today),
+                    (('_stat_heavy_lbl', '_stat_heavy_label'),
+                     t("tip.heavy") + _today),
+                    (('_stat_total_lbl', '_stat_total_label'),
+                     t("tip.total_transport") + _today),
+            ):
+                for _a in _attrs:
+                    _w = getattr(self, _a, None)
+                    if _w is not None:
+                        _w.setToolTip(_tip)
             # Kamera labellarini yangilash
             for cam_id, lbl in self.camera_detection_labels.items():
                 lbl.setText(t("cam.detection", light=0, heavy=0, total=0, fps=0.0))

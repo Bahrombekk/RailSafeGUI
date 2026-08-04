@@ -22,7 +22,7 @@ from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QThread, QPoint
 from PyQt6.QtGui import (QFont, QPainter, QPen, QColor, QPixmap, QImage,
                          QPolygon)
 
-from app.utils.theme_colors import C
+from app.utils.theme_colors import C, contrast_on
 from app.utils.language import t, LM
 from app.utils.ui_guards import no_wheel as _no_wheel
 from app.core.plc import SNAP7_AVAILABLE as _SNAP7_OK
@@ -201,7 +201,10 @@ class ToggleSwitch(QWidget):
         margin = 3
         knob_y = margin
         knob_x = self.width() - knob_size - margin if self._checked else margin
-        painter.setBrush(QColor("#ffffff"))
+        # Knob rangi TRACK yorqinligiga qarab: light mavzuda o'chirilgan
+        # holatda track oq bo'ladi — oq knob ko'rinmay qolardi.
+        painter.setBrush(contrast_on(track, dark=QColor("#5b6472"),
+                                     light=QColor("#ffffff")))
         painter.drawEllipse(knob_x, knob_y, knob_size, knob_size)
 
         # Klaviatura fokusi ko'rsatkichi
@@ -2324,9 +2327,14 @@ def _strip_ultralytics_metadata(data: bytes) -> bytes:
     return data
 
 
-def _is_engine_valid(engine_path: str) -> bool:
-    """TensorRT engine faylini tezkor tekshirish — deserialize qila oladimi?
-    Ultralytics engine formatini (JSON metadata + TRT binary) ham qo'llab-quvvatlaydi."""
+def _inspect_engine(engine_path: str) -> dict:
+    """TensorRT engine faylini tekshirish: deserialize bo'ladimi, dynamic batchmi,
+    max batch qancha? Ultralytics formatini (JSON metadata + TRT binary) ham
+    qo'llab-quvvatlaydi.
+
+    Qaytaradi: {"valid": bool, "dynamic": bool, "max_batch": int}
+    """
+    info = {"valid": False, "dynamic": False, "max_batch": 0}
     try:
         import tensorrt as trt
         logger = trt.Logger(trt.Logger.ERROR)
@@ -2335,25 +2343,62 @@ def _is_engine_valid(engine_path: str) -> bool:
             data = f.read()
         engine_data = _strip_ultralytics_metadata(data)
         engine = runtime.deserialize_cuda_engine(engine_data)
-        valid = engine is not None
+        if engine is None:
+            return info
+        info["valid"] = True
+
+        # Kirish tensorining batch o'lchamini aniqlash
+        for i in range(engine.num_io_tensors):
+            name = engine.get_tensor_name(i)
+            if engine.get_tensor_mode(name) != trt.TensorIOMode.INPUT:
+                continue
+            shape = tuple(engine.get_tensor_shape(name))
+            if any(d < 0 for d in shape):
+                # Dynamic — haqiqiy chegara optimization profile'da
+                info["dynamic"] = True
+                _min_s, _opt_s, max_s = engine.get_tensor_profile_shape(name, 0)
+                info["max_batch"] = int(max_s[0])
+            else:
+                info["max_batch"] = int(shape[0])
+            break
+
         del engine
-        return valid
+        return info
     except Exception:
-        return False
+        return info
 
 
-def _calculate_export_batch() -> int:
-    """Konfiguratsiyadan kameralar sonini hisoblash → engine batch size.
-    Minimum 4, 4 ga yaxlitlash, maksimum 16. Sub-batch detektor overflow ni hal qiladi."""
+def _is_engine_valid(engine_path: str) -> bool:
+    """Engine deserialize bo'ladimi (qisqa yordamchi)."""
+    return _inspect_engine(engine_path)["valid"]
+
+
+def _total_camera_count() -> int:
+    """Konfiguratsiyadagi kameralarning umumiy soni (o'chirilganlari ham hisobga
+    olinadi — mijoz ularni keyin yoqishi mumkin)."""
     try:
         from app.core.config import ConfigManager
         cm = ConfigManager()
         crossings = cm.get_crossings()
-        total_cameras = sum(len(c.get("cameras", [])) for c in crossings)
-        batch = max(4, ((total_cameras + 3) // 4) * 4)
-        return min(batch, 16)
+        return sum(len(c.get("cameras", [])) for c in crossings)
     except Exception:
-        return 8
+        return 0
+
+
+def _calculate_export_batch() -> int:
+    """Engine uchun MAX batch — kameralar soniga qarab, zaxira bilan.
+
+    Engine `dynamic=True` bilan eksport qilinadi, ya'ni bu qiymat yuqori chegara:
+    detektor har inference'da AYNAN mavjud kameralar sonini yuboradi (nol kadr
+    bilan to'ldirish yo'q). Shu sabab chegarani zaxira bilan olamiz — mijoz
+    keyin bir-ikki kamera qo'shsa engine QAYTA EKSPORT qilinmaydi.
+
+    Zaxira: 4 ga yaxlitlab, ustiga +4. Cheklov 4..16 (16 dan oshsa detektor
+    sub-batch qiladi — ishlaydi, faqat sekinroq).
+    """
+    total_cameras = _total_camera_count()
+    batch = ((total_cameras + 3) // 4) * 4 + 4
+    return max(4, min(batch, 16))
 
 
 def get_models_needing_export() -> list:
@@ -2362,6 +2407,7 @@ def get_models_needing_export() -> list:
     from pathlib import Path
     project_root = Path(__file__).parent.parent.parent
     batch = _calculate_export_batch()
+    cameras = _total_camera_count()
     needed = []
     for m in ENGINE_MODELS:
         pt_path = project_root / m["path"]
@@ -2369,15 +2415,42 @@ def get_models_needing_export() -> list:
         if not pt_path.is_file():
             continue
         if not engine_path.is_file():
-            needed.append({**m, "abs_path": str(pt_path), "batch": batch})
-        elif not _is_engine_valid(str(engine_path)):
-            print(f"[EngineCheck] {engine_path.name} eski/mos emas — qayta eksport qilinadi")
-            try:
-                engine_path.unlink()
-            except OSError:
-                pass
-            needed.append({**m, "abs_path": str(pt_path), "batch": batch})
-    print(f"[EngineCheck] Batch size: {batch} (kameralar soniga qarab)")
+            # opt_batch: TensorRT kernellarni AYNAN hozirgi kameralar soni uchun
+            # optimallashtiradi (batch — yuqori chegara, zaxira bilan).
+            needed.append({**m, "abs_path": str(pt_path), "batch": batch,
+                           "opt_batch": max(1, min(cameras, batch))})
+            continue
+
+        info = _inspect_engine(str(engine_path))
+        reason = None
+        if not info["valid"]:
+            reason = "eski/mos emas (deserialize bo'lmadi)"
+        elif not info["dynamic"]:
+            # Fixed batch engine: kameralar soni engine batchiga teng bo'lmasa
+            # GPU nol kadrlarni hisoblab behuda ishlaydi. Dynamic'ga o'tkazamiz.
+            reason = f"fixed batch={info['max_batch']} — dynamic'ga o'tkaziladi"
+        elif cameras > info["max_batch"] and batch > info["max_batch"]:
+            # Mijoz kamera qo'shgan va engine chegarasidan oshgan: sub-batch
+            # ishlaydi, lekin sekin. Kengaytirilgan chegara bilan qayta quramiz.
+            # MUHIM 2-shart (batch > max_batch): kameralar soni yuqori chegaradan
+            # (16) ham oshib ketgan bo'lsa qayta qurish HECH NARSA bermaydi —
+            # aks holda har startupda 2-5 daqiqalik eksport cheksiz takrorlanardi.
+            reason = (f"kameralar soni {cameras} > engine max batch "
+                      f"{info['max_batch']}")
+
+        if reason:
+            print(f"[EngineCheck] {engine_path.name}: {reason} — qayta eksport")
+            # MUHIM: mavjud engine O'CHIRILMAYDI. Bu funksiya faqat tekshiradi;
+            # yangi engine muvaffaqiyatli qurilgandan keyin atomar almashtiriladi
+            # (engine_builder.build_engine). Aks holda eksport xato bersa
+            # (TensorRT yo'q, VRAM yetmadi, ...) mijoz enginesiz qolib dastur
+            # sekin PyTorch rejimiga tushib ketardi.
+            # opt_batch: TensorRT kernellarni AYNAN hozirgi kameralar soni uchun
+            # optimallashtiradi (batch — yuqori chegara, zaxira bilan).
+            needed.append({**m, "abs_path": str(pt_path), "batch": batch,
+                           "opt_batch": max(1, min(cameras, batch))})
+
+    print(f"[EngineCheck] Kameralar: {cameras}, max batch: {batch} (dynamic)")
     return needed
 
 
@@ -2408,20 +2481,29 @@ class EngineExportWorker(QThread):
             model_path = m["abs_path"]
             imgsz = m["imgsz"]
             batch = m.get("batch", 8)
+            opt_batch = m.get("opt_batch") or batch
             engine_path = os.path.splitext(model_path)[0] + ".engine"
+            project_root = str(Path(__file__).parent.parent.parent)
 
             try:
                 self.model_started.emit(i, model_name)
                 self.stage_changed.emit(
-                    f"{model_name} — TensorRT engine yaratilmoqda (batch={batch})...\n"
+                    f"{model_name} — TensorRT engine yaratilmoqda "
+                    f"(dynamic batch 1..{batch})...\n"
                     f"Bu 2-5 daqiqa davom etishi mumkin"
                 )
 
+                # Engine BATCH bo'yicha dynamic quriladi: kameralar soni nechta
+                # bo'lsa, GPU aynan shuncha kadrni hisoblaydi (nol kadr bilan
+                # to'ldirish yo'q) va mijoz kamera qo'shsa qayta eksport kerak emas.
+                # O'lcham (H/W) esa fiksatsiya qilinadi — ultralytics'ning
+                # dynamic=True eksporti H/W ni ham dynamic qilib VRAM ni ~10x
+                # oshirib yuboradi (izoh: app/core/engine_builder.py).
                 if frozen:
-                    # In-process eksport (subprocess yo'q — GUI qayta ochilmaydi)
-                    from ultralytics import YOLO
-                    YOLO(model_path).export(format="engine", imgsz=imgsz,
-                                            half=True, batch=batch)
+                    # In-process (subprocess yo'q — GUI qayta ochilmaydi)
+                    from app.core.engine_builder import build_engine
+                    build_engine(model_path, imgsz=imgsz, max_batch=batch,
+                                 opt_batch=opt_batch)
                     ok = os.path.exists(engine_path)
                     if not ok:
                         print(f"[EngineExport] {model_name}: engine yaratilmadi")
@@ -2429,9 +2511,10 @@ class EngineExportWorker(QThread):
                     # Dev rejimi: subprocess (QThread DLL muammosidan qochish)
                     import subprocess
                     script = (
-                        f"from ultralytics import YOLO; "
-                        f"m = YOLO(r'{model_path}'); "
-                        f"m.export(format='engine', imgsz={imgsz}, half=True, batch={batch})"
+                        f"import sys; sys.path.insert(0, r'{project_root}'); "
+                        f"from app.core.engine_builder import build_engine; "
+                        f"build_engine(r'{model_path}', imgsz={imgsz}, "
+                        f"max_batch={batch}, opt_batch={opt_batch})"
                     )
                     result = subprocess.run(
                         [sys.executable, "-c", script],
@@ -2442,6 +2525,20 @@ class EngineExportWorker(QThread):
                         err = (result.stderr.strip().splitlines()[-1]
                                if result.stderr.strip() else "noma'lum xato")
                         print(f"[EngineExport] {model_name} xatolik: {err}")
+
+                # Zaxira yo'l: dynamic qurilish muvaffaqiyatsiz bo'lsa —
+                # ultralytics'ning oddiy FIXED batch eksporti (eski, sinalgan
+                # yo'l). Sekinroq ishlaydi, lekin dastur ishlab turadi.
+                if not ok:
+                    print(f"[EngineExport] {model_name}: dynamic qurilmadi — "
+                          f"fixed batch={batch} zaxira yo'li sinaladi")
+                    self.stage_changed.emit(
+                        f"{model_name} — zaxira usul (fixed batch={batch})..."
+                    )
+                    from ultralytics import YOLO
+                    YOLO(model_path).export(format="engine", imgsz=imgsz,
+                                            half=True, batch=batch)
+                    ok = os.path.exists(engine_path)
 
                 if ok:
                     success_count += 1
@@ -2523,7 +2620,8 @@ class EngineExportDialog(QDialog):
             card_layout = QHBoxLayout(card)
             card_layout.setContentsMargins(14, 10, 14, 10)
 
-            info = QLabel(f"{m['name']}   (imgsz={m['imgsz']}, FP16, batch={m.get('batch', 8)})")
+            info = QLabel(f"{m['name']}   (imgsz={m['imgsz']}, FP16, "
+                          f"batch 1..{m.get('batch', 8)})")
             info.setStyleSheet(
                 f"color: {C('text_primary')}; font-size: 12px; border: none;"
             )

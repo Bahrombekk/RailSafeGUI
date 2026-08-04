@@ -133,8 +133,38 @@ class TensorRTBackend:
                 self._output_name = name
                 self._output_shape = tuple(shape)
 
-        self.max_batch = self._input_shape[0]
-        self._imgsz = self._input_shape[2]  # H = W
+        # Dynamic yoki fixed batch aniqlash.
+        # Dynamic engine'da batch o'lchami -1 bo'lib keladi — haqiqiy chegaralarni
+        # optimization profile'dan olamiz. Dynamic bo'lsa har inference'da AYNAN
+        # kelgan kadrlar soni hisoblanadi: nol kadrlar bilan to'ldirish (padding)
+        # kerak emas, ya'ni kamera soni engine batchidan kichik bo'lsa GPU behuda
+        # ishlamaydi. Mijoz kamera qo'shsa/olib tashlasa — qayta eksport shart emas.
+        in_shape = list(self._input_shape)
+        self._dynamic = any(d < 0 for d in in_shape)
+        if self._dynamic:
+            _min_s, opt_s, max_s = self.engine.get_tensor_profile_shape(self._input_name, 0)
+            # Batch — profile MAX dan (eng katta qo'llab-quvvatlanadigan kadr soni).
+            # imgsz — profile OPT dan. MUHIM: ultralytics dynamic eksportda H/W ham
+            # dynamic bo'ladi (min 32, opt = imgsz, max = 2*imgsz). Agar imgsz'ni
+            # MAX dan olsak, kadrlar ikki barobar katta o'lchamga letterbox qilinib
+            # GPU ~4x behuda ishlardi va aniqlik ham o'zgarardi.
+            in_shape = list(opt_s)
+            in_shape[0] = int(max_s[0])
+            if opt_s[2] != opt_s[3]:
+                logger.warning(
+                    "[TensorRT] Profile opt H!=W (%s x %s) — kvadrat letterbox uchun H ishlatiladi",
+                    opt_s[2], opt_s[3],
+                )
+
+        self._max_input_shape = tuple(in_shape)
+        self.max_batch = in_shape[0]
+        self._imgsz = in_shape[2]  # H = W
+        self._cur_batch = self.max_batch
+
+        # Output buferi ham max batch bo'yicha ajratiladi (dynamic'da -1 → max_batch)
+        out_shape = list(self._output_shape)
+        if out_shape and out_shape[0] < 0:
+            out_shape[0] = self.max_batch
 
         # Output layout validatsiyasi: faqat end2end NMS layout (batch, num, 6)
         # = [x1, y1, x2, y2, conf, cls] qo'llab-quvvatlanadi.
@@ -148,9 +178,9 @@ class TensorRTBackend:
                 f"Engine'ni nms=True bilan qayta eksport qiling yoki Ultralytics fallback ishlatiladi."
             )
 
-        # Pre-allocate GPU buffers (max batch)
-        self._input_buf = torch.zeros(self._input_shape, dtype=torch.float32, device=self.device)
-        self._output_buf = torch.zeros(self._output_shape, dtype=torch.float32, device=self.device)
+        # Pre-allocate GPU buffers (max batch — dynamic'da ham bir marta, max bo'yicha)
+        self._input_buf = torch.zeros(self._max_input_shape, dtype=torch.float32, device=self.device)
+        self._output_buf = torch.zeros(tuple(out_shape), dtype=torch.float32, device=self.device)
         self._stream = torch.cuda.Stream()
 
         # Parallel preprocess pool (cv2/numpy release GIL - real parallelism)
@@ -159,11 +189,24 @@ class TensorRTBackend:
         logger.info("[TensorRT] Engine: %s", engine_path)
         logger.info("[TensorRT] Input: %s %s", self._input_name, self._input_shape)
         logger.info("[TensorRT] Output: %s %s", self._output_name, self._output_shape)
-        logger.info("[TensorRT] Max batch: %s, ImgSz: %s", self.max_batch, self._imgsz)
+        logger.info("[TensorRT] Max batch: %s, ImgSz: %s, Dynamic: %s",
+                    self.max_batch, self._imgsz, self._dynamic)
+        if not self._dynamic:
+            logger.warning(
+                "[TensorRT] Engine FIXED batch=%s — kameralar soni bundan kichik bo'lsa "
+                "qolgan slotlar nol kadrlar bilan to'ldiriladi (GPU behuda ishlaydi). "
+                "dynamic=True bilan qayta eksport qilish tavsiya etiladi.",
+                self.max_batch,
+            )
 
     @property
     def imgsz(self) -> int:
         return self._imgsz
+
+    @property
+    def dynamic(self) -> bool:
+        """Engine dynamic batch qo'llab-quvvatlaydimi (padding kerak emasmi)."""
+        return self._dynamic
 
     def _preprocess_one(self, frame: np.ndarray) -> np.ndarray:
         """Single frame: letterbox + BGR→RGB + HWC→CHW + normalize (CPU, GIL-free)"""
@@ -183,12 +226,23 @@ class TensorRTBackend:
         batch_np = np.stack(processed)  # (N, 3, H, W)
         self._input_buf[:batch_size].copy_(self._torch.from_numpy(batch_np))
 
-        # Zero out unused batch slots
-        if batch_size < self.max_batch:
+        # Fixed engine: ishlatilmagan slotlar nolga tushirilishi kerak, aks holda
+        # oldingi siklning kadr qoldig'i qayta hisoblanadi.
+        # Dynamic engine: bu slotlar umuman hisoblanmaydi — tozalash ham shart emas.
+        if not self._dynamic and batch_size < self.max_batch:
             self._input_buf[batch_size:].zero_()
 
+        self._cur_batch = batch_size
+
     def infer(self) -> np.ndarray:
-        """Run TensorRT inference, return output as numpy"""
+        """Run TensorRT inference, return output as numpy (faqat haqiqiy batch qismi)"""
+        n = self._cur_batch
+
+        # Dynamic engine'da har inference'dan OLDIN kirish shaklini e'lon qilamiz —
+        # shundagina TRT aynan n ta kadrni hisoblaydi.
+        if self._dynamic:
+            self.context.set_input_shape(self._input_name, (n,) + self._max_input_shape[1:])
+
         self.context.set_tensor_address(self._input_name, self._input_buf.data_ptr())
         self.context.set_tensor_address(self._output_name, self._output_buf.data_ptr())
 
@@ -196,7 +250,7 @@ class TensorRTBackend:
             self.context.execute_async_v3(self._stream.cuda_stream)
         self._stream.synchronize()
 
-        return self._output_buf.cpu().numpy()
+        return self._output_buf[:n].cpu().numpy()
 
     @staticmethod
     def _letterbox(img: np.ndarray, new_shape: int) -> np.ndarray:
@@ -473,7 +527,10 @@ class RealtimeMultiCameraDetector:
                     continue
                 batch_data = []
                 for cam_id, (frame, ts, event) in self._pending_frames.items():
-                    batch_data.append((cam_id, frame, event))
+                    # ts = kadr OLINGAN vaqt (monotonic). Natija bilan birga
+                    # saqlanadi: chizishda box shu vaqtdan hozirgi vaqtga
+                    # ekstrapolyatsiya qilinadi (butun pipeline kechikishi).
+                    batch_data.append((cam_id, frame, event, ts))
                 self._pending_frames.clear()
 
             if not batch_data:
@@ -508,15 +565,15 @@ class RealtimeMultiCameraDetector:
                         self._batch_sizes.pop(0)
                     self._processed_count += batch_size
 
-                # Signal results (detections + original frame for aligned drawing)
+                # Signal results (detections + original frame + kadr olingan vaqt)
                 with self._results_lock:
-                    for (cam_id, frame, event), dets in zip(batch_data, detections_list):
-                        self._results[cam_id] = (dets, frame)
+                    for (cam_id, frame, event, ts), dets in zip(batch_data, detections_list):
+                        self._results[cam_id] = (dets, frame, ts)
                         event.set()
 
             except Exception as e:
                 logger.error("[RealtimeDetector] Batch error: %s", e)
-                for cam_id, frame, event in batch_data:
+                for cam_id, frame, event, ts in batch_data:
                     event.set()
 
     def _infer_tensorrt(self, frames: List[np.ndarray]) -> List[List[Detection]]:
@@ -533,14 +590,15 @@ class RealtimeMultiCameraDetector:
             chunk_sizes = orig_sizes[start:end]
             chunk_len = len(chunk)
 
-            # Pad to max_batch (engine fixed batch talab qiladi)
-            if chunk_len < max_b:
+            # Dynamic engine: chunk qanday bo'lsa shundayligicha yuboriladi (padding YO'Q).
+            # Fixed engine: engine batchini to'ldirish SHART — yetmagani nol kadr.
+            if not self._trt.dynamic and chunk_len < max_b:
                 padded = chunk + [np.zeros((self._trt.imgsz, self._trt.imgsz, 3), dtype=np.uint8)] * (max_b - chunk_len)
             else:
                 padded = chunk
 
             self._trt.preprocess(padded)
-            raw_output = self._trt.infer()  # (max_batch, 300, 6)
+            raw_output = self._trt.infer()  # (batch, 300, 6)
 
             for i in range(chunk_len):
                 dets = self._parse_trt_output(raw_output[i], chunk_sizes[i])
@@ -679,7 +737,7 @@ class RealtimeMultiCameraDetector:
         event = threading.Event()
 
         with self._frames_lock:
-            self._pending_frames[camera_id] = (frame, time.time(), event)
+            self._pending_frames[camera_id] = (frame, time.monotonic(), event)
 
         # Batch worker ni DARHOL uyg'otish (15ms kutmasdan)
         self._urgent_event.set()
@@ -694,23 +752,37 @@ class RealtimeMultiCameraDetector:
     def detect_async(self, frame: np.ndarray, camera_id: str) -> tuple:
         """NON-BLOCKING detection - (detections, det_frame) qaytaradi.
 
-        Frame batch processingga qo'yiladi. Oldingi batch natijalarini
-        va ularning ORIGINAL frameini darhol qaytaradi.
-        Boxlar det_frame ga chizilsa - objectlar bilan 100% mos bo'ladi.
+        Frame batch processingga qo'yiladi, oldingi batch natijasi darhol
+        qaytariladi (bloklamasdan). Natija JONLI kadrdan bir batch orqada —
+        shuning uchun boxlarni chizishda `last_capture_time()` bilan
+        ekstrapolyatsiya qilish kerak (izoh: app/core/tracker.py).
         """
         if not self._is_loaded:
             return ([], None)
 
         event = threading.Event()
         with self._frames_lock:
-            self._pending_frames[camera_id] = (frame, time.time(), event)
+            self._pending_frames[camera_id] = (frame, time.monotonic(), event)
 
         # Cached natijalarni DARHOL qaytarish - BLOKLAMASDAN
         with self._results_lock:
             result = self._results.get(camera_id)
             if result is None:
                 return ([], None)
-            return result  # (detections, original_frame)
+            return (result[0], result[1])  # (detections, original_frame)
+
+    def last_capture_time(self, camera_id: str) -> Optional[float]:
+        """Oxirgi natija QAYSI kadrga tegishli — o'sha kadr olingan vaqt (monotonic).
+
+        Boxni jonli kadrga to'g'ri joylash uchun kerak: butun pipeline
+        kechikishi (submit → batch → natija → chizish) shu vaqtdan hisoblanadi.
+        Natija hali yo'q bo'lsa None.
+        """
+        with self._results_lock:
+            result = self._results.get(camera_id)
+            if result is None or len(result) < 3:
+                return None
+            return result[2]
 
     def draw_detections(
         self,

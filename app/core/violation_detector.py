@@ -391,9 +391,10 @@ class ViolationDetector:
             plate_conf = best_conf
 
         # Qizil ramka = AYNAN tahlil qilingan crop chegarasi (origin + crop o'lchami).
-        # Tracker bbox'i bir sikl ESKIRGAN (detect_async oldingi kadrni beradi) —
-        # to'g'ridan-to'g'ri ishlatilsa saqlangan kadrda mashinaga mos tushmaydi.
-        # Crop chegarasi esa saqlangan kadrdan olingani uchun 100% mos keladi.
+        # Crop chegarasi saqlangan kadrdan olingani uchun 100% mos keladi.
+        # (Tracker bbox'i deteksiya kechikishi sababli orqada bo'ladi; endi u
+        # PolygonTracker'da hozirgi vaqtga ekstrapolyatsiya qilinadi, lekin
+        # crop chegarasi baribir eng ishonchli manba.)
         crop_shape = info.get('best_crop_shape')
         if crop_shape:
             ch, cw = crop_shape[0], crop_shape[1]

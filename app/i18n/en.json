@@ -66,12 +66,18 @@
   "chart.movement": "Train movement",
   "chart.cameras_section": "Cameras",
   "chart.weekly_section": "Weekly (7 days)",
-  "chart.heatmap_section": "Occupancy heatmap (7 days × 24 hours)",
+  "chart.heatmap_section": "Road condition map (7 days x 24 hours)",
   "legend.light": "Light",
   "legend.heavy": "Heavy",
   "legend.low": "Low",
   "legend.medium": "Medium",
   "legend.high": "High",
+  "legend.los_a": "Free (A)",
+  "legend.los_b": "Normal (B)",
+  "legend.los_c": "Busy (C)",
+  "legend.los_d": "Very busy (D)",
+  "legend.los_e": "At capacity, stops (E)",
+  "legend.los_f": "JAM — gridlock (F)",
   "legend.trains": "Train count",
   "summary.total_transport": "Total vehicles",
   "summary.today": "today",
@@ -586,6 +592,19 @@
           "type": "tip",
           "title": "Recommendation for official work",
           "text": "At the end of each month, save a 30-day report and export crossing settings as JSON backup."
+        },
+        {
+          "type": "tip",
+          "title": "Details on hover",
+          "text": "Hold the cursor over any chart or map — exact numbers for that day, hour or cell appear. No need to read tiny labels."
+        },
+        {
+          "type": "info",
+          "title": "Road condition map",
+          "items": [
+            "One map, three signals: vehicles passed (number), road condition (colour), congestion cause (white dot).",
+            "Full description in the 'Road condition' section."
+          ]
         }
       ]
     },
@@ -629,6 +648,16 @@
             "Check that selected date range has data.",
             "Check write permission for the target folder.",
             "Close the Word file if it is already open, then export again."
+          ]
+        },
+        {
+          "type": "info",
+          "title": "New questions",
+          "items": [
+            "Box lags behind the vehicle — restart the program (an old version may be running).",
+            "Congestion map missing — dwell time is not collected yet; check the 'System status' section.",
+            "'Building engine' message on startup — a one-time step (2-5 minutes) that may repeat when the camera count changes.",
+            "If speed dropped after adding a camera — check that the engine is 'dynamic' in 'System status'."
           ]
         }
       ]
@@ -726,6 +755,127 @@
             "Cameras must be available by RTSP.",
             "PLC and cameras must be on the same local network as the computer."
           ]
+        },
+        {
+          "type": "info",
+          "title": "Recent improvements",
+          "items": [
+            "Congestion grading now uses each vehicle's dwell time in the zone (vehicle count alone cannot detect a jam).",
+            "Load, congestion and zone utilization merged into ONE map; details appear on hover.",
+            "Detection box sits exactly on the vehicle — pipeline latency is compensated (important for ANPR accuracy).",
+            "The AI model adapts to the camera count by itself (dynamic engine) — no reconfiguration when a camera is added.",
+            "Hover tooltips on every chart; numbers are never clipped; colours follow the theme (light/dark/military)."
+          ]
+        }
+      ]
+    },
+    "road": {
+      "lead": "The road condition map shows 7 days x 24 hours in one table: the number in a cell is vehicles that passed, the colour is the road condition.",
+      "blocks": [
+        {
+          "type": "info",
+          "title": "What the colours mean",
+          "items": [
+            "Free (A) — road is clear, few vehicles.",
+            "Normal (B) — ordinary traffic.",
+            "Busy (C) — many vehicles but traffic flows.",
+            "Very busy (D) — close to capacity.",
+            "At capacity, stops (E) — a queue appears.",
+            "JAM — gridlock (F) — vehicles stand for a long time."
+          ]
+        },
+        {
+          "type": "warning",
+          "title": "A small number with a red colour is not a bug",
+          "items": [
+            "In a jam FEWER vehicles pass: flow drops while the road stays occupied.",
+            "So counting vehicles alone cannot detect a jam — in a full standstill the count falls to 0.",
+            "The system also uses a second measure: how long each vehicle STANDS in the zone. In a jam it grows several times over.",
+            "A white dot in the cell means the grade came from dwell time (few vehicles passed because they stood for a long time)."
+          ]
+        },
+        {
+          "type": "tip",
+          "title": "More detail",
+          "text": "Hover a cell to see vehicles passed, dwell time per vehicle, how many minutes the zone was busy, and the condition name. Every chart works the same way — hover a bar or a point."
+        },
+        {
+          "type": "info",
+          "title": "How thresholds are set",
+          "items": [
+            "The scale is tied to the warning threshold in settings.",
+            "With a 30-second threshold: free up to 12s, busy up to 30s, very busy up to 45s, over 90s is a JAM.",
+            "Change the threshold in Settings > General."
+          ]
+        },
+        {
+          "type": "warning",
+          "title": "Data has to accumulate",
+          "text": "Dwell time is collected from the moment the program starts — it cannot be recomputed for past days. Until data exists, colour comes from vehicle count only and no white dots appear."
+        }
+      ]
+    },
+    "metrics": {
+      "lead": "The exact meaning of every number on the screen.",
+      "blocks": [
+        {
+          "type": "info",
+          "title": "Vehicle counting",
+          "items": [
+            "Light vehicles — cars and motorcycles.",
+            "Heavy vehicles — buses and trucks.",
+            "Total — light + heavy.",
+            "A vehicle is counted once when it ENTERS the zone; how long it stays does not affect the count.",
+            "The count resets to zero every midnight."
+          ]
+        },
+        {
+          "type": "info",
+          "title": "Zone metrics",
+          "items": [
+            "Occupancy — how many vehicles are in the zone right now.",
+            "Zone time — time of the longest-standing vehicle; above the warning threshold it turns yellow, above the violation threshold red.",
+            "Dwell time (average) — how long a single vehicle stands in the zone; used for congestion grading.",
+            "Zone utilization — time when at least one vehicle was in the zone (min/hour). This is NOT a congestion measure: it is also high during busy but free-flowing hours."
+          ]
+        },
+        {
+          "type": "info",
+          "title": "Trains and PLC",
+          "items": [
+            "Train count — from the PLC signal (barrier closing).",
+            "Duration — from signal on to signal off.",
+            "If the PLC is disabled, trains are not counted."
+          ]
+        },
+        {
+          "type": "info",
+          "title": "Technical metrics",
+          "items": [
+            "FPS — frames processed per second.",
+            "Practical capacity (P) — 95th percentile of hourly flows over 30 days; load is measured against it.",
+            "Category (I-IV) — crossing category from the standard table, based on daily traffic and train count."
+          ]
+        },
+        {
+          "type": "tip",
+          "title": "Hint",
+          "text": "Hover any metric and a short version of this explanation appears right away."
+        }
+      ]
+    },
+    "system": {
+      "lead": "This section shows the CURRENT state of the program — send this information when you contact support.",
+      "blocks": [
+        {
+          "type": "tip",
+          "title": "Why it matters",
+          "items": [
+            "If no GPU is found, AI runs slowly — you can see it here.",
+            "A 'fixed' engine loses speed when the camera count changes; a 'dynamic' one adapts by itself.",
+            "If dwell-time records are 'still collecting', the congestion map needs a day or two.",
+            "The log file (railsafe.log) helps find the cause of errors."
+          ]
         }
       ]
     }
@@ -741,5 +891,59 @@
   "dlg.polygon.err_snapshot": "Could not grab a frame from the camera. Check the source (RTSP).",
   "dlg.polygon.saved": "Polygon saved",
   "common.cancel": "Cancel",
-  "common.save": "Save"
+  "common.save": "Save",
+  "legend.dwell_driven": "dot — jam (few vehicles passed because they stood long)",
+  "chart.heatmap_hint": "The number in a cell is how many vehicles passed that hour. Colour is the road condition. A dot means few vehicles passed because they stood in the zone for a long time (jam). Hover a cell for details.",
+  "heatmap.tip_flow": "Vehicles passed: {count}",
+  "heatmap.tip_dwell": "Each vehicle stood in the zone: {sec} s",
+  "heatmap.tip_util": "Zone was busy: {min} min (of 60)",
+  "heatmap.tip_level": "Condition: {level}",
+  "heatmap.tip_from_dwell": "Few vehicles passed because they stood in the zone for a long time",
+  "tip.total_transport": "All vehicles that passed the zone today: light + heavy. Each vehicle is counted ONCE when it enters the zone.",
+  "tip.light": "Light vehicles: cars and motorcycles.",
+  "tip.heavy": "Heavy vehicles: buses and trucks.",
+  "tip.trains": "Trains that passed today, counted from the PLC signal (barrier closing).",
+  "tip.crossings": "Number of crossings in the system.",
+  "tip.cameras": "Working / total cameras.",
+  "tip.zone_now": "How many vehicles are inside the zone right now.",
+  "tip.zone_time": "Time of the longest-standing vehicle in the zone. Over {warn} s turns yellow, over {viol} s turns red.",
+  "tip.fps": "Camera stream speed: frames processed per second.",
+  "tip.stats_today": "The count resets to zero every midnight.",
+  "tip.trains_count": "Trains: {count}",
+  "tip.trains_avg": "Average duration: {sec} s",
+  "tip.share": "Share: {pct}%",
+  "about.nav.road": "Road condition",
+  "about.section.road": "Road condition and congestion map",
+  "about.nav.metrics": "Metrics",
+  "about.section.metrics": "Metrics glossary",
+  "about.nav.system": "System status",
+  "about.section.system": "System status and hardware",
+  "about.sys.app": "Application",
+  "about.sys.ai": "AI and hardware",
+  "about.sys.engine": "Accelerated models (engine)",
+  "about.sys.config": "Configuration",
+  "about.sys.data": "Collected data",
+  "about.sys.mode": "Run mode",
+  "about.sys.no_gpu": "not found (CPU mode)",
+  "about.sys.not_installed": "not installed",
+  "about.sys.engine_none": "No engine file — running on PyTorch (slower)",
+  "about.sys.engine_bad": "unreadable (will be rebuilt)",
+  "about.sys.engine_dynamic": "dynamic (adapts to camera count)",
+  "about.sys.engine_fixed": "fixed batch",
+  "about.sys.crossings": "Crossings",
+  "about.sys.cameras": "Cameras",
+  "about.sys.enabled": "enabled",
+  "about.sys.with_zone": "with zone",
+  "about.sys.model": "Model",
+  "about.sys.thresholds": "Warning / violation threshold",
+  "about.sys.theme": "Theme",
+  "about.sys.language": "Language",
+  "about.sys.db_size": "Database size",
+  "about.sys.hours": "Hourly records",
+  "about.sys.dwell": "Dwell-time records",
+  "about.sys.avg": "average",
+  "about.sys.collecting": "still collecting",
+  "about.sys.log": "Log file",
+  "about.sys.not_loaded": "not loaded",
+  "about.sys.model_default": "default (COCO)"
 }

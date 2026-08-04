@@ -5,23 +5,37 @@ Tashqi kutubxona kerak emas.
 
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel, QFrame, QSizePolicy
 from PyQt6.QtCore import Qt, QRectF
-from PyQt6.QtGui import QPainter, QColor, QPen, QFont, QBrush
+from PyQt6.QtGui import QPainter, QColor, QPen, QFont, QFontMetrics, QBrush
 from datetime import datetime
 from typing import List, Dict
 
 from app.utils.theme_colors import C
+from app.utils.numfmt import fmt_compact, axis_label_width, fmt_full
+from app.widgets.chart_hover import (HoverTipMixin, tip_lines, tip_header,
+                                     tip_traffic)
+from app.utils.language import t
 from app.utils.language import t, LM
 
 
-class HourlyBarChart(QWidget):
+class HourlyBarChart(HoverTipMixin, QWidget):
     """24 soatlik stacked bar chart - yengil (ko'k) + og'ir (to'q sariq)"""
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._init_hover()
         self._data: List[Dict] = [{"hour": h, "light": 0, "heavy": 0} for h in range(24)]
         self._current_hour = datetime.now().hour
         self.setMinimumHeight(120)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+
+    def _hover_info(self, pos):
+        """Kursor ostidagi SOAT uchun aniq qiymatlar."""
+        i = self._index_from_bars(pos, 24)
+        if i < 0 or i >= len(self._data):
+            return -1, None
+        d = self._data[i]
+        return i, tip_lines(tip_header(f"{i:02d}:00"),
+                            tip_traffic(d.get("light", 0), d.get("heavy", 0)))
 
     def set_data(self, data: List[Dict]):
         """Ma'lumotni yangilash: [{"hour": 0, "light": 5, "heavy": 2}, ...]"""
@@ -59,7 +73,20 @@ class HourlyBarChart(QWidget):
         if max_val == 0:
             max_val = 1
 
+        # Chap chegarani yorliq kengligiga moslash — ma'lumot o'sib son
+        # uzaysa ham kesilmasin (izoh: app/utils/numfmt.py)
+        _f8 = QFont()
+        _f8.setPixelSize(8)
+        left_m = axis_label_width(
+            (int(max_val * i / 3) for i in range(1, 4)), QFontMetrics(_f8),
+            minimum=30)
+        chart_w = w - left_m - right_m
+        if chart_w <= 0:
+            painter.end()
+            return
+
         bar_w = chart_w / 24
+        self._save_geom(left_m=left_m, top_m=top_m, cw=chart_w, ch=chart_h, n=24)
         gap = max(1, bar_w * 0.15)
 
         # Ranglar
@@ -86,7 +113,7 @@ class HourlyBarChart(QWidget):
             painter.setPen(QPen(text_color, 1))
             painter.drawText(QRectF(0, y - 6, left_m - 4, 12),
                              Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
-                             str(val))
+                             fmt_compact(val))
             painter.setPen(QPen(grid_color, 1))
 
         # Barlar
@@ -144,15 +171,25 @@ class HourlyBarChart(QWidget):
         painter.end()
 
 
-class TrainHourlyBarChart(QWidget):
+class TrainHourlyBarChart(HoverTipMixin, QWidget):
     """24 soatlik poyezd soni bar chart (teal rangli, bitta ustun)."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._init_hover()
         self._data: List[int] = [0] * 24   # har soat uchun poyezd soni
         self._current_hour = datetime.now().hour
         self.setMinimumHeight(120)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+
+    def _hover_info(self, pos):
+        """Kursor ostidagi SOAT uchun poyezd soni."""
+        i = self._index_from_bars(pos, 24)
+        if i < 0 or i >= len(self._data):
+            return -1, None
+        return i, tip_lines(tip_header(f"{i:02d}:00"),
+                            t("tip.trains_count",
+                              count=fmt_full(self._data[i])))
 
     def set_data(self, data: List[int]):
         """Ma'lumotni yangilash: 24 elementli list [count_hour0, ..., count_hour23]"""
@@ -178,7 +215,19 @@ class TrainHourlyBarChart(QWidget):
         if max_val == 0:
             max_val = 1
 
+        # Chegarani yorliq kengligiga moslash (uzun son kesilmasin)
+        _f8 = QFont()
+        _f8.setPixelSize(8)
+        left_m = axis_label_width(
+            (int(max_val * i / 3) for i in range(1, 4)), QFontMetrics(_f8),
+            minimum=30)
+        chart_w = w - left_m - right_m
+        if chart_w <= 0:
+            painter.end()
+            return
+
         bar_w = chart_w / 24
+        self._save_geom(left_m=left_m, top_m=top_m, cw=chart_w, ch=chart_h, n=24)
         gap = max(1, bar_w * 0.15)
 
         teal_color = QColor(C('accent_teal'))
@@ -201,7 +250,7 @@ class TrainHourlyBarChart(QWidget):
             painter.setPen(QPen(text_color, 1))
             painter.drawText(QRectF(0, y - 6, left_m - 4, 12),
                              Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
-                             str(val))
+                             fmt_compact(val))
             painter.setPen(QPen(grid_color, 1))
 
         for i, count in enumerate(self._data):

@@ -22,7 +22,7 @@ import queue
 import logging
 from datetime import date
 from app.utils.theme_colors import C, TM
-from app.core.tracker import PolygonTracker
+from app.core.tracker import PolygonTracker, boxes_for_drawing
 from app.utils.language import t, LM
 from app.core.plc import PLCManager as _PLCManager, SNAP7_AVAILABLE as _SNAP7_OK
 
@@ -194,10 +194,16 @@ class CameraWorker(QThread):
     def __init__(self, source: str, camera_name: str = "Camera", display_width: int = 1280,
                  car_detector=None, detection_enabled: bool = True,
                  polygon_file: str = None, warning_threshold: float = 10.0,
-                 violation_threshold: float = 15.0, is_custom_model: bool = False):
+                 violation_threshold: float = 15.0, is_custom_model: bool = False,
+                 detector_key: str = None):
         super().__init__()
         self.source = source
         self.camera_name = camera_name
+        # Detektor lug'atlarining kaliti (_pending_frames / _results). Kamera NOMI
+        # bo'lishi MUMKIN EMAS: turli kesishmalarda bir xil nomli kamera bo'lsa
+        # (masalan ikkisi ham "Kirish") kalitlar to'qnashadi va bir kameraning
+        # ekranida boshqasining kadri chiqadi. Shuning uchun kesishma+kamera ID.
+        self.detector_key = detector_key or camera_name
         self.display_width = display_width
         self._running = True
         self._mutex = QMutex()
@@ -221,6 +227,10 @@ class CameraWorker(QThread):
         self.anpr_worker = None  # AnprWorker | None — ANPR alohida thread'da
         self._last_anpr_t = 0.0  # ANPR submit throttle (real-time'ga ta'sir qilmaslik)
         self.crossing_display_name: str = ""  # ViolationDetector folder nomi uchun
+        # Zonadan chiqqan mashinalarning turish vaqtlari (probka o'lchovi).
+        # Worker threadda to'ldiriladi, GUI threadda pop_dwells() bilan olinadi —
+        # deque append/popleft GIL ostida atomar, qulf kerak emas.
+        self._dwell_q: collections.deque = collections.deque(maxlen=2000)
         # FPS tracker — video yozish uchun haqiqiy frame rate
         self._fps_samples: collections.deque = collections.deque(maxlen=30)
         self._prev_frame_t: float = 0.0
@@ -231,6 +241,17 @@ class CameraWorker(QThread):
         qimg = self._latest_qimg
         self._latest_qimg = None
         return qimg
+
+    def pop_dwells(self) -> list:
+        """Zonadan chiqqan mashinalarning turish vaqtlari (sekund) — DB ga
+        yozish uchun. Navbat bo'shatiladi."""
+        out = []
+        try:
+            while True:
+                out.append(self._dwell_q.popleft())
+        except IndexError:
+            pass
+        return out
 
     def add_frame_consumer(self):
         """Detail view ulanganda chaqiriladi — frame_with_data emit qilina boshlaydi."""
@@ -307,6 +328,11 @@ class CameraWorker(QThread):
             # --- Main loop: 30 FPS cap (PyAV va OpenCV uchun bir xil) ---
             _poly_loaded = False
             _tracker = None
+            _has_poly = False   # polygon fayli yuklanib, maska tayyor bo'ldimi
+            # Klass nomlari bir marta olinadi (property har chaqiruvda dict nusxalaydi)
+            _cls_names = getattr(self.car_detector, 'class_names', None) or {}
+            # Detektor natija kadrining vaqtini beradimi (eski CarDetector bermaydi)
+            _detector_has_ts = hasattr(self.car_detector, 'last_capture_time')
             _target_interval = 1.0 / 30.0
             _last_frame_t = 0.0
             while self._is_running() and not _grab_error[0]:
@@ -345,19 +371,23 @@ class CameraWorker(QThread):
                     if self.polygon_file:
                         self._poly_pts, self._poly_mask = _load_polygon(
                             self.polygon_file, w, h)
-                    # Tracker yaratish (polygon mavjud bo'lsa)
-                    if self._poly_mask is not None:
-                        light_cls = PolygonTracker.CUSTOM_LIGHT if self.is_custom_model else None
-                        heavy_cls = PolygonTracker.CUSTOM_HEAVY if self.is_custom_model else None
-                        _tracker = PolygonTracker(
-                            poly_mask=self._poly_mask,
-                            iou_threshold=0.3,
-                            max_age=2.0,
-                            frame_width=w,
-                            frame_height=h,
-                            light_classes=light_cls,
-                            heavy_classes=heavy_cls,
-                        )
+                    _has_poly = self._poly_mask is not None
+                    # Tracker HAR DOIM yaratiladi. Polygon bo'lmasa — bo'sh
+                    # (nol) maska bilan: hisoblash/vaqt ishlamaydi (zona yo'q),
+                    # lekin tracking ishlaydi va box ekstrapolyatsiyasi
+                    # polygonsiz kameralarda ham boxni mashinaga tushiradi.
+                    light_cls = PolygonTracker.CUSTOM_LIGHT if self.is_custom_model else None
+                    heavy_cls = PolygonTracker.CUSTOM_HEAVY if self.is_custom_model else None
+                    _tracker = PolygonTracker(
+                        poly_mask=(self._poly_mask if _has_poly
+                                   else np.zeros((h, w), dtype=np.uint8)),
+                        iou_threshold=0.3,
+                        max_age=2.0,
+                        frame_width=w,
+                        frame_height=h,
+                        light_classes=light_cls,
+                        heavy_classes=heavy_cls,
+                    )
 
                 # Car detection - NON-BLOCKING
                 detection_count = 0
@@ -365,17 +395,32 @@ class CameraWorker(QThread):
                 max_time = 0.0
                 if self.detection_enabled and self.car_detector is not None:
                     try:
-                        detections, det_frame = self.car_detector.detect_async(
-                            frame, camera_id=self.camera_name)
+                        # _det_frame ATAYLAB ishlatilmaydi — pastdagi izohga qarang
+                        detections, _det_frame = self.car_detector.detect_async(
+                            frame, camera_id=self.detector_key)
                         detection_count = len(detections)
+                        # Bu deteksiyalar QAYSI kadrga tegishli — o'sha kadr
+                        # olingan vaqt. Tracker shu vaqtdan hozirgi vaqtga
+                        # ekstrapolyatsiya qiladi, ya'ni box object'dan
+                        # orqada qolmaydi (butun pipeline kechikishi qoplanadi).
+                        _obs_t = None
+                        if _detector_has_ts:
+                            _obs_t = self.car_detector.last_capture_time(
+                                self.detector_key)
                         # Tracking (har doim — eski tracklar expire bo'lishi uchun)
-                        in_poly_bboxes = None
-                        if _tracker is not None:
-                            _tracker.process_detections(detections)
+                        _tracker.process_detections(detections, obs_time=_obs_t)
+                        # Zonadan chiqqan mashinalarning turish vaqtlari —
+                        # probka statistikasi uchun GUI threadga uzatiladi
+                        if _has_poly:
+                            _dw = _tracker.pop_completed_dwells()
+                            if _dw:
+                                self._dwell_q.extend(_dw)
+                        # Statistika FAQAT polygon bo'lganda trackerdan olinadi —
+                        # polygonsiz kamerada zona yo'q, shu sabab eski xatti-harakat
+                        # saqlanadi (deteksiya soni yuboriladi).
+                        if _has_poly:
                             in_poly_count = _tracker.get_inside_count()
                             max_time = _tracker.get_max_time()
-                            if detections:
-                                in_poly_bboxes = _tracker.get_in_polygon_bboxes()
                             self.stats_updated.emit(
                                 _tracker.light_count,
                                 _tracker.heavy_count,
@@ -384,11 +429,19 @@ class CameraWorker(QThread):
                             )
                         elif detections:
                             self.stats_updated.emit(0, 0, detection_count, 0.0)
-                        if detections:
-                            # det_frame = aniqlashan kadr (100% mos)
-                            draw_on = det_frame if det_frame is not None else frame
+                        # MUHIM: boxlar JONLI kadrga chiziladi, det_frame ga EMAS.
+                        # det_frame — batch tugagan paytdagi ESKI kadr; uni
+                        # ko'rsatsak oqim vaqt bo'yicha orqaga sakraydi
+                        # ("bir eski — bir yangi" effekti), chunki deteksiya
+                        # bo'sh siklda jonli kadr chiqadi.
+                        # Box mashinadan orqada qolmasligi uchun tracker
+                        # tezligi bilan hozirgi vaqtga ekstrapolyatsiya qilinadi
+                        # (izoh: app/core/tracker.py get_predicted_boxes).
+                        draw_dets, in_poly_bboxes = boxes_for_drawing(
+                            _tracker, detections, _cls_names)
+                        if draw_dets:
                             frame = self.car_detector.draw_detections(
-                                draw_on, detections,
+                                frame, draw_dets,
                                 thickness=2, font_scale=0.5,
                                 in_polygon_bboxes=in_poly_bboxes,
                                 danger_mode=self.plc_danger and in_poly_count > 0)
@@ -447,7 +500,8 @@ class CameraWorker(QThread):
                 # Real-time oqim (video + hisoblash) bloklanmaydi; asl FULL-RES,
                 # toza (chizilmagan) kadr yuboriladi. Submit throttle bilan
                 # cheklanadi (har ~0.2s) — full-res nusxa narxini kamaytirish uchun.
-                if (self.anpr_worker is not None and _tracker is not None
+                # ANPR faqat polygonli kamerada (zona ichidagi mashina raqami)
+                if (self.anpr_worker is not None and _has_poly
                         and orig_frame is not None
                         and (_now_t - self._last_anpr_t) >= 0.2):
                     try:
@@ -750,7 +804,7 @@ class CameraSettingsDialog(QDialog):
                         border: 1px solid {toggle_color}; border-radius: 3px;
                         padding: 3px 10px; font-size: 10px;
                     }}
-                    QPushButton:hover {{ background-color: rgba(255,255,255,0.05); }}
+                    QPushButton:hover {{ background-color: {C('bg_hover')}; }}
                 """)
                 toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
                 toggle_btn.clicked.connect(
@@ -905,6 +959,10 @@ class CrossingCard(QWidget):
         self.is_custom_model = is_custom_model
         self.camera_workers = []
         self.camera_workers_by_id = {}  # cam_id -> worker (detail view uchun)
+        # Statistika manbasi bo'lgan workerlar (turish vaqtlari shulardan
+        # olinadi). Odatda faqat asosiy kamera; asosiy uzilgan bo'lsa
+        # qo'shimchasi. Barchasidan olsak bir mashina ikki marta sanalardi.
+        self._dwell_workers = []
         self.main_camera_label = None
         self.additional_camera_label = None
         self._is_destroyed = False
@@ -1546,6 +1604,7 @@ class CrossingCard(QWidget):
         self.bandlik_label = QLabel(t("cam.bandlik", count=0))
         self.bandlik_label.setStyleSheet(
             f"color: {C('accent_green')}; font-size: 10px; font-weight: bold; background: transparent; border: none;")
+        self.bandlik_label.setToolTip(t("tip.zone_now"))
         main_bottom_layout.addWidget(self.bandlik_label)
 
         main_bottom_layout.addStretch()
@@ -1554,6 +1613,9 @@ class CrossingCard(QWidget):
         self.poly_time_label = QLabel(t("cam.polygon.time", time=0.0))
         self.poly_time_label.setStyleSheet(
             f"color: {C('text_muted')}; font-size: 10px; font-weight: bold; background: transparent; border: none;")
+        _warn_t, _viol_t = self._thresholds()
+        self.poly_time_label.setToolTip(t(
+            "tip.zone_time", warn=int(_warn_t), viol=int(_viol_t)))
         main_bottom_layout.addWidget(self.poly_time_label)
 
         # Additional camera label
@@ -1835,6 +1897,19 @@ class CrossingCard(QWidget):
             return f"{n / 1_000:.1f}K"
         return f"{n:,}".replace(",", " ")
 
+    def _thresholds(self):
+        """Sozlamalardagi ogohlantirish/buzilish chegaralari (sekund).
+
+        DIQQAT: bu qiymatlar KARTADA saqlanmaydi — ular workerlarga
+        `_start_cameras` da sozlamalardan uzatiladi. Shu sabab izoh matni
+        uchun ham to'g'ridan-to'g'ri sozlamalardan o'qiymiz."""
+        try:
+            s = self.config_manager.get_settings() if self.config_manager else {}
+            return (float(s.get("warning_threshold", 10.0) or 10.0),
+                    float(s.get("violation_threshold", 15.0) or 15.0))
+        except Exception:
+            return 10.0, 15.0
+
     @staticmethod
     def _count_font_size(text):
         """Dynamic font size based on text length"""
@@ -1876,6 +1951,7 @@ class CrossingCard(QWidget):
         self._stats_title_lbl.setStyleSheet(
             f"color: {C('text_dim')}; font-size: 9px; font-weight: bold; letter-spacing: 1px;"
             " background: transparent; border: none;")
+        self._stats_title_lbl.setToolTip(t("tip.stats_today"))
         stats_inner.addWidget(self._stats_title_lbl)
 
         counts_row = QHBoxLayout()
@@ -1901,6 +1977,8 @@ class CrossingCard(QWidget):
         self.car_count.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self._update_stat_label(self.car_count, 0, C('accent_blue'))
         car_lay.addWidget(self.car_count)
+        for _w in (car_badge, car_ic, self.car_count):
+            _w.setToolTip(t("tip.light") + " " + t("tip.stats_today"))
         counts_row.addWidget(car_badge, stretch=1)
 
         # Truck badge
@@ -1923,6 +2001,8 @@ class CrossingCard(QWidget):
         self.truck_count.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self._update_stat_label(self.truck_count, 0, C('accent_orange'))
         truck_lay.addWidget(self.truck_count)
+        for _w in (truck_badge, truck_ic, self.truck_count):
+            _w.setToolTip(t("tip.heavy") + " " + t("tip.stats_today"))
         counts_row.addWidget(truck_badge, stretch=1)
 
         stats_inner.addLayout(counts_row)
@@ -1935,6 +2015,8 @@ class CrossingCard(QWidget):
             f" background-color: {C('bg_panel_dark')};"
             f" border: 1px solid {C('bg_panel_border')};"
             " border-radius: 4px; padding: 2px 0px;")
+        self.total_label.setToolTip(
+            t("tip.total_transport") + " " + t("tip.stats_today"))
         stats_inner.addWidget(self.total_label)
 
         return stats_frame
@@ -2098,6 +2180,7 @@ class CrossingCard(QWidget):
                     warning_threshold=warn_t,
                     violation_threshold=viol_t,
                     is_custom_model=self.is_custom_model,
+                    detector_key=f"c{self.crossing_id}_cam{camera.get('id', i)}",
                 )
 
                 # cam_type bo'yicha aniqlash, fallback: birinchi=main
@@ -2106,12 +2189,14 @@ class CrossingCard(QWidget):
                     worker.frame_ready.connect(lambda w=worker: self._on_main_frame(w))
                     worker.status_changed.connect(self._on_main_status)
                     worker.stats_updated.connect(self._on_stats_update)
+                    self._dwell_workers.append(worker)
                 else:
                     worker.frame_ready.connect(lambda w=worker: self._on_additional_frame(w))
                     worker.status_changed.connect(self._on_additional_status)
                     # Asosiy to'xtatilgan bo'lsa — qo'shimcha sanashni davom ettiradi
                     if self._main_camera_down:
                         worker.stats_updated.connect(self._on_stats_update)
+                        self._dwell_workers.append(worker)
 
                 worker.start()
                 self.camera_workers.append(worker)
@@ -2212,6 +2297,15 @@ class CrossingCard(QWidget):
                 self._heavy_offset = prev_heavy
                 self._tracker_base_light = 0
                 self._tracker_base_heavy = 0
+                # DB delta bazasini ham nollash — aks holda tracker eski
+                # qiymatga yetguncha sanoq DB ga yozilmay yo'qoladi
+                if self.stats_db and self.main_camera_data:
+                    _mn = self.main_camera_data.get("name", "")
+                    if _mn:
+                        try:
+                            self.stats_db.reset_baseline(self.crossing_id, _mn)
+                        except Exception:
+                            pass
             # Oxirgi tracker qiymatlarini saqlash (midnight reset uchun)
             self._last_tracker_light = light_count
             self._last_tracker_heavy = heavy_count
@@ -2256,16 +2350,34 @@ class CrossingCard(QWidget):
                 self._plc_manager.set_has_cars(in_poly_count > 0)
 
             # DB ga yozish (asosiy kamera uchun)
-            if self.stats_db and light_count + heavy_count > 0:
-                main_name = ""
-                if self.main_camera_data:
-                    main_name = self.main_camera_data.get("name", "Camera")
+            if self.stats_db and self.main_camera_data:
+                main_name = self.main_camera_data.get("name", "Camera")
                 if main_name:
+                    if light_count + heavy_count > 0:
+                        try:
+                            self.stats_db.record_count(
+                                self.crossing_id, main_name, light_count, heavy_count)
+                        except Exception as e:
+                            print(f"[StatsDB] Record error: {e}")
+                    # Zonadan foydalanish vaqti (YHQ 18)
                     try:
-                        self.stats_db.record_count(
-                            self.crossing_id, main_name, light_count, heavy_count)
+                        self.stats_db.record_occupancy(
+                            self.crossing_id, main_name, in_poly_count)
                     except Exception as e:
-                        print(f"[StatsDB] Record error: {e}")
+                        _log.debug("[StatsDB] Occupancy error: %s", e)
+                    # Turish vaqtlari (zator xaritasi) — zonadan chiqqan
+                    # mashinalar. Oqim va band vaqt zatorni ko'rsatmaydi,
+                    # o'rtacha turish vaqti esa ko'rsatadi.
+                    try:
+                        _dwells = []
+                        for _w in self._dwell_workers:
+                            if hasattr(_w, "pop_dwells"):
+                                _dwells.extend(_w.pop_dwells())
+                        if _dwells:
+                            self.stats_db.record_dwells(
+                                self.crossing_id, main_name, _dwells)
+                    except Exception as e:
+                        _log.debug("[StatsDB] Dwell error: %s", e)
         except Exception as e:
             # O'tkinchi xato — bitta stat yangilanishini tashlaymiz,
             # butun widgetni o'lik deb belgilamaymiz
@@ -2441,8 +2553,24 @@ class CrossingCard(QWidget):
                     self.plc_status_label.setText(t("plc.disabled"))
             if hasattr(self, '_stats_title_lbl'):
                 self._stats_title_lbl.setText(t("stats.panel").upper())
+                self._stats_title_lbl.setToolTip(t("tip.stats_today"))
             if hasattr(self, 'total_label'):
                 self.update_stats(self._last_display_light, self._last_display_heavy)
+            # Sichqoncha izohlari ham yangi tilda bo'lishi kerak
+            _today = " " + t("tip.stats_today")
+            for _attr, _tip in (
+                    ('car_count', t("tip.light") + _today),
+                    ('truck_count', t("tip.heavy") + _today),
+                    ('total_label', t("tip.total_transport") + _today),
+                    ('bandlik_label', t("tip.zone_now")),
+            ):
+                _w = getattr(self, _attr, None)
+                if _w is not None:
+                    _w.setToolTip(_tip)
+            if hasattr(self, 'poly_time_label'):
+                _wt, _vt = self._thresholds()
+                self.poly_time_label.setToolTip(
+                    t("tip.zone_time", warn=int(_wt), viol=int(_vt)))
         except (RuntimeError, Exception):
             pass
 
@@ -2479,8 +2607,22 @@ class CrossingCard(QWidget):
                     _retire_worker(worker)
             except (RuntimeError, Exception):
                 pass
+        # Oxirgi yig'ilgan turish vaqtlari yo'qolmasin — to'xtashdan oldin yozamiz
+        try:
+            if self.stats_db and self.main_camera_data:
+                _mn = self.main_camera_data.get("name", "")
+                _dw = []
+                for _w in self._dwell_workers:
+                    if hasattr(_w, "pop_dwells"):
+                        _dw.extend(_w.pop_dwells())
+                if _mn and _dw:
+                    self.stats_db.record_dwells(self.crossing_id, _mn, _dw)
+        except Exception as e:
+            _log.debug("[StatsDB] Dwell flush (stop) xato: %s", e)
+
         self.camera_workers.clear()
         self.camera_workers_by_id.clear()
+        self._dwell_workers.clear()
 
     def cleanup(self):
         if self._is_destroyed:
