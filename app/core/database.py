@@ -1026,17 +1026,85 @@ class StatsDB:
         return result
 
     def rename_camera(self, crossing_id: int, old_name: str, new_name: str):
-        """Kamera nomi o'zgarganda barcha statslarni yangi nomga ko'chirish."""
+        """Kamera nomi o'zgarganda BARCHA statslarni yangi nomga ko'chirish.
+
+        IKKALA jadval ham ko'chiriladi: hourly_stats (sanoq) va occupancy_stats
+        (zona band bo'lish + turish vaqti, ya'ni ОДМ probka baholashining
+        manbasi). Faqat birinchisi ko'chirilsa, kamera qayta nomlangach probka
+        tarixi hisobotlardan yo'qolardi — ma'lumot bazada qolar, lekin hech
+        qaysi so'rov uni topmasdi.
+
+        Yangi nom allaqachon mavjud bo'lsa (A→B, B oldin ham bor edi) oddiy
+        UPDATE unikal cheklovga urilardi, shuning uchun qatorlar QO'SHILADI
+        (ON CONFLICT ... DO UPDATE), so'ng eskilari o'chiriladi.
+        """
         if old_name == new_name:
             return
         with self._lock:
-            self._conn.execute("""
-                UPDATE hourly_stats SET camera_name = ?
-                WHERE crossing_id = ? AND camera_name = ?
-            """, (new_name, crossing_id, old_name))
-            self._conn.commit()
-            # Delta tracking cache ni ham yangilash (lock ichida)
+            # Xotiradagi yig'ilgan bandlik/turish vaqtini AVVAL eski nom ostida
+            # bazaga yozamiz — keyingi SQL uni yangi nomga ko'chiradi. Shu sabab
+            # flush paytidagi ma'lumot yo'qolmaydi va xotirada nom ikkiga bo'linmaydi.
             old_key = (crossing_id, old_name)
+            st = self._occ_state.pop(old_key, None)
+            if st is not None:
+                try:
+                    self._flush_occupancy(old_key, st)
+                except Exception as e:
+                    logger.error("rename_camera occupancy flush xato: %s", e)
+
+            try:
+                self._conn.execute("""
+                    INSERT INTO hourly_stats
+                        (crossing_id, camera_name, hour_start,
+                         light_count, heavy_count, updated_at)
+                    SELECT crossing_id, ?, hour_start,
+                           light_count, heavy_count, updated_at
+                    FROM hourly_stats
+                    WHERE crossing_id = ? AND camera_name = ?
+                    ON CONFLICT(crossing_id, camera_name, hour_start)
+                    DO UPDATE SET
+                        light_count = hourly_stats.light_count + excluded.light_count,
+                        heavy_count = hourly_stats.heavy_count + excluded.heavy_count,
+                        updated_at  = excluded.updated_at
+                """, (new_name, crossing_id, old_name))
+                self._conn.execute("""
+                    DELETE FROM hourly_stats
+                    WHERE crossing_id = ? AND camera_name = ?
+                """, (crossing_id, old_name))
+
+                self._conn.execute("""
+                    INSERT INTO occupancy_stats
+                        (crossing_id, camera_name, bin_start,
+                         occupied_seconds, max_inside, updated_at,
+                         dwell_seconds, dwell_vehicles)
+                    SELECT crossing_id, ?, bin_start,
+                           occupied_seconds, max_inside, updated_at,
+                           dwell_seconds, dwell_vehicles
+                    FROM occupancy_stats
+                    WHERE crossing_id = ? AND camera_name = ?
+                    ON CONFLICT(crossing_id, camera_name, bin_start)
+                    DO UPDATE SET
+                        occupied_seconds = occupancy_stats.occupied_seconds
+                                           + excluded.occupied_seconds,
+                        max_inside       = MAX(occupancy_stats.max_inside,
+                                               excluded.max_inside),
+                        updated_at       = excluded.updated_at,
+                        dwell_seconds    = occupancy_stats.dwell_seconds
+                                           + excluded.dwell_seconds,
+                        dwell_vehicles   = occupancy_stats.dwell_vehicles
+                                           + excluded.dwell_vehicles
+                """, (new_name, crossing_id, old_name))
+                self._conn.execute("""
+                    DELETE FROM occupancy_stats
+                    WHERE crossing_id = ? AND camera_name = ?
+                """, (crossing_id, old_name))
+                self._conn.commit()
+            except Exception as e:
+                self._conn.rollback()
+                logger.error("rename_camera error: %s", e)
+                return
+
+            # Delta tracking cache ni ham yangilash (lock ichida)
             if old_key in self._last_counts:
                 self._last_counts[(crossing_id, new_name)] = self._last_counts.pop(old_key)
 
