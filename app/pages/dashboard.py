@@ -7,7 +7,7 @@ import logging
 import os
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QScrollArea,
                               QGridLayout, QSizePolicy)
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from app.widgets.crossing_card import CrossingCard
 from app.utils.theme_colors import C
 from app.core.database import StatsDB
@@ -43,8 +43,16 @@ class Dashboard(QWidget):
         self.stats_db = StatsDB()
 
         self._empty_label = None
+        self._ai_crash_logged = False
         self._setup_ui()
         LM.language_changed.connect(self._retranslate)
+
+        # Detektor ish PAYTIDA ham yiqilishi mumkin (CUDA konteksti buzilishi).
+        # Ilgari banner faqat ishga tushishda qo'yilardi, shuning uchun bunday
+        # holat butunlay sezilmay qolardi. Endi holat muntazam tekshiriladi.
+        self._ai_watch_timer = QTimer(self)
+        self._ai_watch_timer.timeout.connect(self._update_ai_banner)
+        self._ai_watch_timer.start(5000)
         # Detektor va kameralar KEYINROQ ishga tushadi (engine tayyor bo'lgandan keyin)
 
     def start_detection(self):
@@ -54,22 +62,38 @@ class Dashboard(QWidget):
         self._update_ai_banner()
 
     def _update_ai_banner(self):
-        """AI aniqlash o'chiq bo'lsa (model yo'q/yuklanmadi) operatorga doimiy
-        ogohlantiruvchi banner ko'rsatish."""
+        """AI aniqlash ishlamayotgan bo'lsa operatorga doimiy ogohlantirish.
+
+        IKKI xil holat ajratiladi:
+          - o'chiq: model topilmadi yoki yuklanmadi (ishga tushishda ma'lum)
+          - ishdan chiqdi: model yuklangan edi, lekin ish paytida yiqildi
+            (odatda CUDA konteksti buzilishi) — bunda dastur qayta ishga
+            tushirilishi kerak.
+        Ikkinchisi eng xavflisi: video oqishda davom etadi va tashqaridan
+        hammasi joyidagidek ko'rinadi, holbuki hisoblash to'xtagan bo'ladi.
+        """
         if self._ai_banner is None:
             return
-        off = getattr(self, "_ai_off", False)
-        self._ai_banner.setText(t("dashboard.ai_off"))
+        det = self.car_detector
+        crashed = bool(det is not None and getattr(det, "failed", False))
+        off = crashed or getattr(self, "_ai_off", False)
+        self._ai_banner.setText(
+            t("dashboard.ai_crashed") if crashed else t("dashboard.ai_off"))
         self._ai_banner.setStyleSheet(
             "QLabel { background: #7f1d1d; color: #ffffff; font-weight: bold; "
             "padding: 8px 12px; border-radius: 6px; }")
         self._ai_banner.setVisible(off)
+        if crashed and not self._ai_crash_logged:
+            self._ai_crash_logged = True
+            _log.error("[Dashboard] AI detektor ish paytida ishdan chiqdi: %s",
+                       getattr(det, "fail_reason", ""))
 
     def _init_shared_detector(self):
         """
         RealtimeMultiCameraDetector - TensorRT native yoki Ultralytics fallback
         """
         self._ai_off = False   # operatorga banner ko'rsatish kerakmi?
+        self._ai_crash_logged = False   # yangi detektor — xato qaytadan log qilinsin
         if not CAR_DETECTOR_AVAILABLE:
             _log.warning("[Dashboard] detektor kutubxonasi yo'q (import xato) — AI o'chiq")
             self._ai_off = True
@@ -291,7 +315,6 @@ class Dashboard(QWidget):
 
     def refresh(self):
         """Krossing kartalarni qayta yuklash — eski workers to'liq to'xtagandan keyin."""
-        from PyQt6.QtCore import QTimer
         self._empty_label = None
         old_cards = list(self.crossing_cards)
         self.crossing_cards.clear()

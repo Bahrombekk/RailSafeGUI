@@ -376,6 +376,12 @@ class RealtimeMultiCameraDetector:
     }
     DEFAULT_COLOR = (0, 255, 0)
 
+    # Shuncha KETMA-KET batch xatosidan keyin detektor ishdan chiqqan deb
+    # hisoblanadi. Bitta-ikkita xato o'tkinchi bo'lishi mumkin (masalan
+    # qisqa muddatli xotira yetishmasligi), shuning uchun darhol emas;
+    # muvaffaqiyatli batch hisoblagichni nolga qaytaradi.
+    MAX_CONSECUTIVE_ERRORS = 20
+
     def __init__(
         self,
         model_path: str,
@@ -418,6 +424,18 @@ class RealtimeMultiCameraDetector:
         self._running = False
         self._worker_thread = None
         self._urgent_event = threading.Event()  # Darhol batch ishlatish uchun
+
+        # Ishdan chiqish holati. CUDA "illegal memory access" bo'lganda kontekst
+        # buziladi va KEYINGI har bir inference ham yiqiladi — qayta tiklab
+        # bo'lmaydi (jarayonni qayta ishga tushirish kerak). Ilgari istisno
+        # jimgina yutilib, barcha kameralar bo'sh deteksiya olardi: video oqar,
+        # hisoblash esa to'xtagan bo'lardi va operator buni sezmasdi.
+        # Shuning uchun ketma-ket xatolarni sanaymiz va chegaradan keyin
+        # detektorni "o'lik" deb belgilaymiz (GUI banner ko'rsatadi).
+        self._fail_lock = threading.Lock()
+        self._consecutive_errors = 0
+        self._failed = False
+        self._fail_reason = ""
 
         # Stats
         # Bu listlar worker threadda append/pop qilinadi, GUI threadda
@@ -536,6 +554,14 @@ class RealtimeMultiCameraDetector:
             if not batch_data:
                 continue
 
+            # Detektor ishdan chiqqan bo'lsa GPU ni behuda qiynamaymiz:
+            # kutayotgan kameralarni darhol bo'shatamiz (video oqishda davom
+            # etadi), lekin inference urinilmaydi.
+            if self.failed:
+                for cam_id, frame, event, ts in batch_data:
+                    event.set()
+                continue
+
             try:
                 now = time.perf_counter()
                 frames = [item[1] for item in batch_data]
@@ -571,8 +597,29 @@ class RealtimeMultiCameraDetector:
                         self._results[cam_id] = (dets, frame, ts)
                         event.set()
 
+                with self._fail_lock:
+                    self._consecutive_errors = 0
+
             except Exception as e:
-                logger.error("[RealtimeDetector] Batch error: %s", e)
+                with self._fail_lock:
+                    self._consecutive_errors += 1
+                    n = self._consecutive_errors
+                    newly_failed = (not self._failed
+                                    and n >= self.MAX_CONSECUTIVE_ERRORS)
+                    if newly_failed:
+                        self._failed = True
+                        self._fail_reason = str(e)
+                # Log SPAM oldini olish: 2026-08-10 da bitta hodisada 1006 ta
+                # bir xil qator yozilgan. Endi birinchi xato, chegara va har
+                # 500-chi xatodan boshqasi yozilmaydi.
+                if n == 1 or newly_failed or n % 500 == 0:
+                    logger.error("[RealtimeDetector] Batch error (#%s): %s", n, e)
+                if newly_failed:
+                    logger.error(
+                        "[RealtimeDetector] %s ta ketma-ket xatodan keyin "
+                        "detektor ISHDAN CHIQDI deb belgilandi. CUDA konteksti "
+                        "buzilgan bo'lsa jarayonni qayta ishga tushirish kerak.",
+                        n)
                 for cam_id, frame, event, ts in batch_data:
                     event.set()
 
@@ -865,6 +912,23 @@ class RealtimeMultiCameraDetector:
     @property
     def is_loaded(self) -> bool:
         return self._is_loaded
+
+    @property
+    def failed(self) -> bool:
+        """Detektor ish paytida ishdan chiqdimi (ketma-ket xatolar chegarasi).
+
+        GUI shuni so'rab turadi: True bo'lsa operatorga banner ko'rsatiladi.
+        `is_loaded` True qolaveradi — model yuklangan edi, lekin endi
+        hisoblamayapti; bu ikki holat bir-biridan farq qiladi.
+        """
+        with self._fail_lock:
+            return self._failed
+
+    @property
+    def fail_reason(self) -> str:
+        """Ishdan chiqishga sabab bo'lgan oxirgi xato matni (bo'sh = xato yo'q)."""
+        with self._fail_lock:
+            return self._fail_reason
 
     @property
     def class_names(self) -> Dict:

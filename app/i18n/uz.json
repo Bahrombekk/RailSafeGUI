@@ -234,6 +234,7 @@
   "error.report": "Hisobotni yaratishda xatolik yuz berdi.",
   "dashboard.empty": "Pereezdlar yo'q. Toolbar dan '+ Pereezd Qo'shish' bosing.",
   "dashboard.ai_off": "⚠ AI aniqlash O'CHIQ — model topilmadi yoki yuklanmadi. Mashina hisobi va qoidabuzarlik aniqlash ishlamaydi. Sozlamalardan modelni tekshiring.",
+  "dashboard.ai_crashed": "⚠ AI aniqlash ISHDAN CHIQDI — model yuklangan edi, lekin ish paytida to'xtab qoldi (odatda GPU/CUDA xatosi). Video ko'rinyapti, LEKIN mashina hisobi va qoidabuzarlik aniqlash ISHLAMAYAPTI. Dasturni qayta ishga tushiring.",
   "report.title": "Hisobot yuklash",
   "report.hint": "Sana oralig'ini tanlang va Word formatida hisobot yuklang.",
   "report.today": "Bugun",

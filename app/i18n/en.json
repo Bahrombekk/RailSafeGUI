@@ -234,6 +234,7 @@
   "error.report": "Error generating report.",
   "dashboard.empty": "No crossings. Click '+ Add Crossing' in the toolbar.",
   "dashboard.ai_off": "⚠ AI detection is OFF — the model was not found or failed to load. Vehicle counting and violation detection are disabled. Check the model in Settings.",
+  "dashboard.ai_crashed": "⚠ AI detection HAS STOPPED — the model was loaded but failed during operation (usually a GPU/CUDA error). Video still runs, BUT vehicle counting and violation detection are NOT working. Restart the application.",
   "report.title": "Download Report",
   "report.hint": "Select a date range and download a Word format report.",
   "report.today": "Today",
