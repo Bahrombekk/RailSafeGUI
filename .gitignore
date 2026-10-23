@@ -80,8 +80,13 @@ gui/
 
 # Maxfiy config (RTSP parollari, push login/parol) — repo'da SAQLANMAYDI.
 # Shablon: packaging/config/gui_config.json (bo'sh) yoki config/gui_config.example.json
-config/gui_config.json
-config/gui_config2.json
+#
+# Yulduzcha SHART: nusxalar ham (gui_config.json.bak, .tmp, .old) AYNAN shu
+# parollarni saqlaydi. Yulduzchasiz `git add -A` ularni sir bilan birga
+# commit qilib yuborardi. `config/gui_config.example.json` boshqa nom —
+# shablon sifatida git'da qoladi.
+config/gui_config.json*
+config/gui_config2.json*
 config/camera_state.json
 
 # Model og'irliklari (katta, hardware-bog'liq .engine) — LFS/relizdan olinadi.
