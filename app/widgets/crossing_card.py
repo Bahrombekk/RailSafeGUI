@@ -2624,7 +2624,13 @@ class CrossingCard(QWidget):
         self.camera_workers_by_id.clear()
         self._dwell_workers.clear()
 
-    def cleanup(self):
+    def cleanup(self, wait_ms: int = 1500):
+        """Kartani to'liq to'xtatish: timerlar, PLC, kameralar, ANPR.
+
+        wait_ms=0 — kamera thread'lari kutilmaydi (GUI muzlamaydi). Dashboard
+        yangilanishida shu ishlatiladi: u tugashni `finished` signali orqali
+        asinxron kutadi. Tugamagan thread'lar graveyard'da xavfsiz saqlanadi.
+        """
         if self._is_destroyed:
             return
         self._is_destroyed = True
@@ -2648,7 +2654,7 @@ class CrossingCard(QWidget):
             except Exception:
                 pass
             self._plc_manager = None
-        self.stop_cameras()
+        self.stop_cameras(wait_ms=wait_ms)
         # ANPR fon thread'ini to'xtatish
         if self._anpr_worker is not None:
             try:

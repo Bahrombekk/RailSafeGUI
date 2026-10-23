@@ -300,35 +300,18 @@ class Dashboard(QWidget):
         old_workers = []
         for card in old_cards:
             try:
-                card._is_destroyed = True
+                # Worker ro'yxatini cleanup() uni tozalashidan OLDIN olamiz —
+                # pastda tugashini kutish uchun kerak.
+                old_workers.extend(getattr(card, 'camera_workers', []))
 
-                # Timers
-                for attr in ('_midnight_timer', '_state_timer', '_plc_timer', '_train_timer'):
-                    try:
-                        getattr(card, attr).stop()
-                    except Exception:
-                        pass
-
-                # PLC (non-blocking)
-                plc = getattr(card, '_plc_manager', None)
-                if plc:
-                    plc._running = False
-                    card._plc_manager = None
-
-                # Camera signals uzish + stop signali
-                for w in getattr(card, 'camera_workers', []):
-                    for sig in ('frame_ready', 'status_changed', 'stats_updated'):
-                        try:
-                            getattr(w, sig).disconnect()
-                        except Exception:
-                            pass
-                    try:
-                        w._running = False
-                        w.quit()
-                        old_workers.append(w)
-                    except Exception:
-                        pass
-                card.camera_workers.clear()
+                # To'xtatish mantig'i CrossingCard ichida — bu yerda TAKRORLANMAYDI.
+                # Ilgari shu yerda qo'lda yozilgan edi va uchta narsa sizib ketardi:
+                # PLC faqat `_running = False` bilan to'xtatilib, snap7 soketi
+                # uzilmasdi; ANPR fon thread'i umuman to'xtatilmasdi; yig'ilgan
+                # turish vaqtlari bazaga yozilmay yo'qolardi. `_grace_timer` ham
+                # to'xtatilmay qolardi. cleanup() bularning hammasini bajaradi.
+                # wait_ms=0 — GUI bloklanmaydi, tugashini quyida asinxron kutamiz.
+                card.cleanup(wait_ms=0)
 
                 card.setParent(None)
                 card.deleteLater()
