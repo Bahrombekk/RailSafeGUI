@@ -17,7 +17,8 @@ from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                               QSpinBox, QCheckBox, QFileDialog, QComboBox,
                               QMessageBox, QTabWidget, QWidget, QRadioButton,
                               QButtonGroup, QProgressBar, QFrame, QScrollArea,
-                              QApplication, QStackedWidget)
+                              QApplication, QStackedWidget, QListWidget,
+                              QListWidgetItem)
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QThread, QPoint
 from PyQt6.QtGui import (QFont, QPainter, QPen, QColor, QPixmap, QImage,
                          QPolygon)
@@ -265,6 +266,16 @@ class StyledSpinBox(QSpinBox):
         """)
 
 
+def _check_icon_url() -> str:
+    """Belgilangan QCheckBox uchun ✓ ikonkasi. QSS indikatorni o'zimiz
+    bo'yaganimiz uchun native belgi chizilmaydi — rasm bilan beramiz.
+    Rang accent_brand fonining yorqinligiga qarab tanlanadi."""
+    from app.utils.theme_colors import luminance
+    variant = "dark" if luminance(C('accent_brand')) > 0.58 else "light"
+    p = Path(__file__).resolve().parent.parent / "assets" / "icons" / f"check_{variant}.svg"
+    return p.as_posix()
+
+
 def _dialog_style():
     return f"""
     QDialog {{
@@ -326,6 +337,7 @@ def _dialog_style():
     QCheckBox::indicator:checked {{
         background: {C('accent_brand')};
         border-color: {C('accent_brand')};
+        image: url("{_check_icon_url()}");
     }}
     QGroupBox {{
         color: {C('text_secondary')};
@@ -378,6 +390,10 @@ def _dialog_style():
     QPushButton:hover {{
         background-color: {C('bg_hover')};
         border-color: {C('text_dim')};
+    }}
+    QPushButton#iconButton {{
+        padding: 0;
+        font-size: 15px;
     }}
     QPushButton#successButton {{
         background-color: {C('accent_brand')};
@@ -900,6 +916,1045 @@ class PolygonDrawDialog(QDialog):
         return seg
 
 
+# ─── RTSP yordamchi: brend + IP + login/parol → tayyor URL ───────────
+#
+# Operator odatda RTSP URL'ni bilmaydi, lekin kamera brendi, IP manzili va
+# login/paroli ma'lum. Quyidagi shablonlar eng ko'p uchraydigan brendlarni
+# qamraydi. {ch} — kanal, {s0} — 0/1 (asosiy/qo'shimcha oqim), {s1} — 1/2,
+# {hk} — Hikvision kanal kodi (ch*100 + s1, masalan 3-kanal asosiy = 301).
+
+_RTSP_BRANDS = [
+    ("hikvision", "Hikvision / HiWatch", "/Streaming/Channels/{hk}"),
+    ("dahua", "Dahua / Imou / Amcrest", "/cam/realmonitor?channel={ch}&subtype={s0}"),
+    ("uniview", "Uniview (UNV)", "/unicast/c{ch}/s{s0}/live"),
+    ("tplink", "TP-Link Tapo / VIGI", "/stream{s1}"),
+    ("axis", "Axis", "/axis-media/media.amp?camera={ch}"),
+    ("custom", None, None),   # yo'lni foydalanuvchi o'zi yozadi
+]
+
+# Mavjud URL'ni maydonlarga qaytarish uchun (tahrirlashda)
+_RTSP_PARSERS = [
+    ("hikvision", re.compile(r"^/Streaming/Channels/(\d+)/?$", re.I),
+     lambda m: (int(m[1]) // 100 or 1, int(m[1]) % 100 == 2)),
+    ("dahua", re.compile(r"^/cam/realmonitor\?channel=(\d+)&subtype=(\d)", re.I),
+     lambda m: (int(m[1]), m[2] != "0")),
+    ("uniview", re.compile(r"^/unicast/c(\d+)/s(\d)/live", re.I),
+     lambda m: (int(m[1]), m[2] != "0")),
+    ("tplink", re.compile(r"^/stream([12])$", re.I),
+     lambda m: (1, m[1] == "2")),
+    ("axis", re.compile(r"^/axis-media/media\.amp(?:\?camera=(\d+))?", re.I),
+     lambda m: (int(m[1] or 1), False)),
+]
+
+
+def _rtsp_quote(s: str) -> str:
+    """Login/parolda @ : / kabi belgilar bo'lsa URL buziladi — faqat shunda
+    kodlaymiz (FFmpeg userinfo'ni o'zi dekodlaydi). Oddiy parol o'zgarmaydi."""
+    from urllib.parse import quote
+    return quote(s, safe="") if any(c in s for c in "@:/?#%[] ") else s
+
+
+def _build_rtsp_url(brand, ip, port, user, pwd, ch, sub, custom_path="") -> str:
+    tpl = next((b[2] for b in _RTSP_BRANDS if b[0] == brand), None)
+    if tpl is None:
+        path = custom_path.strip() or "/"
+    else:
+        s0, s1 = (1, 2) if sub else (0, 1)
+        path = tpl.format(ch=ch, s0=s0, s1=s1, hk=ch * 100 + s1)
+    if not path.startswith("/"):
+        path = "/" + path
+    cred = ""
+    if user:
+        cred = _rtsp_quote(user) + (":" + _rtsp_quote(pwd) if pwd else "") + "@"
+    return f"rtsp://{cred}{ip.strip()}:{port}{path}"
+
+
+def _mask_rtsp_password(url: str) -> str:
+    """URL'ni ko'rsatish uchun parolni yashirish (ekranda/tooltipda turmasin)."""
+    return re.sub(r"(rtsp://[^:/@]+:)[^@]*@", r"\1•••@", url, count=1)
+
+
+def _parse_rtsp_url(url: str):
+    """rtsp URL → dict (brand, ip, port, user, pwd, ch, sub, path) yoki None."""
+    from urllib.parse import urlsplit, unquote
+    if not url.lower().startswith("rtsp://"):
+        return None
+    try:
+        sp = urlsplit(url)
+        port = sp.port or 554
+    except ValueError:
+        return None
+    path = (sp.path or "/") + (f"?{sp.query}" if sp.query else "")
+    info = {"ip": sp.hostname or "", "port": port,
+            "user": unquote(sp.username or ""), "pwd": unquote(sp.password or ""),
+            "brand": "custom", "ch": 1, "sub": False, "path": path}
+    for key, rx, fn in _RTSP_PARSERS:
+        m = rx.match(path)
+        if m:
+            info["brand"] = key
+            info["ch"], info["sub"] = fn(m)
+            break
+    return info
+
+
+def _rtsp_read_response(sock):
+    buf = b""
+    while b"\r\n\r\n" not in buf and len(buf) < 65536:
+        chunk = sock.recv(4096)
+        if not chunk:
+            break
+        buf += chunk
+    head = buf.split(b"\r\n\r\n", 1)[0].decode("latin-1", "ignore")
+    lines = head.split("\r\n")
+    m = re.match(r"RTSP/\d\.\d\s+(\d{3})", lines[0] if lines else "")
+    if not m:
+        return -1, {}
+    headers = {}
+    for ln in lines[1:]:
+        k, _, v = ln.partition(":")
+        headers.setdefault(k.strip().lower(), []).append(v.strip())
+    # Tanani (masalan SDP) o'qib tashlaymiz — soket keyingi so'rovga toza qolsin
+    try:
+        left = int(headers.get("content-length", ["0"])[0])
+    except ValueError:
+        left = 0
+    left -= len(buf.split(b"\r\n\r\n", 1)[1]) if b"\r\n\r\n" in buf else 0
+    while 0 < left <= 65536:
+        chunk = sock.recv(min(left, 4096))
+        if not chunk:
+            break
+        left -= len(chunk)
+    return int(m[1]), headers
+
+
+def _rtsp_auth_header(challenges, user, pwd, method, uri):
+    """WWW-Authenticate javobidan Authorization sarlavhasi (Digest afzal)."""
+    import base64
+    digest = next((c for c in challenges if c.lower().startswith("digest")), None)
+    if digest:
+        p = dict(re.findall(r'(\w+)="?([^",]*)"?', digest[6:]))
+        realm, nonce = p.get("realm", ""), p.get("nonce", "")
+        md5 = lambda s: hashlib.md5(s.encode("utf-8")).hexdigest()
+        ha1 = md5(f"{user}:{realm}:{pwd}")
+        ha2 = md5(f"{method}:{uri}")
+        parts = [f'username="{user}"', f'realm="{realm}"', f'nonce="{nonce}"',
+                 f'uri="{uri}"']
+        if "auth" in p.get("qop", "").split(","):
+            nc, cnonce = "00000001", secrets.token_hex(8)
+            resp = md5(f"{ha1}:{nonce}:{nc}:{cnonce}:auth:{ha2}")
+            parts += [f"qop=auth", f"nc={nc}", f'cnonce="{cnonce}"']
+        else:
+            resp = md5(f"{ha1}:{nonce}:{ha2}")
+        parts.append(f'response="{resp}"')
+        if "opaque" in p:
+            parts.append(f'opaque="{p["opaque"]}"')
+        return "Digest " + ", ".join(parts)
+    if any(c.lower().startswith("basic") for c in challenges):
+        return "Basic " + base64.b64encode(f"{user}:{pwd}".encode()).decode()
+    return None
+
+
+def _rtsp_describe(url: str, timeout: float = 3.0) -> int:
+    """RTSP DESCRIBE so'rovi — kadr dekodlamasdan TEZ tekshiruv.
+    Qaytaradi: 200 (ishlaydi), 401 (login/parol xato), 404 va h.k. (yo'l xato),
+    0 (IP/portga ulanib bo'lmadi), -1 (bu port RTSP emas)."""
+    import socket
+    from urllib.parse import urlsplit, unquote
+    sp = urlsplit(url)
+    host, port = sp.hostname, sp.port or 554
+    user, pwd = unquote(sp.username or ""), unquote(sp.password or "")
+    path = (sp.path or "/") + (f"?{sp.query}" if sp.query else "")
+    clean = f"rtsp://{host}:{port}{path}"
+
+    def _send(s, cseq, auth=None):
+        lines = [f"DESCRIBE {clean} RTSP/1.0", f"CSeq: {cseq}",
+                 "Accept: application/sdp", "User-Agent: RailSafe"]
+        if auth:
+            lines.append(f"Authorization: {auth}")
+        s.sendall(("\r\n".join(lines) + "\r\n\r\n").encode("utf-8"))
+        return _rtsp_read_response(s)
+
+    try:
+        s = socket.create_connection((host, port), timeout=timeout)
+    except OSError:
+        return 0
+    with s:
+        try:
+            s.settimeout(timeout)
+            code, headers = _send(s, 1)
+            if code != 401 or not user:
+                return code
+            auth = _rtsp_auth_header(headers.get("www-authenticate", []),
+                                     user, pwd, "DESCRIBE", clean)
+            if not auth:
+                return code
+            # MUHIM: Hikvision nonce'ni ULANISHGA bog'laydi — xuddi shu
+            # soketda qayta so'raymiz (yangi ulanishda 401 qaytadi).
+            try:
+                return _send(s, 2, auth)[0]
+            except OSError:
+                pass   # 401 dan keyin uzadigan kameralar — yangi ulanishda
+        except OSError:
+            return -1
+    try:
+        with socket.create_connection((host, port), timeout=timeout) as s2:
+            s2.settimeout(timeout)
+            return _send(s2, 2, auth)[0]
+    except OSError:
+        return -1
+
+
+def _onvif_discover(timeout: float = 3.0):
+    """WS-Discovery: lokal tarmoqdagi ONVIF kameralarni topadi.
+    Qaytaradi: [(ip, "Brend Model"), ...]"""
+    import socket
+    import select
+    import time
+    import uuid
+    from urllib.parse import unquote
+    probe = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<e:Envelope xmlns:e="http://www.w3.org/2003/05/soap-envelope" '
+        'xmlns:w="http://schemas.xmlsoap.org/ws/2004/08/addressing" '
+        'xmlns:d="http://schemas.xmlsoap.org/ws/2005/04/discovery" '
+        'xmlns:dn="http://www.onvif.org/ver10/network/wsdl">'
+        f'<e:Header><w:MessageID>uuid:{uuid.uuid4()}</w:MessageID>'
+        '<w:To e:mustUnderstand="true">urn:schemas-xmlsoap-org:ws:2005:04:discovery</w:To>'
+        '<w:Action e:mustUnderstand="true">'
+        'http://schemas.xmlsoap.org/ws/2005/04/discovery/Probe</w:Action></e:Header>'
+        '<e:Body><d:Probe><d:Types>dn:NetworkVideoTransmitter</d:Types></d:Probe>'
+        '</e:Body></e:Envelope>').encode("utf-8")
+
+    # Bir nechta tarmoq kartasi bo'lsa (kamera tarmog'i alohida) — har biridan
+    local_ips = {"0.0.0.0"}
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            local_ips.add(info[4][0])
+    except OSError:
+        pass
+    socks = []
+    for lip in local_ips:
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+            s.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 2)
+            if lip != "0.0.0.0":
+                s.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF,
+                             socket.inet_aton(lip))
+                s.bind((lip, 0))
+            s.setblocking(False)
+            s.sendto(probe, ("239.255.255.250", 3702))
+            socks.append(s)
+        except OSError:
+            pass
+
+    found = {}
+    end = time.time() + timeout
+    try:
+        while socks and time.time() < end:
+            ready, _, _ = select.select(socks, [], [], 0.2)
+            for s in ready:
+                try:
+                    data, addr = s.recvfrom(65535)
+                except OSError:
+                    continue
+                text = data.decode("utf-8", "ignore")
+                scopes = re.search(r"<[^>]*Scopes[^>]*>([^<]*)<", text)
+                scopes = scopes[1] if scopes else ""
+                name = re.search(r"onvif://www\.onvif\.org/name/(\S+)", scopes)
+                hw = re.search(r"onvif://www\.onvif\.org/hardware/(\S+)", scopes)
+                hint = " ".join(unquote(m[1]) for m in (name, hw) if m)
+                found[addr[0]] = hint
+    finally:
+        for s in socks:
+            s.close()
+
+    def _ip_key(ip):
+        try:
+            return tuple(int(x) for x in ip.split("."))
+        except ValueError:
+            return (999,)
+    return sorted(found.items(), key=lambda kv: _ip_key(kv[0]))
+
+
+def _guess_brand(hint: str) -> str:
+    h = hint.lower()
+    for key, words in (("hikvision", ("hikvision", "hiwatch", "ds-")),
+                       ("dahua", ("dahua", "imou", "amcrest", "ipc-h")),
+                       ("uniview", ("uniview", "unv", "ipc2", "ipc3")),
+                       ("tplink", ("tp-link", "tplink", "tapo", "vigi")),
+                       ("axis", ("axis",))):
+        if any(w in h for w in words):
+            return key
+    return ""
+
+
+# ─── Avto-topish: IP + login + parol → tayyor RTSP manzillar ─────────
+#
+# Operator RTSP yo'lini bilishi SHART EMAS. Ikki bosqich ishlatiladi:
+#   1) ONVIF Media GetStreamUri — manzilni kameraning O'ZI aytadi, shu sabab
+#      brend jadvalida yo'q qurilmalar ham ishlaydi (eng ishonchli yo'l).
+#   2) ONVIF javob bermasa — brend shablonlari bo'yicha kanallarni skanerlash
+#      (NVR'ga ulangan bir necha kamera shu yo'l bilan topiladi).
+# Ikkalasi ham faqat stdlib (urllib/socket) — qo'shimcha dependency yo'q.
+
+_ONVIF_PORTS = (80, 8000, 8899, 8080, 2020)
+
+
+def _rtsp_with_credentials(url: str, user: str, pwd: str) -> str:
+    """ONVIF qaytargan manzilga login/parolni qo'shish.
+
+    Kameralar odatda URL'ni userinfo'siz qaytaradi — uni shundayligicha
+    saqlasak oqim 401 bilan ochilmaydi."""
+    from urllib.parse import urlsplit
+    if not user:
+        return url
+    try:
+        sp = urlsplit(url)
+    except ValueError:
+        return url
+    if sp.username or not sp.hostname:
+        return url
+    port = f":{sp.port}" if sp.port else ""
+    tail = (sp.path or "/") + (f"?{sp.query}" if sp.query else "")
+    cred = _rtsp_quote(user) + (":" + _rtsp_quote(pwd) if pwd else "")
+    return f"rtsp://{cred}@{sp.hostname}{port}{tail}"
+
+
+def _onvif_post(url: str, body: str, user: str, pwd: str, timeout: float):
+    """ONVIF SOAP so'rovi (WS-UsernameToken PasswordDigest). Javob matni yoki None.
+
+    Digest parolni tarmoqda ochiq yubormaydi: sha1(nonce + created + parol).
+    Kamera auth talab qilmasa ham bu sarlavha zarar qilmaydi."""
+    import base64
+    import urllib.request
+    import urllib.error
+    from datetime import datetime, timezone
+    from xml.sax.saxutils import escape as _esc
+
+    sec = ""
+    if user:
+        nonce = secrets.token_bytes(16)
+        created = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        digest = base64.b64encode(
+            hashlib.sha1(nonce + created.encode() + pwd.encode()).digest()).decode()
+        wsse = ("http://docs.oasis-open.org/wss/2004/01/"
+                "oasis-200401-wss-wssecurity-secext-1.0.xsd")
+        wsu = ("http://docs.oasis-open.org/wss/2004/01/"
+               "oasis-200401-wss-wssecurity-utility-1.0.xsd")
+        sec = (
+            f'<s:Header><Security s:mustUnderstand="1" xmlns="{wsse}">'
+            f'<UsernameToken><Username>{_esc(user)}</Username>'
+            '<Password Type="http://docs.oasis-open.org/wss/2004/01/'
+            'oasis-200401-wss-username-token-profile-1.0#PasswordDigest">'
+            f'{digest}</Password>'
+            '<Nonce EncodingType="http://docs.oasis-open.org/wss/2004/01/'
+            'oasis-200401-wss-soap-message-security-1.0#Base64Binary">'
+            f'{base64.b64encode(nonce).decode()}</Nonce>'
+            f'<Created xmlns="{wsu}">{created}</Created>'
+            '</UsernameToken></Security></s:Header>')
+
+    env = ('<?xml version="1.0" encoding="UTF-8"?>'
+           '<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope" '
+           'xmlns:tds="http://www.onvif.org/ver10/device/wsdl" '
+           'xmlns:trt="http://www.onvif.org/ver10/media/wsdl" '
+           'xmlns:tt="http://www.onvif.org/ver10/schema">'
+           f'{sec}<s:Body>{body}</s:Body></s:Envelope>')
+    req = urllib.request.Request(
+        url, data=env.encode("utf-8"), method="POST",
+        headers={"Content-Type": "application/soap+xml; charset=utf-8"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return r.read().decode("utf-8", "ignore")
+    except urllib.error.HTTPError:
+        # SOAP Fault (401/400/500) — bu portda gaplashib bo'lmadi, keyingisiga
+        return None
+    except (OSError, ValueError):
+        return None
+
+
+def _onvif_stream_uris(ip: str, user: str, pwd: str, timeout: float = 4.0,
+                       report=None) -> list:
+    """Kameradan RTSP manzillarini ONVIF orqali so'rash.
+
+    Returns: [(profil_nomi, rtsp_url), ...] yoki [] (ONVIF yo'q/javob bermadi).
+    """
+    for port in _ONVIF_PORTS:
+        base = f"http://{ip}:{port}/onvif/device_service"
+        caps = _onvif_post(
+            base, '<tds:GetCapabilities><tds:Category>Media</tds:Category>'
+                  '</tds:GetCapabilities>', user, pwd, timeout)
+        if caps is None:
+            continue
+        if report:
+            report(t("rtsp.find_onvif", port=port))
+        # Media xizmati boshqa manzilda bo'lishi mumkin (XAddr) — bo'lmasa
+        # ko'p kamerada device_service'ning o'zi media so'rovlarini ham qabul qiladi
+        m = re.search(r"<[^>]*XAddr>\s*(http[^<\s]+)", caps)
+        media = m[1].strip() if m else base
+
+        profiles = _onvif_post(media, "<trt:GetProfiles/>", user, pwd, timeout)
+        if not profiles:
+            continue
+
+        out = []
+        # Har bir <Profiles> bloki: token atributi + ichidagi birinchi <Name>
+        for blk in re.split(r"<(?:\w+:)?Profiles\b", profiles)[1:]:
+            tk = re.search(r'token="([^"]+)"', blk)
+            if not tk:
+                continue
+            nm = re.search(r"<(?:\w+:)?Name>([^<]*)<", blk)
+            name = (nm[1] if nm else tk[1]).strip()
+            from xml.sax.saxutils import escape as _esc
+            body = ('<trt:GetStreamUri><trt:StreamSetup>'
+                    '<tt:Stream>RTP-Unicast</tt:Stream>'
+                    '<tt:Transport><tt:Protocol>RTSP</tt:Protocol></tt:Transport>'
+                    '</trt:StreamSetup>'
+                    f'<trt:ProfileToken>{_esc(tk[1])}</trt:ProfileToken>'
+                    '</trt:GetStreamUri>')
+            resp = _onvif_post(media, body, user, pwd, timeout)
+            if not resp:
+                continue
+            uri = re.search(r"<(?:\w+:)?Uri>\s*([^<\s]+)", resp)
+            if uri and uri[1].lower().startswith("rtsp://"):
+                out.append((name, _rtsp_with_credentials(uri[1], user, pwd)))
+        if out:
+            return out
+    return []
+
+
+def _rtsp_scan_channels(ip: str, port: int, user: str, pwd: str,
+                        max_ch: int = 16, timeout: float = 2.5,
+                        report=None, cancel=None) -> dict:
+    """Brend shablonlari bo'yicha ishlaydigan oqimlarni topish.
+
+    Avval 1-kanalda QAYSI brend javob berishini aniqlaymiz (ko'pi bilan 5 ta
+    so'rov), so'ng faqat o'sha brendning kanallarini tekshiramiz. Shu sabab
+    NVR'dagi 8 kanal o'nlab emas, ~20 ta so'rovda topiladi. Ketma-ket ikki
+    kanal bo'sh chiqsa to'xtaymiz — NVR kanallari odatda uzluksiz.
+
+    Returns: {"status": ok|unreachable|not_rtsp|auth|none,
+              "brand": <key|None>, "streams": [(label, url), ...]}
+    """
+    def _stop():
+        return bool(cancel and cancel())
+
+    brand, seen_401 = None, False
+    for key, label, tpl in _RTSP_BRANDS:
+        if tpl is None or _stop():
+            continue
+        if report:
+            report(t("rtsp.auto_running", brand=label))
+        code = _rtsp_describe(_build_rtsp_url(key, ip, port, user, pwd, 1, False),
+                              timeout)
+        if code == 0:
+            return {"status": "unreachable", "brand": None, "streams": []}
+        if code == -1:
+            return {"status": "not_rtsp", "brand": None, "streams": []}
+        if code == 200:
+            brand = key
+            break
+        seen_401 = seen_401 or code == 401
+
+    if brand is None:
+        return {"status": "auth" if seen_401 else "none",
+                "brand": None, "streams": []}
+
+    streams, empty_run = [], 0
+    for ch in range(1, max_ch + 1):
+        if _stop():
+            break
+        if report:
+            report(t("rtsp.find_channel", ch=ch))
+        found_here = False
+        for sub in (False, True):
+            url = _build_rtsp_url(brand, ip, port, user, pwd, ch, sub)
+            if _rtsp_describe(url, timeout) == 200:
+                streams.append((t("rtsp.find_label_sub", ch=ch) if sub
+                                else t("rtsp.find_label_main", ch=ch), url))
+                found_here = True
+        empty_run = 0 if found_here else empty_run + 1
+        if empty_run >= 2:
+            break
+
+    return {"status": "ok" if streams else "none",
+            "brand": brand, "streams": streams}
+
+
+def _find_camera_streams(ip: str, port: int, user: str, pwd: str,
+                         report=None, cancel=None) -> dict:
+    """IP + login + parol → topilgan RTSP oqimlar. Avval ONVIF, keyin skanerlash."""
+    if report:
+        report(t("rtsp.find_trying_onvif"))
+    if not (cancel and cancel()):
+        uris = _onvif_stream_uris(ip, user, pwd, report=report)
+        if uris:
+            return {"status": "ok", "brand": None, "source": "onvif",
+                    "streams": uris}
+    res = _rtsp_scan_channels(ip, port, user, pwd,
+                              report=report, cancel=cancel)
+    res["source"] = "scan"
+    return res
+
+
+class _FuncWorker(QThread):
+    """Funksiyani FON threadida bajaradi. fn(report) — report(str) bilan
+    jarayon holatini GUI'ga yuboradi. done: natija (yoki Exception)."""
+    done = pyqtSignal(object)
+    progress = pyqtSignal(str)
+
+    def __init__(self, fn):
+        super().__init__()
+        self._fn = fn
+
+    def run(self):
+        try:
+            res = self._fn(self.progress.emit)
+        except Exception as e:
+            res = e
+        self.done.emit(res)
+
+
+# Ishlayotgan workerlar — dialog yopilsa ham thread tugaguncha GC o'chirmasin
+_LIVE_WORKERS = set()
+
+
+class RtspWizardDialog(QDialog):
+    """Kamerani qo'shish yordamchisi.
+
+    ODDIY YO'L (asosiy): IP + login + parol → "Topish" → dastur RTSP
+    manzil(lar)ini o'zi aniqlaydi (ONVIF, bo'lmasa brend shablonlari bo'yicha
+    kanallarni skanerlash). Operator RTSP yo'lini bilishi shart emas.
+
+    QO'SHIMCHA (yig'ilgan holda): brend/port/kanal/oqim/yo'lni qo'lda sozlash —
+    avto-topish ishlamaganda yoki nostandart qurilmalar uchun.
+
+    Natija: `result_url` (asosiy) va `result_urls` (belgilangan hammasi —
+    NVR'ning bir necha kanalini bir yo'la qo'shish uchun).
+    """
+
+    def __init__(self, current_url: str = "", parent=None):
+        super().__init__(parent)
+        self.result_url = ""
+        self.result_urls = []
+        self._worker = None
+        self._closing = False
+        self.setWindowTitle(t("rtsp.title"))
+        self.setMinimumWidth(640)
+        self.setStyleSheet(_dialog_style())
+        self._setup_ui()
+        info = _parse_rtsp_url(current_url) if current_url else None
+        if info:
+            self._fill(info)
+        self._update_preview()
+
+    # ── UI ──
+    def _setup_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setSpacing(14)
+
+        title = QLabel(t("rtsp.title"))
+        title.setObjectName("titleLabel")
+        layout.addWidget(title)
+
+        intro = QLabel(t("rtsp.intro"))
+        intro.setWordWrap(True)
+        intro.setStyleSheet(f"color: {C('text_muted')}; font-size: 12px;")
+        layout.addWidget(intro)
+
+        # ── 1-qadam: IP, login, parol (operator shuncha narsani biladi) ──
+        simple = QFormLayout()
+        simple.setSpacing(10)
+
+        ip_row = QHBoxLayout()
+        self.ip_input = QLineEdit()
+        self.ip_input.setPlaceholderText("192.168.1.64")
+        self.ip_input.textChanged.connect(self._on_ip_changed)
+        self.ip_input.editingFinished.connect(self._split_ip_port)
+        ip_row.addWidget(self.ip_input, 1)
+        self.scan_btn = QPushButton(t("rtsp.scan"))
+        self.scan_btn.setToolTip(t("rtsp.scan_tip"))
+        self.scan_btn.clicked.connect(self._scan)
+        ip_row.addWidget(self.scan_btn)
+        simple.addRow(t("rtsp.ip"), ip_row)
+
+        self.found_combo = _no_wheel(QComboBox())
+        self.found_combo.setVisible(False)
+        self.found_combo.activated.connect(self._pick_found)
+        simple.addRow("", self.found_combo)
+
+        self.user_input = QLineEdit("admin")
+        self.user_input.textChanged.connect(self._update_preview)
+        simple.addRow(t("rtsp.user"), self.user_input)
+
+        pwd_row = QHBoxLayout()
+        self.pwd_input = QLineEdit()
+        self.pwd_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.pwd_input.textChanged.connect(self._update_preview)
+        # Enter bosilsa darhol qidirish boshlansin — tugmani izlash shart emas
+        self.pwd_input.returnPressed.connect(self._find_streams)
+        pwd_row.addWidget(self.pwd_input, 1)
+        eye_btn = QPushButton("👁")
+        eye_btn.setObjectName("iconButton")
+        eye_btn.setFixedSize(40, 36)
+        eye_btn.setCheckable(True)
+        eye_btn.setToolTip(t("rtsp.show_pwd"))
+        eye_btn.toggled.connect(lambda on: self.pwd_input.setEchoMode(
+            QLineEdit.EchoMode.Normal if on else QLineEdit.EchoMode.Password))
+        pwd_row.addWidget(eye_btn)
+        simple.addRow(t("rtsp.password"), pwd_row)
+        layout.addLayout(simple)
+
+        self.find_btn = QPushButton(t("rtsp.find"))
+        self.find_btn.setObjectName("successButton")
+        self.find_btn.setMinimumHeight(40)
+        self.find_btn.setToolTip(t("rtsp.find_tip"))
+        self.find_btn.clicked.connect(self._find_streams)
+        layout.addWidget(self.find_btn)
+
+        # ── Topilgan oqimlar: belgilanganlari kamera bo'lib qo'shiladi ──
+        self.found_list = QListWidget()
+        self.found_list.setVisible(False)
+        self.found_list.setMaximumHeight(170)
+        self.found_list.itemChanged.connect(self._on_stream_checked)
+        self.found_list.currentRowChanged.connect(self._on_stream_current)
+        layout.addWidget(self.found_list)
+
+        # ── Qo'shimcha: qo'lda sozlash (odatda kerak emas, yig'ilgan) ──
+        self.adv_btn = QPushButton(t("rtsp.advanced_show"))
+        self.adv_btn.setCheckable(True)
+        self.adv_btn.setStyleSheet(
+            f"QPushButton {{ background: transparent; border: none; "
+            f"color: {C('text_muted')}; text-align: left; padding: 2px; }}")
+        self.adv_btn.toggled.connect(self._toggle_advanced)
+        layout.addWidget(self.adv_btn)
+
+        self.adv_box = QWidget()
+        form = QFormLayout(self.adv_box)
+        form.setContentsMargins(0, 0, 0, 0)
+        form.setSpacing(10)
+
+        self.brand_combo = _no_wheel(QComboBox())
+        for key, label, _ in _RTSP_BRANDS:
+            self.brand_combo.addItem(label or t("rtsp.brand_custom"), key)
+        self.brand_combo.currentIndexChanged.connect(self._on_brand_changed)
+        form.addRow(t("rtsp.brand"), self.brand_combo)
+
+        self.port_spin = _no_wheel(QSpinBox())
+        self.port_spin.setRange(1, 65535)
+        self.port_spin.setValue(554)
+        self.port_spin.setFixedWidth(100)
+        self.port_spin.valueChanged.connect(self._update_preview)
+        form.addRow(t("rtsp.port"), self.port_spin)
+
+        ch_row = QHBoxLayout()
+        self.ch_spin = _no_wheel(QSpinBox())
+        self.ch_spin.setRange(1, 256)
+        self.ch_spin.setFixedWidth(100)
+        self.ch_spin.valueChanged.connect(self._update_preview)
+        ch_row.addWidget(self.ch_spin)
+        ch_hint = QLabel(t("rtsp.channel_hint"))
+        ch_hint.setWordWrap(True)
+        ch_hint.setStyleSheet(f"color: {C('text_muted')}; font-size: 11px;")
+        ch_row.addWidget(ch_hint, 1)
+        form.addRow(t("rtsp.channel"), ch_row)
+
+        self.stream_combo = _no_wheel(QComboBox())
+        self.stream_combo.addItems([t("rtsp.stream_main"), t("rtsp.stream_sub")])
+        self.stream_combo.currentIndexChanged.connect(self._update_preview)
+        form.addRow(t("rtsp.stream"), self.stream_combo)
+
+        self.path_input = QLineEdit()
+        self.path_input.setPlaceholderText("/stream1")
+        self.path_input.textChanged.connect(self._update_preview)
+        self._path_label = QLabel(t("rtsp.path"))
+        form.addRow(self._path_label, self.path_input)
+
+        self.adv_box.setVisible(False)
+        layout.addWidget(self.adv_box)
+
+        # URL — har doim ko'rinadi (natija shu, nusxa olish mumkin)
+        url_row = QFormLayout()
+        self.url_preview = QLineEdit()
+        self.url_preview.setReadOnly(True)
+        self.url_preview.setStyleSheet(
+            f"color: {C('accent_brand')}; font-family: Consolas, monospace;")
+        url_row.addRow(t("rtsp.url"), self.url_preview)
+        layout.addLayout(url_row)
+
+        # Natija: holat matni + kadr
+        self.status_label = QLabel("")
+        self.status_label.setWordWrap(True)
+        self.status_label.setVisible(False)
+        layout.addWidget(self.status_label)
+        self.thumb_label = QLabel()
+        self.thumb_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.thumb_label.setVisible(False)
+        layout.addWidget(self.thumb_label)
+
+        btns = QHBoxLayout()
+        self.auto_btn = QPushButton(t("rtsp.auto"))
+        self.auto_btn.setToolTip(t("rtsp.auto_tip"))
+        self.auto_btn.clicked.connect(self._auto_detect)
+        btns.addWidget(self.auto_btn)
+        self.test_btn = QPushButton(t("rtsp.test"))
+        self.test_btn.clicked.connect(self._test)
+        btns.addWidget(self.test_btn)
+        btns.addStretch()
+        cancel_btn = QPushButton(f"❌ {t('dlg.add_camera.cancel')}")
+        cancel_btn.clicked.connect(self.reject)
+        btns.addWidget(cancel_btn)
+        apply_btn = QPushButton(t("rtsp.apply"))
+        apply_btn.setObjectName("successButton")
+        apply_btn.clicked.connect(self._apply)
+        btns.addWidget(apply_btn)
+        layout.addLayout(btns)
+
+        self._on_brand_changed()
+
+    def _toggle_advanced(self, on: bool):
+        self.adv_box.setVisible(on)
+        self.adv_btn.setText(t("rtsp.advanced_hide") if on
+                             else t("rtsp.advanced_show"))
+        self.adjustSize()
+
+    def _fill(self, info, open_advanced: bool = True):
+        idx = self.brand_combo.findData(info["brand"])
+        self.brand_combo.setCurrentIndex(max(idx, 0))
+        self.ip_input.setText(info["ip"])
+        self.port_spin.setValue(info["port"])
+        self.user_input.setText(info["user"])
+        self.pwd_input.setText(info["pwd"])
+        self.ch_spin.setValue(info["ch"])
+        self.stream_combo.setCurrentIndex(1 if info["sub"] else 0)
+        if info["brand"] == "custom":
+            self.path_input.setText(info["path"])
+            # Shablon mos kelmadi — yo'lni faqat qo'shimcha bo'limda ko'rish/
+            # tahrirlash mumkin. Avto-topish natijasini tanlaganda esa ochmaymiz
+            # (operator uchun yo'lning o'zi ahamiyatsiz).
+            if open_advanced:
+                self.adv_btn.setChecked(True)
+
+    def _brand(self):
+        return self.brand_combo.currentData()
+
+    def _on_brand_changed(self, *_):
+        custom = self._brand() == "custom"
+        self.path_input.setVisible(custom)
+        self._path_label.setVisible(custom)
+        self.ch_spin.setEnabled(not custom and self._brand() != "tplink")
+        self.stream_combo.setEnabled(not custom and self._brand() != "axis")
+        self._update_preview()
+
+    def _on_ip_changed(self, text):
+        # To'liq rtsp URL joylashtirilsa — maydonlarga ajratamiz
+        text = text.strip()
+        if text.lower().startswith("rtsp://"):
+            info = _parse_rtsp_url(text)
+            if info:
+                QTimer.singleShot(0, lambda: self._fill(info))
+                return
+        self._update_preview()
+
+    def _split_ip_port(self):
+        # "192.168.1.64:8554" — yozib bo'lingach port maydoniga ko'chiramiz
+        m = re.fullmatch(r"([\w.\-]+):(\d{1,5})", self.ip_input.text().strip())
+        if m and 0 < int(m[2]) < 65536:
+            self.port_spin.setValue(int(m[2]))
+            self.ip_input.setText(m[1])
+
+    def _current_url(self) -> str:
+        return _build_rtsp_url(
+            self._brand(), self.ip_input.text().strip(), self.port_spin.value(),
+            self.user_input.text().strip(), self.pwd_input.text(),
+            self.ch_spin.value(), self.stream_combo.currentIndex() == 1,
+            self.path_input.text())
+
+    def _update_preview(self, *_):
+        if not self.ip_input.text().strip():
+            self.url_preview.setText("")
+            return
+        self.url_preview.setText(_mask_rtsp_password(self._current_url()))
+        self.url_preview.setCursorPosition(0)
+
+    # ── holat ──
+    def _set_status(self, text, kind="info"):
+        color = {"ok": C('accent_green'), "err": C('accent_red'),
+                 "warn": C('accent_yellow')}.get(kind, C('text_secondary'))
+        self.status_label.setStyleSheet(f"color: {color}; font-size: 12px;")
+        self.status_label.setText(text)
+        self.status_label.setVisible(bool(text))
+
+    def _busy(self, on: bool):
+        for b in (self.scan_btn, self.auto_btn, self.test_btn, self.find_btn):
+            b.setEnabled(not on)
+        if on:
+            QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        else:
+            QApplication.restoreOverrideCursor()
+
+    def _start(self, fn, on_done):
+        if self._worker is not None:
+            return
+        self._busy(True)
+        w = _FuncWorker(fn)
+        _LIVE_WORKERS.add(w)
+        w.progress.connect(self._on_progress)
+        w.done.connect(on_done)
+        w.finished.connect(lambda: _LIVE_WORKERS.discard(w))
+        self._worker = w
+        w.start()
+
+    def _finish(self):
+        self._worker = None
+        self._busy(False)
+        return not self._closing
+
+    def _on_progress(self, text):
+        if not self._closing:
+            self._set_status(text)
+
+    def _check_ip(self) -> bool:
+        self._split_ip_port()
+        if not self.ip_input.text().strip():
+            QMessageBox.warning(self, t("error.title"), t("rtsp.err_ip"))
+            self.ip_input.setFocus()
+            return False
+        return True
+
+    # ── tarmoqdan qidirish ──
+    def _scan(self):
+        self._set_status(t("rtsp.scanning"))
+        self._start(lambda report: _onvif_discover(3.0), self._on_scan_done)
+
+    def _on_scan_done(self, res):
+        if not self._finish():
+            return
+        if isinstance(res, Exception) or not res:
+            self.found_combo.setVisible(False)
+            self._set_status(t("rtsp.scan_none"), "warn")
+            return
+        self.found_combo.clear()
+        self.found_combo.addItem(t("rtsp.scan_pick"), None)
+        for ip, hint in res:
+            self.found_combo.addItem(f"{ip}  {hint}".strip(), (ip, hint))
+        self.found_combo.setVisible(True)
+        self._set_status(t("rtsp.scan_found", n=len(res)), "ok")
+        self.found_combo.showPopup()
+
+    def _pick_found(self, idx):
+        data = self.found_combo.itemData(idx)
+        if not data:
+            return
+        ip, hint = data
+        self.ip_input.setText(ip)
+        brand = _guess_brand(hint)
+        if brand:
+            self.brand_combo.setCurrentIndex(self.brand_combo.findData(brand))
+        self.pwd_input.setFocus()
+
+    # ── avto-topish: IP + login + parol → RTSP manzil(lar) ──
+    def _find_streams(self):
+        """Asosiy tugma: kameradan/ kamerada ishlaydigan oqimlarni topish."""
+        if self._worker is not None or not self._check_ip():
+            return
+        ip, port = self.ip_input.text().strip(), self.port_spin.value()
+        user, pwd = self.user_input.text().strip(), self.pwd_input.text()
+        self.found_list.setVisible(False)
+        self.found_list.clear()
+        self.thumb_label.setVisible(False)
+        self._set_status(t("rtsp.find_running"))
+
+        def work(report):
+            return _find_camera_streams(ip, port, user, pwd, report=report,
+                                        cancel=lambda: self._closing)
+        self._start(work, self._on_find_done)
+
+    def _on_find_done(self, res):
+        if not self._finish():
+            return
+        if isinstance(res, Exception):
+            self._set_status(str(res), "err")
+            return
+
+        status = res.get("status")
+        host = f"{self.ip_input.text().strip()}:{self.port_spin.value()}"
+        if status == "unreachable":
+            return self._set_status(t("rtsp.unreachable", host=host), "err")
+        if status == "not_rtsp":
+            return self._set_status(t("rtsp.not_rtsp", host=host), "err")
+        if status == "auth":
+            return self._set_status(t("rtsp.bad_auth"), "err")
+
+        streams = res.get("streams") or []
+        if not streams:
+            # Qo'lda sozlash — endi yagona yo'l, shuning uchun ochib beramiz
+            self.adv_btn.setChecked(True)
+            return self._set_status(t("rtsp.find_none"), "warn")
+
+        if res.get("brand"):
+            idx = self.brand_combo.findData(res["brand"])
+            if idx >= 0:
+                self.brand_combo.setCurrentIndex(idx)
+
+        self.found_list.blockSignals(True)
+        for label, url in streams:
+            item = QListWidgetItem(label)
+            item.setData(Qt.ItemDataRole.UserRole, url)
+            item.setToolTip(_mask_rtsp_password(url))
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            item.setCheckState(Qt.CheckState.Unchecked)
+            self.found_list.addItem(item)
+        # Birinchisi — shu kamera uchun tanlangan (odatda asosiy oqim)
+        self.found_list.item(0).setCheckState(Qt.CheckState.Checked)
+        self.found_list.blockSignals(False)
+        self.found_list.setCurrentRow(0)
+        self.found_list.setVisible(True)
+
+        key = ("rtsp.find_ok_onvif" if res.get("source") == "onvif"
+               else "rtsp.find_ok_scan")
+        self._set_status(t(key, n=len(streams)), "ok")
+        self.adjustSize()
+
+    def _on_stream_current(self, row: int):
+        """Ro'yxatdan oqim tanlansa — URL maydonlariga joylaymiz."""
+        item = self.found_list.item(row) if row >= 0 else None
+        if item is None:
+            return
+        url = item.data(Qt.ItemDataRole.UserRole)
+        info = _parse_rtsp_url(url)
+        if info:
+            self._fill(info, open_advanced=False)
+        self._update_preview()
+
+    def _on_stream_checked(self, _item):
+        """Belgilash o'zgarganda — BIRINCHI belgilangan oqim joriy kamera bo'ladi.
+
+        Belgi qo'yilgan qatorni emas, aynan birinchisini tanlaymiz: aks holda
+        qo'shimcha kanalni belgilash qo'shilayotgan kamerani almashtirib
+        yuborardi (ro'yxat tartibi — kanal tartibi)."""
+        for i in range(self.found_list.count()):
+            if self.found_list.item(i).checkState() == Qt.CheckState.Checked:
+                if self.found_list.currentRow() != i:
+                    self.found_list.setCurrentRow(i)
+                return
+
+    def _checked_urls(self) -> list:
+        """Ro'yxatda belgilangan oqimlar (ro'yxat bo'sh bo'lsa — bo'sh)."""
+        return [self.found_list.item(i).data(Qt.ItemDataRole.UserRole)
+                for i in range(self.found_list.count())
+                if self.found_list.item(i).checkState() == Qt.CheckState.Checked]
+
+    # ── sinash ──
+    @staticmethod
+    def _grab_thumb(url):
+        frame = _grab_snapshot(url, timeout=10.0)
+        if frame is None:
+            return None
+        import cv2
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        h, w = rgb.shape[:2]
+        img = QImage(rgb.data, w, h, 3 * w, QImage.Format.Format_RGB888).copy()
+        return img, w, h
+
+    def _test(self):
+        if not self._check_ip():
+            return
+        url = self._current_url()
+        self.thumb_label.setVisible(False)
+        self._set_status(t("rtsp.testing"))
+
+        def work(report):
+            code = _rtsp_describe(url)
+            thumb = None
+            if code == 200:
+                report(t("rtsp.grabbing"))
+                thumb = self._grab_thumb(url)
+            return {"code": code, "thumb": thumb, "brand": None}
+        self._start(work, self._on_test_done)
+
+    def _auto_detect(self):
+        if not self._check_ip():
+            return
+        ip, port = self.ip_input.text().strip(), self.port_spin.value()
+        user, pwd = self.user_input.text().strip(), self.pwd_input.text()
+        ch, sub = self.ch_spin.value(), self.stream_combo.currentIndex() == 1
+        self.thumb_label.setVisible(False)
+        self._set_status(t("rtsp.testing"))
+
+        def work(report):
+            seen_401 = False
+            for key, label, tpl in _RTSP_BRANDS:
+                if tpl is None or self._closing:
+                    continue
+                report(t("rtsp.auto_running", brand=label))
+                url = _build_rtsp_url(key, ip, port, user, pwd, ch, sub)
+                code = _rtsp_describe(url)
+                if code in (0, -1):          # IP/port ishlamaydi — davom etish befoyda
+                    return {"code": code, "thumb": None, "brand": None}
+                if code == 200:
+                    report(t("rtsp.grabbing"))
+                    return {"code": 200, "thumb": self._grab_thumb(url), "brand": key}
+                seen_401 = seen_401 or code == 401
+            return {"code": 401 if seen_401 else 404, "thumb": None,
+                    "brand": None, "auto": True}
+        self._start(work, self._on_test_done)
+
+    def _on_test_done(self, res):
+        if not self._finish():
+            return
+        if isinstance(res, Exception):
+            self._set_status(str(res), "err")
+            return
+        if res.get("brand"):
+            self.brand_combo.setCurrentIndex(self.brand_combo.findData(res["brand"]))
+        code = res["code"]
+        host = f"{self.ip_input.text().strip()}:{self.port_spin.value()}"
+        if code == 200:
+            if res["thumb"] is not None:
+                img, w, h = res["thumb"]
+                pix = QPixmap.fromImage(img).scaled(
+                    360, 200, Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation)
+                self.thumb_label.setPixmap(pix)
+                self.thumb_label.setVisible(True)
+                msg = t("rtsp.ok", res=f"{w}×{h}")
+            else:
+                msg = t("rtsp.ok_noframe")
+            if res.get("brand"):
+                msg = t("rtsp.auto_found", brand=self.brand_combo.currentText()) + "\n" + msg
+            self._set_status(msg, "ok")
+        elif code == 0:
+            self._set_status(t("rtsp.unreachable", host=host), "err")
+        elif code == -1:
+            self._set_status(t("rtsp.not_rtsp", host=host), "err")
+        elif code == 401:
+            self._set_status(t("rtsp.bad_auth"), "err")
+        elif res.get("auto"):
+            self._set_status(t("rtsp.auto_none"), "warn")
+        else:
+            self._set_status(t("rtsp.bad_path", code=code), "warn")
+        self.adjustSize()
+
+    def _apply(self):
+        if not self._check_ip():
+            return
+        # Birinchi o'rinda HAR DOIM maydonlardagi URL — ro'yxatdan tanlangan
+        # bo'lsa ham, qo'lda tahrirlangan bo'lsa ham, operator ekranda nimani
+        # ko'rsa o'sha qo'shiladi. Ro'yxatda belgilangan qolganlari esa
+        # chaqiruvchida qo'shimcha kamera bo'lib qo'shiladi.
+        primary = self._current_url()
+        self.result_url = primary
+        self.result_urls = [primary] + [u for u in self._checked_urls()
+                                        if u != primary]
+        self.accept()
+
+    def done(self, r):
+        self._closing = True
+        if self._worker is not None:
+            QApplication.restoreOverrideCursor()
+        super().done(r)
+
+
 class AddCameraDialog(QDialog):
     """Dialog for adding/editing a camera - auto type assignment"""
 
@@ -924,6 +1979,10 @@ class AddCameraDialog(QDialog):
             self._old_camera_name = ""
             self.setWindowTitle(t("dlg.add_camera.title_add"))
 
+        # Sehrgar topgan qo'shimcha oqimlar (NVR kanallari) — saqlashda
+        # alohida kamera bo'lib qo'shiladi
+        self._extra_sources = []
+
         # Check if main camera already exists
         self._has_main = any(
             c.get("type") == "main"
@@ -931,7 +1990,7 @@ class AddCameraDialog(QDialog):
             if not (self.is_edit and c.get("id") == camera_id)
         )
 
-        self.setMinimumWidth(600)
+        self.setMinimumWidth(720)
         self.setStyleSheet(_dialog_style())
         self._setup_ui()
 
@@ -982,24 +2041,44 @@ class AddCameraDialog(QDialog):
         self.source_input = QLineEdit()
         self.source_input.setPlaceholderText(t("dlg.add_camera.placeholder_source"))
         self.source_input.setText(self.camera_data.get("source", ""))
+        self.source_input.setCursorPosition(0)   # URL boshi (rtsp://) ko'rinsin
         source_layout.addWidget(self.source_input)
 
-        browse_btn = QPushButton("...")
-        browse_btn.setMaximumWidth(40)
+        # RTSP URL'ni bilmaganlar uchun: brend + IP + login/parol → URL
+        wizard_btn = QPushButton(t("dlg.add_camera.rtsp_wizard"))
+        wizard_btn.setObjectName("successButton")
+        wizard_btn.setToolTip(t("dlg.add_camera.rtsp_wizard_tip"))
+        wizard_btn.clicked.connect(self._open_rtsp_wizard)
+        source_layout.addWidget(wizard_btn)
+
+        browse_btn = QPushButton("📁")
+        browse_btn.setObjectName("iconButton")
+        browse_btn.setFixedSize(40, 36)
+        browse_btn.setToolTip(t("dlg.add_camera.browse_video"))
         browse_btn.clicked.connect(self._browse_source)
         source_layout.addWidget(browse_btn)
 
         form_layout.addRow(t("dlg.add_camera.source"), source_layout)
 
+        # Sehrgar bir nechta kanal topganda — qo'shimcha kameralar haqida eslatma
+        self._extra_hint = QLabel()
+        self._extra_hint.setWordWrap(True)
+        self._extra_hint.setVisible(False)
+        self._extra_hint.setStyleSheet(
+            f"color: {C('accent_green')}; font-size: 11px;")
+        form_layout.addRow("", self._extra_hint)
+
         # Polygon file
         polygon_layout = QHBoxLayout()
         self.polygon_input = QLineEdit()
-        self.polygon_input.setPlaceholderText("/path/to/polygon.json")
+        self.polygon_input.setPlaceholderText("polygons/paligon_A1.json")
         self.polygon_input.setText(self.camera_data.get("polygon_file", ""))
         polygon_layout.addWidget(self.polygon_input)
 
-        browse_polygon_btn = QPushButton("...")
-        browse_polygon_btn.setMaximumWidth(40)
+        browse_polygon_btn = QPushButton("📁")
+        browse_polygon_btn.setObjectName("iconButton")
+        browse_polygon_btn.setFixedSize(40, 36)
+        browse_polygon_btn.setToolTip(t("dlg.add_camera.browse_poly"))
         browse_polygon_btn.clicked.connect(self._browse_polygon)
         polygon_layout.addWidget(browse_polygon_btn)
 
@@ -1072,6 +2151,25 @@ class AddCameraDialog(QDialog):
             "Video Files (*.mp4 *.avi *.mkv *.mov);;All Files (*)")
         if file_path:
             self.source_input.setText(file_path)
+
+    def _open_rtsp_wizard(self):
+        dlg = RtspWizardDialog(self.source_input.text().strip(), self)
+        if not (dlg.exec() and dlg.result_url):
+            return
+        self.source_input.setText(dlg.result_url)
+        self.source_input.setCursorPosition(0)
+        # Sehrgar bir nechta oqimni qaytarishi mumkin (NVR kanallari).
+        # Birinchisi — shu kamera, qolganlari saqlashda qo'shimcha kamera
+        # bo'lib qo'shiladi (har birini qo'lda qo'shish shart emas).
+        self._extra_sources = [u for u in dlg.result_urls[1:] if u]
+        if self._extra_sources:
+            self._extra_hint.setText(
+                t("dlg.add_camera.extra_hint", n=len(self._extra_sources)))
+            self._extra_hint.setVisible(True)
+        else:
+            self._extra_hint.setVisible(False)
+        if not self.name_input.text().strip():
+            self.name_input.setFocus()
 
     def _browse_polygon(self):
         file_path, _ = QFileDialog.getOpenFileName(
@@ -1157,6 +2255,19 @@ class AddCameraDialog(QDialog):
             QMessageBox.warning(self, t("error.title"), t("dlg.add_camera.err_name"))
             return
 
+        # Nom pereezd ichida takrorlanmasligi kerak: statistika
+        # (pereezd_id, kamera_nomi) bo'yicha saqlanadi — bir xil nomli ikki
+        # kameraning sanoqlari jimgina QO'SHILIB ketardi.
+        name = self.name_input.text().strip()
+        taken = {c.get("name", "") for c in self.crossing_data.get("cameras", [])
+                 if not (self.is_edit and c.get("id") == self.camera_id)}
+        if name in taken:
+            QMessageBox.warning(self, t("error.title"),
+                                t("dlg.add_camera.err_name_dup", name=name))
+            self.name_input.setFocus()
+            self.name_input.selectAll()
+            return
+
         source = self.source_input.text().strip()
         if not source:
             QMessageBox.warning(self, t("error.title"), t("dlg.add_camera.err_source"))
@@ -1203,8 +2314,35 @@ class AddCameraDialog(QDialog):
                     self.crossing_id, self._old_camera_name, new_name)
         else:
             self.config_manager.add_camera(self.crossing_id, camera_data)
+            self._add_extra_cameras(camera_data["name"])
 
         self.accept()
+
+    def _add_extra_cameras(self, base_name: str):
+        """Sehrgar topgan qolgan oqimlarni qo'shimcha kamera qilib qo'shish.
+
+        NVR'da bir necha kanal bo'lsa, har birini alohida dialogdan o'tkazish
+        o'rniga bir yo'la qo'shiladi. Nomlar "<nom> 2", "<nom> 3" ko'rinishida —
+        operator keyin tahrirlashi mumkin. Polygon har kamera uchun alohida
+        chizilishi kerak, shuning uchun ko'chirilmaydi.
+        """
+        existing = {c.get("name", "") for c in
+                    (self.config_manager.get_crossing(self.crossing_id) or {})
+                    .get("cameras", [])}
+        for i, src in enumerate(self._extra_sources, start=2):
+            name = f"{base_name} {i}"
+            while name in existing:
+                i += 1
+                name = f"{base_name} {i}"
+            existing.add(name)
+            self.config_manager.add_camera(self.crossing_id, {
+                "name": name,
+                "type": "additional",
+                "source": src,
+                "polygon_file": "",
+                "enabled": self.enabled_checkbox.isChecked(),
+            })
+        self._extra_sources = []
 
     def _quick_toggle(self):
         """Kamerani yoqish/o'chirish — saqlash tugmasisiz"""
@@ -2064,6 +3202,24 @@ class SettingsDialog(QDialog):
         push_v.addWidget(self._pref_row(t("integ.interval"), self.integ_push_interval))
         push_v.addWidget(self._pref_divider())
 
+        # Har yuborishda nechta kun ketishi. Configdagi days_back — "necha kun
+        # ORQAGA" (bugun ustiga), foydalanuvchi esa "nechta kun" deb o'ylaydi.
+        # Shuning uchun ekranda +1 ko'rsatiladi, saqlashda -1 qilinadi.
+        self.integ_push_days = _no_wheel(QSpinBox())
+        self.integ_push_days.setRange(1, 31)
+        self.integ_push_days.setSuffix(t("integ.days_suffix"))
+        self.integ_push_days.setValue(int(push_cfg.get("days_back", 1)) + 1)
+        self.integ_push_days.setFixedSize(120, 36)
+        push_v.addWidget(self._pref_row(t("integ.days_window"),
+                                        self.integ_push_days))
+        push_v.addWidget(self._pref_divider())
+
+        self.integ_push_analytics = ToggleSwitch(
+            checked=bool(push_cfg.get("include_analytics", True)))
+        push_v.addWidget(self._pref_row(t("integ.analytics"),
+                                        self.integ_push_analytics))
+        push_v.addWidget(self._pref_divider())
+
         # Test qatori: tugma + holat
         test_wrap = QWidget()
         test_wrap.setStyleSheet("background: transparent;")
@@ -2159,6 +3315,9 @@ class SettingsDialog(QDialog):
         s["base_url"] = self.integ_push_url.text().strip()
         s["username"] = self.integ_push_user.text().strip()
         s["password"] = self.integ_push_pass.text()
+        # Sinov aynan saqlanadigan sozlama bilan ketsin (hajmi ham shunga mos)
+        s["days_back"] = max(0, int(self.integ_push_days.value()) - 1)
+        s["include_analytics"] = self.integ_push_analytics.isChecked()
         s["enabled"] = True
         if not s["base_url"]:
             self._integ_status_lbl.setText(
@@ -2276,13 +3435,15 @@ class SettingsDialog(QDialog):
             settings["integration"] = pull
 
             push = dict(self.settings.get("integration_push") or {})
-            push.setdefault("days_back", 1)
             push.setdefault("verify_tls", True)
             push["enabled"] = self.integ_push_enabled.isChecked()
             push["base_url"] = self.integ_push_url.text().strip()
             push["username"] = self.integ_push_user.text().strip()
             push["password"] = self.integ_push_pass.text()
             push["interval_minutes"] = int(self.integ_push_interval.value())
+            # Ekranda "nechta kun", configda "necha kun orqaga" (bugundan tashqari)
+            push["days_back"] = max(0, int(self.integ_push_days.value()) - 1)
+            push["include_analytics"] = self.integ_push_analytics.isChecked()
             settings["integration_push"] = push
 
         self.config_manager.update_settings(settings)
