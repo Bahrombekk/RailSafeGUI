@@ -1,0 +1,4377 @@
+{
+  "source": "railsafe-ai",
+  "schema": 2,
+  "version": "1.1.0",
+  "sent_at": "2026-09-11T15:10:33",
+  "days": [
+    {
+      "date": "2026-09-05",
+      "crossings": [
+        {
+          "crossing_id": 1,
+          "name": "Pereezd 8",
+          "location": "ssds",
+          "light": 0,
+          "heavy": 0,
+          "total": 0,
+          "hourly": [
+            {
+              "hour": 0,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 1,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 2,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 3,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 4,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 5,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 6,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 7,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 8,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 9,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 10,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 11,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 12,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 13,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 14,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 15,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 16,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 17,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 18,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 19,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 20,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 21,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 22,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 23,
+              "light": 0,
+              "heavy": 0
+            }
+          ],
+          "trains": {
+            "count": 0,
+            "min": 0,
+            "max": 0,
+            "avg": 0
+          },
+          "train_events": [],
+          "cameras": [
+            {
+              "name": "A2",
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "name": "A1",
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "name": "ax",
+              "light": 0,
+              "heavy": 0
+            }
+          ],
+          "train_hourly": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "occupancy_minutes": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "dwell_seconds": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "crossing_id": 2,
+          "name": "Pereezd 9",
+          "location": "asd",
+          "light": 0,
+          "heavy": 0,
+          "total": 0,
+          "hourly": [
+            {
+              "hour": 0,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 1,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 2,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 3,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 4,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 5,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 6,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 7,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 8,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 9,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 10,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 11,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 12,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 13,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 14,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 15,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 16,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 17,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 18,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 19,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 20,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 21,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 22,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 23,
+              "light": 0,
+              "heavy": 0
+            }
+          ],
+          "trains": {
+            "count": 0,
+            "min": 0,
+            "max": 0,
+            "avg": 0
+          },
+          "train_events": [],
+          "cameras": [
+            {
+              "name": "B1",
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "name": "B2",
+              "light": 0,
+              "heavy": 0
+            }
+          ],
+          "train_hourly": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "occupancy_minutes": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "dwell_seconds": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "date": "2026-09-06",
+      "crossings": [
+        {
+          "crossing_id": 1,
+          "name": "Pereezd 8",
+          "location": "ssds",
+          "light": 0,
+          "heavy": 0,
+          "total": 0,
+          "hourly": [
+            {
+              "hour": 0,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 1,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 2,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 3,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 4,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 5,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 6,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 7,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 8,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 9,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 10,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 11,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 12,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 13,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 14,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 15,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 16,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 17,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 18,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 19,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 20,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 21,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 22,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 23,
+              "light": 0,
+              "heavy": 0
+            }
+          ],
+          "trains": {
+            "count": 0,
+            "min": 0,
+            "max": 0,
+            "avg": 0
+          },
+          "train_events": [],
+          "cameras": [
+            {
+              "name": "A2",
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "name": "A1",
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "name": "ax",
+              "light": 0,
+              "heavy": 0
+            }
+          ],
+          "train_hourly": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "occupancy_minutes": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "dwell_seconds": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "crossing_id": 2,
+          "name": "Pereezd 9",
+          "location": "asd",
+          "light": 0,
+          "heavy": 0,
+          "total": 0,
+          "hourly": [
+            {
+              "hour": 0,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 1,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 2,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 3,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 4,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 5,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 6,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 7,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 8,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 9,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 10,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 11,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 12,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 13,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 14,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 15,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 16,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 17,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 18,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 19,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 20,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 21,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 22,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 23,
+              "light": 0,
+              "heavy": 0
+            }
+          ],
+          "trains": {
+            "count": 0,
+            "min": 0,
+            "max": 0,
+            "avg": 0
+          },
+          "train_events": [],
+          "cameras": [
+            {
+              "name": "B1",
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "name": "B2",
+              "light": 0,
+              "heavy": 0
+            }
+          ],
+          "train_hourly": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "occupancy_minutes": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "dwell_seconds": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "date": "2026-09-07",
+      "crossings": [
+        {
+          "crossing_id": 1,
+          "name": "Pereezd 8",
+          "location": "ssds",
+          "light": 0,
+          "heavy": 0,
+          "total": 0,
+          "hourly": [
+            {
+              "hour": 0,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 1,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 2,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 3,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 4,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 5,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 6,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 7,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 8,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 9,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 10,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 11,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 12,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 13,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 14,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 15,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 16,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 17,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 18,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 19,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 20,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 21,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 22,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 23,
+              "light": 0,
+              "heavy": 0
+            }
+          ],
+          "trains": {
+            "count": 0,
+            "min": 0,
+            "max": 0,
+            "avg": 0
+          },
+          "train_events": [],
+          "cameras": [
+            {
+              "name": "A2",
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "name": "A1",
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "name": "ax",
+              "light": 0,
+              "heavy": 0
+            }
+          ],
+          "train_hourly": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "occupancy_minutes": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "dwell_seconds": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "crossing_id": 2,
+          "name": "Pereezd 9",
+          "location": "asd",
+          "light": 0,
+          "heavy": 0,
+          "total": 0,
+          "hourly": [
+            {
+              "hour": 0,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 1,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 2,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 3,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 4,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 5,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 6,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 7,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 8,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 9,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 10,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 11,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 12,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 13,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 14,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 15,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 16,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 17,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 18,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 19,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 20,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 21,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 22,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 23,
+              "light": 0,
+              "heavy": 0
+            }
+          ],
+          "trains": {
+            "count": 0,
+            "min": 0,
+            "max": 0,
+            "avg": 0
+          },
+          "train_events": [],
+          "cameras": [
+            {
+              "name": "B1",
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "name": "B2",
+              "light": 0,
+              "heavy": 0
+            }
+          ],
+          "train_hourly": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "occupancy_minutes": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "dwell_seconds": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "date": "2026-09-08",
+      "crossings": [
+        {
+          "crossing_id": 1,
+          "name": "Pereezd 8",
+          "location": "ssds",
+          "light": 7710,
+          "heavy": 235,
+          "total": 7945,
+          "hourly": [
+            {
+              "hour": 0,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 1,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 2,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 3,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 4,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 5,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 6,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 7,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 8,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 9,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 10,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 11,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 12,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 13,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 14,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 15,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 16,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 17,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 18,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 19,
+              "light": 953,
+              "heavy": 36
+            },
+            {
+              "hour": 20,
+              "light": 1922,
+              "heavy": 76
+            },
+            {
+              "hour": 21,
+              "light": 2077,
+              "heavy": 76
+            },
+            {
+              "hour": 22,
+              "light": 1508,
+              "heavy": 36
+            },
+            {
+              "hour": 23,
+              "light": 1250,
+              "heavy": 11
+            }
+          ],
+          "trains": {
+            "count": 0,
+            "min": 0,
+            "max": 0,
+            "avg": 0
+          },
+          "train_events": [],
+          "cameras": [
+            {
+              "name": "A2",
+              "light": 7710,
+              "heavy": 235
+            },
+            {
+              "name": "A1",
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "name": "ax",
+              "light": 0,
+              "heavy": 0
+            }
+          ],
+          "train_hourly": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "occupancy_minutes": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            22,
+            45,
+            54,
+            44,
+            42
+          ],
+          "dwell_seconds": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            4,
+            5,
+            4,
+            4,
+            4
+          ]
+        },
+        {
+          "crossing_id": 2,
+          "name": "Pereezd 9",
+          "location": "asd",
+          "light": 2474,
+          "heavy": 13,
+          "total": 2487,
+          "hourly": [
+            {
+              "hour": 0,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 1,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 2,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 3,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 4,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 5,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 6,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 7,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 8,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 9,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 10,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 11,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 12,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 13,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 14,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 15,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 16,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 17,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 18,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 19,
+              "light": 336,
+              "heavy": 3
+            },
+            {
+              "hour": 20,
+              "light": 560,
+              "heavy": 1
+            },
+            {
+              "hour": 21,
+              "light": 663,
+              "heavy": 4
+            },
+            {
+              "hour": 22,
+              "light": 523,
+              "heavy": 5
+            },
+            {
+              "hour": 23,
+              "light": 392,
+              "heavy": 0
+            }
+          ],
+          "trains": {
+            "count": 0,
+            "min": 0,
+            "max": 0,
+            "avg": 0
+          },
+          "train_events": [],
+          "cameras": [
+            {
+              "name": "B1",
+              "light": 2474,
+              "heavy": 13
+            },
+            {
+              "name": "B2",
+              "light": 0,
+              "heavy": 0
+            }
+          ],
+          "train_hourly": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "occupancy_minutes": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            13,
+            19,
+            20,
+            14,
+            11
+          ],
+          "dwell_seconds": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            4,
+            3,
+            3,
+            3,
+            3
+          ]
+        }
+      ]
+    },
+    {
+      "date": "2026-09-09",
+      "crossings": [
+        {
+          "crossing_id": 1,
+          "name": "Pereezd 8",
+          "location": "ssds",
+          "light": 34179,
+          "heavy": 1971,
+          "total": 36150,
+          "hourly": [
+            {
+              "hour": 0,
+              "light": 810,
+              "heavy": 11
+            },
+            {
+              "hour": 1,
+              "light": 502,
+              "heavy": 10
+            },
+            {
+              "hour": 2,
+              "light": 324,
+              "heavy": 9
+            },
+            {
+              "hour": 3,
+              "light": 230,
+              "heavy": 8
+            },
+            {
+              "hour": 4,
+              "light": 202,
+              "heavy": 11
+            },
+            {
+              "hour": 5,
+              "light": 280,
+              "heavy": 26
+            },
+            {
+              "hour": 6,
+              "light": 591,
+              "heavy": 72
+            },
+            {
+              "hour": 7,
+              "light": 1964,
+              "heavy": 98
+            },
+            {
+              "hour": 8,
+              "light": 2237,
+              "heavy": 103
+            },
+            {
+              "hour": 9,
+              "light": 825,
+              "heavy": 48
+            },
+            {
+              "hour": 10,
+              "light": 2091,
+              "heavy": 194
+            },
+            {
+              "hour": 11,
+              "light": 1716,
+              "heavy": 128
+            },
+            {
+              "hour": 12,
+              "light": 2145,
+              "heavy": 167
+            },
+            {
+              "hour": 13,
+              "light": 1951,
+              "heavy": 142
+            },
+            {
+              "hour": 14,
+              "light": 2000,
+              "heavy": 156
+            },
+            {
+              "hour": 15,
+              "light": 1673,
+              "heavy": 128
+            },
+            {
+              "hour": 16,
+              "light": 1011,
+              "heavy": 79
+            },
+            {
+              "hour": 17,
+              "light": 2278,
+              "heavy": 131
+            },
+            {
+              "hour": 18,
+              "light": 2481,
+              "heavy": 124
+            },
+            {
+              "hour": 19,
+              "light": 2507,
+              "heavy": 89
+            },
+            {
+              "hour": 20,
+              "light": 2303,
+              "heavy": 96
+            },
+            {
+              "hour": 21,
+              "light": 1975,
+              "heavy": 81
+            },
+            {
+              "hour": 22,
+              "light": 1444,
+              "heavy": 52
+            },
+            {
+              "hour": 23,
+              "light": 639,
+              "heavy": 8
+            }
+          ],
+          "trains": {
+            "count": 5,
+            "min": 208.997887,
+            "max": 392.512575,
+            "avg": 332.7009598
+          },
+          "train_events": [
+            {
+              "start": "22:38",
+              "end": "22:45",
+              "duration_seconds": 392.512575
+            },
+            {
+              "start": "20:32",
+              "end": "20:35",
+              "duration_seconds": 208.997887
+            },
+            {
+              "start": "19:33",
+              "end": "19:39",
+              "duration_seconds": 383.995251
+            },
+            {
+              "start": "19:10",
+              "end": "19:15",
+              "duration_seconds": 316.003942
+            },
+            {
+              "start": "17:28",
+              "end": "17:34",
+              "duration_seconds": 361.995144
+            }
+          ],
+          "cameras": [
+            {
+              "name": "A2",
+              "light": 34179,
+              "heavy": 1971
+            },
+            {
+              "name": "A1",
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "name": "ax",
+              "light": 0,
+              "heavy": 0
+            }
+          ],
+          "train_hourly": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0,
+            2,
+            1,
+            0,
+            1,
+            0
+          ],
+          "occupancy_minutes": [
+            32,
+            22,
+            15,
+            10,
+            10,
+            12,
+            24,
+            48,
+            49,
+            18,
+            51,
+            37,
+            52,
+            47,
+            53,
+            41,
+            22,
+            47,
+            58,
+            49,
+            54,
+            53,
+            44,
+            22
+          ],
+          "dwell_seconds": [
+            4,
+            4,
+            4,
+            4,
+            4,
+            4,
+            4,
+            4,
+            5,
+            9,
+            4,
+            4,
+            4,
+            5,
+            4,
+            4,
+            5,
+            5,
+            5,
+            6,
+            4,
+            4,
+            4,
+            4
+          ]
+        },
+        {
+          "crossing_id": 2,
+          "name": "Pereezd 9",
+          "location": "asd",
+          "light": 12628,
+          "heavy": 184,
+          "total": 12812,
+          "hourly": [
+            {
+              "hour": 0,
+              "light": 225,
+              "heavy": 0
+            },
+            {
+              "hour": 1,
+              "light": 172,
+              "heavy": 0
+            },
+            {
+              "hour": 2,
+              "light": 95,
+              "heavy": 0
+            },
+            {
+              "hour": 3,
+              "light": 104,
+              "heavy": 0
+            },
+            {
+              "hour": 4,
+              "light": 90,
+              "heavy": 0
+            },
+            {
+              "hour": 5,
+              "light": 91,
+              "heavy": 2
+            },
+            {
+              "hour": 6,
+              "light": 234,
+              "heavy": 3
+            },
+            {
+              "hour": 7,
+              "light": 929,
+              "heavy": 8
+            },
+            {
+              "hour": 8,
+              "light": 797,
+              "heavy": 9
+            },
+            {
+              "hour": 9,
+              "light": 404,
+              "heavy": 6
+            },
+            {
+              "hour": 10,
+              "light": 610,
+              "heavy": 17
+            },
+            {
+              "hour": 11,
+              "light": 657,
+              "heavy": 19
+            },
+            {
+              "hour": 12,
+              "light": 699,
+              "heavy": 14
+            },
+            {
+              "hour": 13,
+              "light": 695,
+              "heavy": 10
+            },
+            {
+              "hour": 14,
+              "light": 544,
+              "heavy": 22
+            },
+            {
+              "hour": 15,
+              "light": 644,
+              "heavy": 17
+            },
+            {
+              "hour": 16,
+              "light": 717,
+              "heavy": 15
+            },
+            {
+              "hour": 17,
+              "light": 846,
+              "heavy": 13
+            },
+            {
+              "hour": 18,
+              "light": 941,
+              "heavy": 13
+            },
+            {
+              "hour": 19,
+              "light": 910,
+              "heavy": 7
+            },
+            {
+              "hour": 20,
+              "light": 827,
+              "heavy": 6
+            },
+            {
+              "hour": 21,
+              "light": 583,
+              "heavy": 2
+            },
+            {
+              "hour": 22,
+              "light": 631,
+              "heavy": 0
+            },
+            {
+              "hour": 23,
+              "light": 183,
+              "heavy": 1
+            }
+          ],
+          "trains": {
+            "count": 0,
+            "min": 0,
+            "max": 0,
+            "avg": 0
+          },
+          "train_events": [],
+          "cameras": [
+            {
+              "name": "B1",
+              "light": 12628,
+              "heavy": 184
+            },
+            {
+              "name": "B2",
+              "light": 0,
+              "heavy": 0
+            }
+          ],
+          "train_hourly": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "occupancy_minutes": [
+            5,
+            4,
+            2,
+            2,
+            1,
+            2,
+            5,
+            36,
+            27,
+            19,
+            16,
+            26,
+            23,
+            22,
+            17,
+            24,
+            25,
+            30,
+            38,
+            31,
+            26,
+            18,
+            17,
+            5
+          ],
+          "dwell_seconds": [
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            5,
+            3,
+            6,
+            3,
+            4,
+            3,
+            3,
+            3,
+            4,
+            3,
+            4,
+            4,
+            4,
+            3,
+            3,
+            3,
+            3
+          ]
+        }
+      ]
+    },
+    {
+      "date": "2026-09-10",
+      "crossings": [
+        {
+          "crossing_id": 1,
+          "name": "Pereezd 8",
+          "location": "ssds",
+          "light": 30414,
+          "heavy": 1801,
+          "total": 32215,
+          "hourly": [
+            {
+              "hour": 0,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 1,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 2,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 3,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 4,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 5,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 6,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 7,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 8,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 9,
+              "light": 1597,
+              "heavy": 109
+            },
+            {
+              "hour": 10,
+              "light": 2256,
+              "heavy": 176
+            },
+            {
+              "hour": 11,
+              "light": 1382,
+              "heavy": 123
+            },
+            {
+              "hour": 12,
+              "light": 2066,
+              "heavy": 174
+            },
+            {
+              "hour": 13,
+              "light": 1985,
+              "heavy": 158
+            },
+            {
+              "hour": 14,
+              "light": 2047,
+              "heavy": 148
+            },
+            {
+              "hour": 15,
+              "light": 2035,
+              "heavy": 143
+            },
+            {
+              "hour": 16,
+              "light": 2176,
+              "heavy": 162
+            },
+            {
+              "hour": 17,
+              "light": 2746,
+              "heavy": 178
+            },
+            {
+              "hour": 18,
+              "light": 2673,
+              "heavy": 127
+            },
+            {
+              "hour": 19,
+              "light": 2481,
+              "heavy": 106
+            },
+            {
+              "hour": 20,
+              "light": 2250,
+              "heavy": 69
+            },
+            {
+              "hour": 21,
+              "light": 1900,
+              "heavy": 68
+            },
+            {
+              "hour": 22,
+              "light": 1573,
+              "heavy": 38
+            },
+            {
+              "hour": 23,
+              "light": 1247,
+              "heavy": 22
+            }
+          ],
+          "trains": {
+            "count": 19,
+            "min": 86.518993,
+            "max": 639.494591,
+            "avg": 320.74171094736846
+          },
+          "train_events": [
+            {
+              "start": "22:45",
+              "end": "22:50",
+              "duration_seconds": 310.011298
+            },
+            {
+              "start": "20:15",
+              "end": "20:20",
+              "duration_seconds": 333.003811
+            },
+            {
+              "start": "19:47",
+              "end": "19:52",
+              "duration_seconds": 279.995603
+            },
+            {
+              "start": "19:07",
+              "end": "19:14",
+              "duration_seconds": 456.997195
+            },
+            {
+              "start": "17:45",
+              "end": "17:49",
+              "duration_seconds": 241.501699
+            },
+            {
+              "start": "16:27",
+              "end": "16:37",
+              "duration_seconds": 639.494591
+            },
+            {
+              "start": "16:12",
+              "end": "16:15",
+              "duration_seconds": 170.029892
+            },
+            {
+              "start": "15:49",
+              "end": "15:54",
+              "duration_seconds": 306.063743
+            },
+            {
+              "start": "15:30",
+              "end": "15:36",
+              "duration_seconds": 319.527207
+            },
+            {
+              "start": "15:17",
+              "end": "15:22",
+              "duration_seconds": 324.490225
+            },
+            {
+              "start": "14:14",
+              "end": "14:15",
+              "duration_seconds": 86.518993
+            },
+            {
+              "start": "13:59",
+              "end": "14:07",
+              "duration_seconds": 465.455927
+            },
+            {
+              "start": "13:46",
+              "end": "13:52",
+              "duration_seconds": 348.49542
+            },
+            {
+              "start": "12:50",
+              "end": "12:54",
+              "duration_seconds": 221.006677
+            },
+            {
+              "start": "12:32",
+              "end": "12:38",
+              "duration_seconds": 359.497752
+            },
+            {
+              "start": "12:07",
+              "end": "12:14",
+              "duration_seconds": 381.514184
+            },
+            {
+              "start": "11:36",
+              "end": "11:46",
+              "duration_seconds": 586.993537
+            },
+            {
+              "start": "11:15",
+              "end": "11:17",
+              "duration_seconds": 133.994137
+            },
+            {
+              "start": "11:03",
+              "end": "11:06",
+              "duration_seconds": 129.500617
+            }
+          ],
+          "cameras": [
+            {
+              "name": "A2",
+              "light": 30414,
+              "heavy": 1801
+            },
+            {
+              "name": "A1",
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "name": "ax",
+              "light": 0,
+              "heavy": 0
+            }
+          ],
+          "train_hourly": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            3,
+            3,
+            2,
+            1,
+            3,
+            2,
+            1,
+            0,
+            2,
+            1,
+            0,
+            1,
+            0
+          ],
+          "occupancy_minutes": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            39,
+            55,
+            35,
+            42,
+            50,
+            49,
+            44,
+            47,
+            56,
+            57,
+            48,
+            53,
+            54,
+            49,
+            46
+          ],
+          "dwell_seconds": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            4,
+            4,
+            4,
+            5,
+            4,
+            4,
+            6,
+            6,
+            6,
+            5,
+            6,
+            5,
+            5,
+            5,
+            5
+          ]
+        },
+        {
+          "crossing_id": 2,
+          "name": "Pereezd 9",
+          "location": "asd",
+          "light": 10037,
+          "heavy": 206,
+          "total": 10243,
+          "hourly": [
+            {
+              "hour": 0,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 1,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 2,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 3,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 4,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 5,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 6,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 7,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 8,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 9,
+              "light": 475,
+              "heavy": 12
+            },
+            {
+              "hour": 10,
+              "light": 650,
+              "heavy": 18
+            },
+            {
+              "hour": 11,
+              "light": 646,
+              "heavy": 20
+            },
+            {
+              "hour": 12,
+              "light": 702,
+              "heavy": 22
+            },
+            {
+              "hour": 13,
+              "light": 677,
+              "heavy": 13
+            },
+            {
+              "hour": 14,
+              "light": 620,
+              "heavy": 23
+            },
+            {
+              "hour": 15,
+              "light": 596,
+              "heavy": 24
+            },
+            {
+              "hour": 16,
+              "light": 775,
+              "heavy": 19
+            },
+            {
+              "hour": 17,
+              "light": 831,
+              "heavy": 20
+            },
+            {
+              "hour": 18,
+              "light": 855,
+              "heavy": 25
+            },
+            {
+              "hour": 19,
+              "light": 854,
+              "heavy": 6
+            },
+            {
+              "hour": 20,
+              "light": 771,
+              "heavy": 2
+            },
+            {
+              "hour": 21,
+              "light": 648,
+              "heavy": 0
+            },
+            {
+              "hour": 22,
+              "light": 540,
+              "heavy": 1
+            },
+            {
+              "hour": 23,
+              "light": 397,
+              "heavy": 1
+            }
+          ],
+          "trains": {
+            "count": 0,
+            "min": 0,
+            "max": 0,
+            "avg": 0
+          },
+          "train_events": [],
+          "cameras": [
+            {
+              "name": "B1",
+              "light": 10037,
+              "heavy": 206
+            },
+            {
+              "name": "B2",
+              "light": 0,
+              "heavy": 0
+            }
+          ],
+          "train_hourly": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "occupancy_minutes": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            14,
+            20,
+            19,
+            24,
+            23,
+            21,
+            17,
+            27,
+            32,
+            37,
+            31,
+            29,
+            19,
+            16,
+            10
+          ],
+          "dwell_seconds": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            3,
+            3,
+            3,
+            4,
+            3,
+            3,
+            3,
+            3,
+            4,
+            4,
+            4,
+            4,
+            3,
+            3,
+            3
+          ]
+        }
+      ]
+    },
+    {
+      "date": "2026-09-11",
+      "crossings": [
+        {
+          "crossing_id": 1,
+          "name": "Pereezd 8",
+          "location": "ssds",
+          "light": 18551,
+          "heavy": 1225,
+          "total": 19776,
+          "hourly": [
+            {
+              "hour": 0,
+              "light": 781,
+              "heavy": 14
+            },
+            {
+              "hour": 1,
+              "light": 518,
+              "heavy": 8
+            },
+            {
+              "hour": 2,
+              "light": 367,
+              "heavy": 11
+            },
+            {
+              "hour": 3,
+              "light": 263,
+              "heavy": 10
+            },
+            {
+              "hour": 4,
+              "light": 204,
+              "heavy": 12
+            },
+            {
+              "hour": 5,
+              "light": 350,
+              "heavy": 26
+            },
+            {
+              "hour": 6,
+              "light": 545,
+              "heavy": 68
+            },
+            {
+              "hour": 7,
+              "light": 2027,
+              "heavy": 85
+            },
+            {
+              "hour": 8,
+              "light": 2169,
+              "heavy": 82
+            },
+            {
+              "hour": 9,
+              "light": 1911,
+              "heavy": 147
+            },
+            {
+              "hour": 10,
+              "light": 2141,
+              "heavy": 176
+            },
+            {
+              "hour": 11,
+              "light": 2111,
+              "heavy": 200
+            },
+            {
+              "hour": 12,
+              "light": 1773,
+              "heavy": 144
+            },
+            {
+              "hour": 13,
+              "light": 1054,
+              "heavy": 69
+            },
+            {
+              "hour": 14,
+              "light": 2058,
+              "heavy": 146
+            },
+            {
+              "hour": 15,
+              "light": 279,
+              "heavy": 27
+            },
+            {
+              "hour": 16,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 17,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 18,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 19,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 20,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 21,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 22,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 23,
+              "light": 0,
+              "heavy": 0
+            }
+          ],
+          "trains": {
+            "count": 16,
+            "min": 206.499203,
+            "max": 415.494922,
+            "avg": 314.964478375
+          },
+          "train_events": [
+            {
+              "start": "15:02",
+              "end": "15:07",
+              "duration_seconds": 320.49389
+            },
+            {
+              "start": "14:26",
+              "end": "14:32",
+              "duration_seconds": 383.999316
+            },
+            {
+              "start": "12:04",
+              "end": "12:10",
+              "duration_seconds": 342.988999
+            },
+            {
+              "start": "11:50",
+              "end": "11:55",
+              "duration_seconds": 307.500831
+            },
+            {
+              "start": "10:53",
+              "end": "10:57",
+              "duration_seconds": 216.497191
+            },
+            {
+              "start": "09:30",
+              "end": "09:35",
+              "duration_seconds": 297.534612
+            },
+            {
+              "start": "09:15",
+              "end": "09:21",
+              "duration_seconds": 332.474148
+            },
+            {
+              "start": "07:08",
+              "end": "07:11",
+              "duration_seconds": 219.994992
+            },
+            {
+              "start": "06:54",
+              "end": "07:00",
+              "duration_seconds": 318.497405
+            },
+            {
+              "start": "06:34",
+              "end": "06:40",
+              "duration_seconds": 366.993781
+            },
+            {
+              "start": "06:10",
+              "end": "06:16",
+              "duration_seconds": 347.497929
+            },
+            {
+              "start": "05:51",
+              "end": "05:57",
+              "duration_seconds": 359.48694
+            },
+            {
+              "start": "04:48",
+              "end": "04:55",
+              "duration_seconds": 415.494922
+            },
+            {
+              "start": "03:40",
+              "end": "03:43",
+              "duration_seconds": 211.992108
+            },
+            {
+              "start": "02:23",
+              "end": "02:29",
+              "duration_seconds": 391.485387
+            },
+            {
+              "start": "00:05",
+              "end": "00:09",
+              "duration_seconds": 206.499203
+            }
+          ],
+          "cameras": [
+            {
+              "name": "A2",
+              "light": 18551,
+              "heavy": 1225
+            },
+            {
+              "name": "A1",
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "name": "ax",
+              "light": 0,
+              "heavy": 0
+            }
+          ],
+          "train_hourly": [
+            1,
+            0,
+            1,
+            1,
+            1,
+            1,
+            3,
+            1,
+            0,
+            2,
+            1,
+            1,
+            1,
+            0,
+            1,
+            1,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "occupancy_minutes": [
+            32,
+            27,
+            18,
+            15,
+            12,
+            18,
+            24,
+            52,
+            48,
+            42,
+            54,
+            53,
+            45,
+            28,
+            50,
+            6,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "dwell_seconds": [
+            4,
+            5,
+            4,
+            4,
+            4,
+            4,
+            4,
+            5,
+            5,
+            5,
+            5,
+            5,
+            5,
+            5,
+            5,
+            5,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "crossing_id": 2,
+          "name": "Pereezd 9",
+          "location": "asd",
+          "light": 7083,
+          "heavy": 148,
+          "total": 7231,
+          "hourly": [
+            {
+              "hour": 0,
+              "light": 270,
+              "heavy": 1
+            },
+            {
+              "hour": 1,
+              "light": 143,
+              "heavy": 0
+            },
+            {
+              "hour": 2,
+              "light": 293,
+              "heavy": 0
+            },
+            {
+              "hour": 3,
+              "light": 74,
+              "heavy": 0
+            },
+            {
+              "hour": 4,
+              "light": 179,
+              "heavy": 0
+            },
+            {
+              "hour": 5,
+              "light": 84,
+              "heavy": 0
+            },
+            {
+              "hour": 6,
+              "light": 240,
+              "heavy": 5
+            },
+            {
+              "hour": 7,
+              "light": 858,
+              "heavy": 4
+            },
+            {
+              "hour": 8,
+              "light": 731,
+              "heavy": 11
+            },
+            {
+              "hour": 9,
+              "light": 617,
+              "heavy": 27
+            },
+            {
+              "hour": 10,
+              "light": 632,
+              "heavy": 24
+            },
+            {
+              "hour": 11,
+              "light": 674,
+              "heavy": 16
+            },
+            {
+              "hour": 12,
+              "light": 886,
+              "heavy": 25
+            },
+            {
+              "hour": 13,
+              "light": 754,
+              "heavy": 12
+            },
+            {
+              "hour": 14,
+              "light": 559,
+              "heavy": 19
+            },
+            {
+              "hour": 15,
+              "light": 89,
+              "heavy": 4
+            },
+            {
+              "hour": 16,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 17,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 18,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 19,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 20,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 21,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 22,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 23,
+              "light": 0,
+              "heavy": 0
+            }
+          ],
+          "trains": {
+            "count": 0,
+            "min": 0,
+            "max": 0,
+            "avg": 0
+          },
+          "train_events": [],
+          "cameras": [
+            {
+              "name": "B1",
+              "light": 7083,
+              "heavy": 148
+            },
+            {
+              "name": "B2",
+              "light": 0,
+              "heavy": 0
+            }
+          ],
+          "train_hourly": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "occupancy_minutes": [
+            6,
+            4,
+            4,
+            2,
+            3,
+            2,
+            6,
+            31,
+            23,
+            19,
+            17,
+            16,
+            26,
+            25,
+            14,
+            2,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "dwell_seconds": [
+            3,
+            3,
+            2,
+            3,
+            2,
+            3,
+            3,
+            4,
+            3,
+            4,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "date": "2026-09-11",
+    "light": 25634,
+    "heavy": 1373,
+    "total": 27007,
+    "trains": 16,
+    "crossings": 2,
+    "cameras": 5
+  },
+  "analytics": {
+    "warning_threshold_seconds": 30.0,
+    "crossings": [
+      {
+        "crossing_id": 1,
+        "capacity": 2587,
+        "category": {
+          "days": 158,
+          "total_light": 4772561,
+          "total_heavy": 280775,
+          "avg_trains": 17.27848101265823,
+          "avg_reduced": 34648.7246835443,
+          "toifa": "I",
+          "train_band": "17—100",
+          "veh_band": "7000 dan ortiq"
+        },
+        "daily_30": [
+          {
+            "date": "2026-08-13",
+            "day": 13,
+            "light": 36957,
+            "heavy": 2198
+          },
+          {
+            "date": "2026-08-14",
+            "day": 14,
+            "light": 2762,
+            "heavy": 106
+          },
+          {
+            "date": "2026-08-15",
+            "day": 15,
+            "light": 0,
+            "heavy": 0
+          },
+          {
+            "date": "2026-08-16",
+            "day": 16,
+            "light": 0,
+            "heavy": 0
+          },
+          {
+            "date": "2026-08-17",
+            "day": 17,
+            "light": 9668,
+            "heavy": 725
+          },
+          {
+            "date": "2026-08-18",
+            "day": 18,
+            "light": 14,
+            "heavy": 0
+          },
+          {
+            "date": "2026-08-19",
+            "day": 19,
+            "light": 0,
+            "heavy": 0
+          },
+          {
+            "date": "2026-08-20",
+            "day": 20,
+            "light": 0,
+            "heavy": 0
+          },
+          {
+            "date": "2026-08-21",
+            "day": 21,
+            "light": 651,
+            "heavy": 50
+          },
+          {
+            "date": "2026-08-22",
+            "day": 22,
+            "light": 0,
+            "heavy": 0
+          },
+          {
+            "date": "2026-08-23",
+            "day": 23,
+            "light": 0,
+            "heavy": 0
+          },
+          {
+            "date": "2026-08-24",
+            "day": 24,
+            "light": 0,
+            "heavy": 0
+          },
+          {
+            "date": "2026-08-25",
+            "day": 25,
+            "light": 0,
+            "heavy": 0
+          },
+          {
+            "date": "2026-08-26",
+            "day": 26,
+            "light": 0,
+            "heavy": 0
+          },
+          {
+            "date": "2026-08-27",
+            "day": 27,
+            "light": 0,
+            "heavy": 0
+          },
+          {
+            "date": "2026-08-28",
+            "day": 28,
+            "light": 0,
+            "heavy": 0
+          },
+          {
+            "date": "2026-08-29",
+            "day": 29,
+            "light": 0,
+            "heavy": 0
+          },
+          {
+            "date": "2026-08-30",
+            "day": 30,
+            "light": 0,
+            "heavy": 0
+          },
+          {
+            "date": "2026-08-31",
+            "day": 31,
+            "light": 0,
+            "heavy": 0
+          },
+          {
+            "date": "2026-09-01",
+            "day": 1,
+            "light": 0,
+            "heavy": 0
+          },
+          {
+            "date": "2026-09-02",
+            "day": 2,
+            "light": 0,
+            "heavy": 0
+          },
+          {
+            "date": "2026-09-03",
+            "day": 3,
+            "light": 0,
+            "heavy": 0
+          },
+          {
+            "date": "2026-09-04",
+            "day": 4,
+            "light": 0,
+            "heavy": 0
+          },
+          {
+            "date": "2026-09-05",
+            "day": 5,
+            "light": 0,
+            "heavy": 0
+          },
+          {
+            "date": "2026-09-06",
+            "day": 6,
+            "light": 0,
+            "heavy": 0
+          },
+          {
+            "date": "2026-09-07",
+            "day": 7,
+            "light": 0,
+            "heavy": 0
+          },
+          {
+            "date": "2026-09-08",
+            "day": 8,
+            "light": 7710,
+            "heavy": 235
+          },
+          {
+            "date": "2026-09-09",
+            "day": 9,
+            "light": 34179,
+            "heavy": 1971
+          },
+          {
+            "date": "2026-09-10",
+            "day": 10,
+            "light": 30414,
+            "heavy": 1801
+          },
+          {
+            "date": "2026-09-11",
+            "day": 11,
+            "light": 18551,
+            "heavy": 1225
+          }
+        ],
+        "train_daily_30": [
+          {
+            "date": "2026-08-13",
+            "day": 13,
+            "count": 28,
+            "avg": 249.87301475000004
+          },
+          {
+            "date": "2026-08-14",
+            "day": 14,
+            "count": 7,
+            "avg": 326.92641599999996
+          },
+          {
+            "date": "2026-08-15",
+            "day": 15,
+            "count": 0,
+            "avg": 0
+          },
+          {
+            "date": "2026-08-16",
+            "day": 16,
+            "count": 0,
+            "avg": 0
+          },
+          {
+            "date": "2026-08-17",
+            "day": 17,
+            "count": 6,
+            "avg": 273.57841033333335
+          },
+          {
+            "date": "2026-08-18",
+            "day": 18,
+            "count": 0,
+            "avg": 0
+          },
+          {
+            "date": "2026-08-19",
+            "day": 19,
+            "count": 0,
+            "avg": 0
+          },
+          {
+            "date": "2026-08-20",
+            "day": 20,
+            "count": 0,
+            "avg": 0
+          },
+          {
+            "date": "2026-08-21",
+            "day": 21,
+            "count": 1,
+            "avg": 278.531141
+          },
+          {
+            "date": "2026-08-22",
+            "day": 22,
+            "count": 0,
+            "avg": 0
+          },
+          {
+            "date": "2026-08-23",
+            "day": 23,
+            "count": 0,
+            "avg": 0
+          },
+          {
+            "date": "2026-08-24",
+            "day": 24,
+            "count": 0,
+            "avg": 0
+          },
+          {
+            "date": "2026-08-25",
+            "day": 25,
+            "count": 0,
+            "avg": 0
+          },
+          {
+            "date": "2026-08-26",
+            "day": 26,
+            "count": 0,
+            "avg": 0
+          },
+          {
+            "date": "2026-08-27",
+            "day": 27,
+            "count": 0,
+            "avg": 0
+          },
+          {
+            "date": "2026-08-28",
+            "day": 28,
+            "count": 0,
+            "avg": 0
+          },
+          {
+            "date": "2026-08-29",
+            "day": 29,
+            "count": 0,
+            "avg": 0
+          },
+          {
+            "date": "2026-08-30",
+            "day": 30,
+            "count": 0,
+            "avg": 0
+          },
+          {
+            "date": "2026-08-31",
+            "day": 31,
+            "count": 0,
+            "avg": 0
+          },
+          {
+            "date": "2026-09-01",
+            "day": 1,
+            "count": 0,
+            "avg": 0
+          },
+          {
+            "date": "2026-09-02",
+            "day": 2,
+            "count": 0,
+            "avg": 0
+          },
+          {
+            "date": "2026-09-03",
+            "day": 3,
+            "count": 0,
+            "avg": 0
+          },
+          {
+            "date": "2026-09-04",
+            "day": 4,
+            "count": 0,
+            "avg": 0
+          },
+          {
+            "date": "2026-09-05",
+            "day": 5,
+            "count": 0,
+            "avg": 0
+          },
+          {
+            "date": "2026-09-06",
+            "day": 6,
+            "count": 0,
+            "avg": 0
+          },
+          {
+            "date": "2026-09-07",
+            "day": 7,
+            "count": 0,
+            "avg": 0
+          },
+          {
+            "date": "2026-09-08",
+            "day": 8,
+            "count": 0,
+            "avg": 0
+          },
+          {
+            "date": "2026-09-09",
+            "day": 9,
+            "count": 5,
+            "avg": 332.7009598
+          },
+          {
+            "date": "2026-09-10",
+            "day": 10,
+            "count": 19,
+            "avg": 320.74171094736846
+          },
+          {
+            "date": "2026-09-11",
+            "day": 11,
+            "count": 16,
+            "avg": 314.964478375
+          }
+        ],
+        "monthly_12": [
+          {
+            "month": "2025-10",
+            "label": "Okt",
+            "light": 0,
+            "heavy": 0
+          },
+          {
+            "month": "2025-11",
+            "label": "Noy",
+            "light": 0,
+            "heavy": 0
+          },
+          {
+            "month": "2025-12",
+            "label": "Dek",
+            "light": 0,
+            "heavy": 0
+          },
+          {
+            "month": "2026-01",
+            "label": "Yan",
+            "light": 0,
+            "heavy": 0
+          },
+          {
+            "month": "2026-02",
+            "label": "Fev",
+            "light": 342309,
+            "heavy": 24292
+          },
+          {
+            "month": "2026-03",
+            "label": "Mar",
+            "light": 781392,
+            "heavy": 43038
+          },
+          {
+            "month": "2026-04",
+            "label": "Apr",
+            "light": 829678,
+            "heavy": 47652
+          },
+          {
+            "month": "2026-05",
+            "label": "May",
+            "light": 858336,
+            "heavy": 52336
+          },
+          {
+            "month": "2026-06",
+            "label": "Iyn",
+            "light": 439979,
+            "heavy": 25018
+          },
+          {
+            "month": "2026-07",
+            "label": "Iyl",
+            "light": 1101437,
+            "heavy": 63119
+          },
+          {
+            "month": "2026-08",
+            "label": "Avg",
+            "light": 328576,
+            "heavy": 20088
+          },
+          {
+            "month": "2026-09",
+            "label": "Sen",
+            "light": 90854,
+            "heavy": 5232
+          }
+        ]
+      },
+      {
+        "crossing_id": 2,
+        "capacity": 880,
+        "category": {
+          "days": 156,
+          "total_light": 1484962,
+          "total_heavy": 29355,
+          "avg_trains": 0.0,
+          "avg_reduced": 9989.419871794871,
+          "toifa": "II",
+          "train_band": "16 tagacha",
+          "veh_band": "7000 dan ortiq"
+        },
+        "daily_30": [
+          {
+            "date": "2026-08-13",
+            "day": 13,
+            "light": 11892,
+            "heavy": 218
+          },
+          {
+            "date": "2026-08-14",
+            "day": 14,
+            "light": 1093,
+            "heavy": 8
+          },
+          {
+            "date": "2026-08-15",
+            "day": 15,
+            "light": 0,
+            "heavy": 0
+          },
+          {
+            "date": "2026-08-16",
+            "day": 16,
+            "light": 0,
+            "heavy": 0
+          },
+          {
+            "date": "2026-08-17",
+            "day": 17,
+            "light": 3081,
+            "heavy": 54
+          },
+          {
+            "date": "2026-08-18",
+            "day": 18,
+            "light": 5,
+            "heavy": 0
+          },
+          {
+            "date": "2026-08-19",
+            "day": 19,
+            "light": 0,
+            "heavy": 0
+          },
+          {
+            "date": "2026-08-20",
+            "day": 20,
+            "light": 0,
+            "heavy": 0
+          },
+          {
+            "date": "2026-08-21",
+            "day": 21,
+            "light": 213,
+            "heavy": 2
+          },
+          {
+            "date": "2026-08-22",
+            "day": 22,
+            "light": 0,
+            "heavy": 0
+          },
+          {
+            "date": "2026-08-23",
+            "day": 23,
+            "light": 0,
+            "heavy": 0
+          },
+          {
+            "date": "2026-08-24",
+            "day": 24,
+            "light": 0,
+            "heavy": 0
+          },
+          {
+            "date": "2026-08-25",
+            "day": 25,
+            "light": 0,
+            "heavy": 0
+          },
+          {
+            "date": "2026-08-26",
+            "day": 26,
+            "light": 0,
+            "heavy": 0
+          },
+          {
+            "date": "2026-08-27",
+            "day": 27,
+            "light": 0,
+            "heavy": 0
+          },
+          {
+            "date": "2026-08-28",
+            "day": 28,
+            "light": 0,
+            "heavy": 0
+          },
+          {
+            "date": "2026-08-29",
+            "day": 29,
+            "light": 0,
+            "heavy": 0
+          },
+          {
+            "date": "2026-08-30",
+            "day": 30,
+            "light": 0,
+            "heavy": 0
+          },
+          {
+            "date": "2026-08-31",
+            "day": 31,
+            "light": 0,
+            "heavy": 0
+          },
+          {
+            "date": "2026-09-01",
+            "day": 1,
+            "light": 0,
+            "heavy": 0
+          },
+          {
+            "date": "2026-09-02",
+            "day": 2,
+            "light": 0,
+            "heavy": 0
+          },
+          {
+            "date": "2026-09-03",
+            "day": 3,
+            "light": 0,
+            "heavy": 0
+          },
+          {
+            "date": "2026-09-04",
+            "day": 4,
+            "light": 0,
+            "heavy": 0
+          },
+          {
+            "date": "2026-09-05",
+            "day": 5,
+            "light": 0,
+            "heavy": 0
+          },
+          {
+            "date": "2026-09-06",
+            "day": 6,
+            "light": 0,
+            "heavy": 0
+          },
+          {
+            "date": "2026-09-07",
+            "day": 7,
+            "light": 0,
+            "heavy": 0
+          },
+          {
+            "date": "2026-09-08",
+            "day": 8,
+            "light": 2474,
+            "heavy": 13
+          },
+          {
+            "date": "2026-09-09",
+            "day": 9,
+            "light": 12628,
+            "heavy": 184
+          },
+          {
+            "date": "2026-09-10",
+            "day": 10,
+            "light": 10037,
+            "heavy": 206
+          },
+          {
+            "date": "2026-09-11",
+            "day": 11,
+            "light": 7083,
+            "heavy": 148
+          }
+        ],
+        "train_daily_30": [
+          {
+            "date": "2026-08-13",
+            "day": 13,
+            "count": 0,
+            "avg": 0
+          },
+          {
+            "date": "2026-08-14",
+            "day": 14,
+            "count": 0,
+            "avg": 0
+          },
+          {
+            "date": "2026-08-15",
+            "day": 15,
+            "count": 0,
+            "avg": 0
+          },
+          {
+            "date": "2026-08-16",
+            "day": 16,
+            "count": 0,
+            "avg": 0
+          },
+          {
+            "date": "2026-08-17",
+            "day": 17,
+            "count": 0,
+            "avg": 0
+          },
+          {
+            "date": "2026-08-18",
+            "day": 18,
+            "count": 0,
+            "avg": 0
+          },
+          {
+            "date": "2026-08-19",
+            "day": 19,
+            "count": 0,
+            "avg": 0
+          },
+          {
+            "date": "2026-08-20",
+            "day": 20,
+            "count": 0,
+            "avg": 0
+          },
+          {
+            "date": "2026-08-21",
+            "day": 21,
+            "count": 0,
+            "avg": 0
+          },
+          {
+            "date": "2026-08-22",
+            "day": 22,
+            "count": 0,
+            "avg": 0
+          },
+          {
+            "date": "2026-08-23",
+            "day": 23,
+            "count": 0,
+            "avg": 0
+          },
+          {
+            "date": "2026-08-24",
+            "day": 24,
+            "count": 0,
+            "avg": 0
+          },
+          {
+            "date": "2026-08-25",
+            "day": 25,
+            "count": 0,
+            "avg": 0
+          },
+          {
+            "date": "2026-08-26",
+            "day": 26,
+            "count": 0,
+            "avg": 0
+          },
+          {
+            "date": "2026-08-27",
+            "day": 27,
+            "count": 0,
+            "avg": 0
+          },
+          {
+            "date": "2026-08-28",
+            "day": 28,
+            "count": 0,
+            "avg": 0
+          },
+          {
+            "date": "2026-08-29",
+            "day": 29,
+            "count": 0,
+            "avg": 0
+          },
+          {
+            "date": "2026-08-30",
+            "day": 30,
+            "count": 0,
+            "avg": 0
+          },
+          {
+            "date": "2026-08-31",
+            "day": 31,
+            "count": 0,
+            "avg": 0
+          },
+          {
+            "date": "2026-09-01",
+            "day": 1,
+            "count": 0,
+            "avg": 0
+          },
+          {
+            "date": "2026-09-02",
+            "day": 2,
+            "count": 0,
+            "avg": 0
+          },
+          {
+            "date": "2026-09-03",
+            "day": 3,
+            "count": 0,
+            "avg": 0
+          },
+          {
+            "date": "2026-09-04",
+            "day": 4,
+            "count": 0,
+            "avg": 0
+          },
+          {
+            "date": "2026-09-05",
+            "day": 5,
+            "count": 0,
+            "avg": 0
+          },
+          {
+            "date": "2026-09-06",
+            "day": 6,
+            "count": 0,
+            "avg": 0
+          },
+          {
+            "date": "2026-09-07",
+            "day": 7,
+            "count": 0,
+            "avg": 0
+          },
+          {
+            "date": "2026-09-08",
+            "day": 8,
+            "count": 0,
+            "avg": 0
+          },
+          {
+            "date": "2026-09-09",
+            "day": 9,
+            "count": 0,
+            "avg": 0
+          },
+          {
+            "date": "2026-09-10",
+            "day": 10,
+            "count": 0,
+            "avg": 0
+          },
+          {
+            "date": "2026-09-11",
+            "day": 11,
+            "count": 0,
+            "avg": 0
+          }
+        ],
+        "monthly_12": [
+          {
+            "month": "2025-10",
+            "label": "Okt",
+            "light": 0,
+            "heavy": 0
+          },
+          {
+            "month": "2025-11",
+            "label": "Noy",
+            "light": 0,
+            "heavy": 0
+          },
+          {
+            "month": "2025-12",
+            "label": "Dek",
+            "light": 0,
+            "heavy": 0
+          },
+          {
+            "month": "2026-01",
+            "label": "Yan",
+            "light": 0,
+            "heavy": 0
+          },
+          {
+            "month": "2026-02",
+            "label": "Fev",
+            "light": 99624,
+            "heavy": 3549
+          },
+          {
+            "month": "2026-03",
+            "label": "Mar",
+            "light": 258796,
+            "heavy": 3992
+          },
+          {
+            "month": "2026-04",
+            "label": "Apr",
+            "light": 270364,
+            "heavy": 4467
+          },
+          {
+            "month": "2026-05",
+            "label": "May",
+            "light": 263270,
+            "heavy": 7446
+          },
+          {
+            "month": "2026-06",
+            "label": "Iyn",
+            "light": 135723,
+            "heavy": 2266
+          },
+          {
+            "month": "2026-07",
+            "label": "Iyl",
+            "light": 340967,
+            "heavy": 5500
+          },
+          {
+            "month": "2026-08",
+            "label": "Avg",
+            "light": 83996,
+            "heavy": 1584
+          },
+          {
+            "month": "2026-09",
+            "label": "Sen",
+            "light": 32222,
+            "heavy": 551
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -26,6 +26,10 @@ class StatsDB:
 
     def __init__(self, db_path: str = None):
         if db_path is None:
+            # RAILSAFE_DB — namoyish (rolik) uchun boshqa bazaga ulanish.
+            # Haqiqiy stats.db ga tegilmaydi: tools/make_demo_data.py qarang.
+            db_path = os.environ.get("RAILSAFE_DB") or None
+        if db_path is None:
             base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
             data_dir = os.path.join(base_dir, "data")
             os.makedirs(data_dir, exist_ok=True)

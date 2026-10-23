@@ -1,0 +1,2138 @@
+{
+  "source": "railsafe-ai",
+  "version": "1.1.0",
+  "sent_at": "2026-09-11T10:12:39",
+  "days": [
+    {
+      "date": "2026-09-05",
+      "crossings": [
+        {
+          "crossing_id": 1,
+          "name": "Pereezd 8",
+          "location": "ssds",
+          "light": 0,
+          "heavy": 0,
+          "total": 0,
+          "hourly": [
+            {
+              "hour": 0,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 1,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 2,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 3,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 4,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 5,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 6,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 7,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 8,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 9,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 10,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 11,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 12,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 13,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 14,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 15,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 16,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 17,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 18,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 19,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 20,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 21,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 22,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 23,
+              "light": 0,
+              "heavy": 0
+            }
+          ],
+          "trains": {
+            "count": 0,
+            "min": 0,
+            "max": 0,
+            "avg": 0
+          },
+          "train_events": []
+        },
+        {
+          "crossing_id": 2,
+          "name": "Pereezd 9",
+          "location": "asd",
+          "light": 0,
+          "heavy": 0,
+          "total": 0,
+          "hourly": [
+            {
+              "hour": 0,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 1,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 2,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 3,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 4,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 5,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 6,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 7,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 8,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 9,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 10,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 11,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 12,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 13,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 14,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 15,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 16,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 17,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 18,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 19,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 20,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 21,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 22,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 23,
+              "light": 0,
+              "heavy": 0
+            }
+          ],
+          "trains": {
+            "count": 0,
+            "min": 0,
+            "max": 0,
+            "avg": 0
+          },
+          "train_events": []
+        }
+      ]
+    },
+    {
+      "date": "2026-09-06",
+      "crossings": [
+        {
+          "crossing_id": 1,
+          "name": "Pereezd 8",
+          "location": "ssds",
+          "light": 0,
+          "heavy": 0,
+          "total": 0,
+          "hourly": [
+            {
+              "hour": 0,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 1,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 2,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 3,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 4,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 5,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 6,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 7,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 8,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 9,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 10,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 11,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 12,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 13,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 14,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 15,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 16,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 17,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 18,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 19,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 20,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 21,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 22,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 23,
+              "light": 0,
+              "heavy": 0
+            }
+          ],
+          "trains": {
+            "count": 0,
+            "min": 0,
+            "max": 0,
+            "avg": 0
+          },
+          "train_events": []
+        },
+        {
+          "crossing_id": 2,
+          "name": "Pereezd 9",
+          "location": "asd",
+          "light": 0,
+          "heavy": 0,
+          "total": 0,
+          "hourly": [
+            {
+              "hour": 0,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 1,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 2,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 3,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 4,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 5,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 6,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 7,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 8,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 9,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 10,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 11,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 12,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 13,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 14,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 15,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 16,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 17,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 18,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 19,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 20,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 21,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 22,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 23,
+              "light": 0,
+              "heavy": 0
+            }
+          ],
+          "trains": {
+            "count": 0,
+            "min": 0,
+            "max": 0,
+            "avg": 0
+          },
+          "train_events": []
+        }
+      ]
+    },
+    {
+      "date": "2026-09-07",
+      "crossings": [
+        {
+          "crossing_id": 1,
+          "name": "Pereezd 8",
+          "location": "ssds",
+          "light": 0,
+          "heavy": 0,
+          "total": 0,
+          "hourly": [
+            {
+              "hour": 0,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 1,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 2,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 3,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 4,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 5,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 6,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 7,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 8,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 9,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 10,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 11,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 12,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 13,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 14,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 15,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 16,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 17,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 18,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 19,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 20,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 21,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 22,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 23,
+              "light": 0,
+              "heavy": 0
+            }
+          ],
+          "trains": {
+            "count": 0,
+            "min": 0,
+            "max": 0,
+            "avg": 0
+          },
+          "train_events": []
+        },
+        {
+          "crossing_id": 2,
+          "name": "Pereezd 9",
+          "location": "asd",
+          "light": 0,
+          "heavy": 0,
+          "total": 0,
+          "hourly": [
+            {
+              "hour": 0,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 1,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 2,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 3,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 4,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 5,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 6,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 7,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 8,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 9,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 10,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 11,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 12,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 13,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 14,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 15,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 16,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 17,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 18,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 19,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 20,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 21,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 22,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 23,
+              "light": 0,
+              "heavy": 0
+            }
+          ],
+          "trains": {
+            "count": 0,
+            "min": 0,
+            "max": 0,
+            "avg": 0
+          },
+          "train_events": []
+        }
+      ]
+    },
+    {
+      "date": "2026-09-08",
+      "crossings": [
+        {
+          "crossing_id": 1,
+          "name": "Pereezd 8",
+          "location": "ssds",
+          "light": 7710,
+          "heavy": 235,
+          "total": 7945,
+          "hourly": [
+            {
+              "hour": 0,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 1,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 2,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 3,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 4,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 5,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 6,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 7,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 8,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 9,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 10,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 11,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 12,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 13,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 14,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 15,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 16,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 17,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 18,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 19,
+              "light": 953,
+              "heavy": 36
+            },
+            {
+              "hour": 20,
+              "light": 1922,
+              "heavy": 76
+            },
+            {
+              "hour": 21,
+              "light": 2077,
+              "heavy": 76
+            },
+            {
+              "hour": 22,
+              "light": 1508,
+              "heavy": 36
+            },
+            {
+              "hour": 23,
+              "light": 1250,
+              "heavy": 11
+            }
+          ],
+          "trains": {
+            "count": 0,
+            "min": 0,
+            "max": 0,
+            "avg": 0
+          },
+          "train_events": []
+        },
+        {
+          "crossing_id": 2,
+          "name": "Pereezd 9",
+          "location": "asd",
+          "light": 2474,
+          "heavy": 13,
+          "total": 2487,
+          "hourly": [
+            {
+              "hour": 0,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 1,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 2,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 3,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 4,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 5,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 6,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 7,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 8,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 9,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 10,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 11,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 12,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 13,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 14,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 15,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 16,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 17,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 18,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 19,
+              "light": 336,
+              "heavy": 3
+            },
+            {
+              "hour": 20,
+              "light": 560,
+              "heavy": 1
+            },
+            {
+              "hour": 21,
+              "light": 663,
+              "heavy": 4
+            },
+            {
+              "hour": 22,
+              "light": 523,
+              "heavy": 5
+            },
+            {
+              "hour": 23,
+              "light": 392,
+              "heavy": 0
+            }
+          ],
+          "trains": {
+            "count": 0,
+            "min": 0,
+            "max": 0,
+            "avg": 0
+          },
+          "train_events": []
+        }
+      ]
+    },
+    {
+      "date": "2026-09-09",
+      "crossings": [
+        {
+          "crossing_id": 1,
+          "name": "Pereezd 8",
+          "location": "ssds",
+          "light": 34179,
+          "heavy": 1971,
+          "total": 36150,
+          "hourly": [
+            {
+              "hour": 0,
+              "light": 810,
+              "heavy": 11
+            },
+            {
+              "hour": 1,
+              "light": 502,
+              "heavy": 10
+            },
+            {
+              "hour": 2,
+              "light": 324,
+              "heavy": 9
+            },
+            {
+              "hour": 3,
+              "light": 230,
+              "heavy": 8
+            },
+            {
+              "hour": 4,
+              "light": 202,
+              "heavy": 11
+            },
+            {
+              "hour": 5,
+              "light": 280,
+              "heavy": 26
+            },
+            {
+              "hour": 6,
+              "light": 591,
+              "heavy": 72
+            },
+            {
+              "hour": 7,
+              "light": 1964,
+              "heavy": 98
+            },
+            {
+              "hour": 8,
+              "light": 2237,
+              "heavy": 103
+            },
+            {
+              "hour": 9,
+              "light": 825,
+              "heavy": 48
+            },
+            {
+              "hour": 10,
+              "light": 2091,
+              "heavy": 194
+            },
+            {
+              "hour": 11,
+              "light": 1716,
+              "heavy": 128
+            },
+            {
+              "hour": 12,
+              "light": 2145,
+              "heavy": 167
+            },
+            {
+              "hour": 13,
+              "light": 1951,
+              "heavy": 142
+            },
+            {
+              "hour": 14,
+              "light": 2000,
+              "heavy": 156
+            },
+            {
+              "hour": 15,
+              "light": 1673,
+              "heavy": 128
+            },
+            {
+              "hour": 16,
+              "light": 1011,
+              "heavy": 79
+            },
+            {
+              "hour": 17,
+              "light": 2278,
+              "heavy": 131
+            },
+            {
+              "hour": 18,
+              "light": 2481,
+              "heavy": 124
+            },
+            {
+              "hour": 19,
+              "light": 2507,
+              "heavy": 89
+            },
+            {
+              "hour": 20,
+              "light": 2303,
+              "heavy": 96
+            },
+            {
+              "hour": 21,
+              "light": 1975,
+              "heavy": 81
+            },
+            {
+              "hour": 22,
+              "light": 1444,
+              "heavy": 52
+            },
+            {
+              "hour": 23,
+              "light": 639,
+              "heavy": 8
+            }
+          ],
+          "trains": {
+            "count": 5,
+            "min": 208.997887,
+            "max": 392.512575,
+            "avg": 332.7009598
+          },
+          "train_events": [
+            {
+              "start": "22:38",
+              "end": "22:45",
+              "duration_seconds": 392.512575
+            },
+            {
+              "start": "20:32",
+              "end": "20:35",
+              "duration_seconds": 208.997887
+            },
+            {
+              "start": "19:33",
+              "end": "19:39",
+              "duration_seconds": 383.995251
+            },
+            {
+              "start": "19:10",
+              "end": "19:15",
+              "duration_seconds": 316.003942
+            },
+            {
+              "start": "17:28",
+              "end": "17:34",
+              "duration_seconds": 361.995144
+            }
+          ]
+        },
+        {
+          "crossing_id": 2,
+          "name": "Pereezd 9",
+          "location": "asd",
+          "light": 12628,
+          "heavy": 184,
+          "total": 12812,
+          "hourly": [
+            {
+              "hour": 0,
+              "light": 225,
+              "heavy": 0
+            },
+            {
+              "hour": 1,
+              "light": 172,
+              "heavy": 0
+            },
+            {
+              "hour": 2,
+              "light": 95,
+              "heavy": 0
+            },
+            {
+              "hour": 3,
+              "light": 104,
+              "heavy": 0
+            },
+            {
+              "hour": 4,
+              "light": 90,
+              "heavy": 0
+            },
+            {
+              "hour": 5,
+              "light": 91,
+              "heavy": 2
+            },
+            {
+              "hour": 6,
+              "light": 234,
+              "heavy": 3
+            },
+            {
+              "hour": 7,
+              "light": 929,
+              "heavy": 8
+            },
+            {
+              "hour": 8,
+              "light": 797,
+              "heavy": 9
+            },
+            {
+              "hour": 9,
+              "light": 404,
+              "heavy": 6
+            },
+            {
+              "hour": 10,
+              "light": 610,
+              "heavy": 17
+            },
+            {
+              "hour": 11,
+              "light": 657,
+              "heavy": 19
+            },
+            {
+              "hour": 12,
+              "light": 699,
+              "heavy": 14
+            },
+            {
+              "hour": 13,
+              "light": 695,
+              "heavy": 10
+            },
+            {
+              "hour": 14,
+              "light": 544,
+              "heavy": 22
+            },
+            {
+              "hour": 15,
+              "light": 644,
+              "heavy": 17
+            },
+            {
+              "hour": 16,
+              "light": 717,
+              "heavy": 15
+            },
+            {
+              "hour": 17,
+              "light": 846,
+              "heavy": 13
+            },
+            {
+              "hour": 18,
+              "light": 941,
+              "heavy": 13
+            },
+            {
+              "hour": 19,
+              "light": 910,
+              "heavy": 7
+            },
+            {
+              "hour": 20,
+              "light": 827,
+              "heavy": 6
+            },
+            {
+              "hour": 21,
+              "light": 583,
+              "heavy": 2
+            },
+            {
+              "hour": 22,
+              "light": 631,
+              "heavy": 0
+            },
+            {
+              "hour": 23,
+              "light": 183,
+              "heavy": 1
+            }
+          ],
+          "trains": {
+            "count": 0,
+            "min": 0,
+            "max": 0,
+            "avg": 0
+          },
+          "train_events": []
+        }
+      ]
+    },
+    {
+      "date": "2026-09-10",
+      "crossings": [
+        {
+          "crossing_id": 1,
+          "name": "Pereezd 8",
+          "location": "ssds",
+          "light": 30414,
+          "heavy": 1801,
+          "total": 32215,
+          "hourly": [
+            {
+              "hour": 0,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 1,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 2,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 3,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 4,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 5,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 6,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 7,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 8,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 9,
+              "light": 1597,
+              "heavy": 109
+            },
+            {
+              "hour": 10,
+              "light": 2256,
+              "heavy": 176
+            },
+            {
+              "hour": 11,
+              "light": 1382,
+              "heavy": 123
+            },
+            {
+              "hour": 12,
+              "light": 2066,
+              "heavy": 174
+            },
+            {
+              "hour": 13,
+              "light": 1985,
+              "heavy": 158
+            },
+            {
+              "hour": 14,
+              "light": 2047,
+              "heavy": 148
+            },
+            {
+              "hour": 15,
+              "light": 2035,
+              "heavy": 143
+            },
+            {
+              "hour": 16,
+              "light": 2176,
+              "heavy": 162
+            },
+            {
+              "hour": 17,
+              "light": 2746,
+              "heavy": 178
+            },
+            {
+              "hour": 18,
+              "light": 2673,
+              "heavy": 127
+            },
+            {
+              "hour": 19,
+              "light": 2481,
+              "heavy": 106
+            },
+            {
+              "hour": 20,
+              "light": 2250,
+              "heavy": 69
+            },
+            {
+              "hour": 21,
+              "light": 1900,
+              "heavy": 68
+            },
+            {
+              "hour": 22,
+              "light": 1573,
+              "heavy": 38
+            },
+            {
+              "hour": 23,
+              "light": 1247,
+              "heavy": 22
+            }
+          ],
+          "trains": {
+            "count": 19,
+            "min": 86.518993,
+            "max": 639.494591,
+            "avg": 320.74171094736846
+          },
+          "train_events": [
+            {
+              "start": "22:45",
+              "end": "22:50",
+              "duration_seconds": 310.011298
+            },
+            {
+              "start": "20:15",
+              "end": "20:20",
+              "duration_seconds": 333.003811
+            },
+            {
+              "start": "19:47",
+              "end": "19:52",
+              "duration_seconds": 279.995603
+            },
+            {
+              "start": "19:07",
+              "end": "19:14",
+              "duration_seconds": 456.997195
+            },
+            {
+              "start": "17:45",
+              "end": "17:49",
+              "duration_seconds": 241.501699
+            },
+            {
+              "start": "16:27",
+              "end": "16:37",
+              "duration_seconds": 639.494591
+            },
+            {
+              "start": "16:12",
+              "end": "16:15",
+              "duration_seconds": 170.029892
+            },
+            {
+              "start": "15:49",
+              "end": "15:54",
+              "duration_seconds": 306.063743
+            },
+            {
+              "start": "15:30",
+              "end": "15:36",
+              "duration_seconds": 319.527207
+            },
+            {
+              "start": "15:17",
+              "end": "15:22",
+              "duration_seconds": 324.490225
+            },
+            {
+              "start": "14:14",
+              "end": "14:15",
+              "duration_seconds": 86.518993
+            },
+            {
+              "start": "13:59",
+              "end": "14:07",
+              "duration_seconds": 465.455927
+            },
+            {
+              "start": "13:46",
+              "end": "13:52",
+              "duration_seconds": 348.49542
+            },
+            {
+              "start": "12:50",
+              "end": "12:54",
+              "duration_seconds": 221.006677
+            },
+            {
+              "start": "12:32",
+              "end": "12:38",
+              "duration_seconds": 359.497752
+            },
+            {
+              "start": "12:07",
+              "end": "12:14",
+              "duration_seconds": 381.514184
+            },
+            {
+              "start": "11:36",
+              "end": "11:46",
+              "duration_seconds": 586.993537
+            },
+            {
+              "start": "11:15",
+              "end": "11:17",
+              "duration_seconds": 133.994137
+            },
+            {
+              "start": "11:03",
+              "end": "11:06",
+              "duration_seconds": 129.500617
+            }
+          ]
+        },
+        {
+          "crossing_id": 2,
+          "name": "Pereezd 9",
+          "location": "asd",
+          "light": 10037,
+          "heavy": 206,
+          "total": 10243,
+          "hourly": [
+            {
+              "hour": 0,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 1,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 2,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 3,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 4,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 5,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 6,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 7,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 8,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 9,
+              "light": 475,
+              "heavy": 12
+            },
+            {
+              "hour": 10,
+              "light": 650,
+              "heavy": 18
+            },
+            {
+              "hour": 11,
+              "light": 646,
+              "heavy": 20
+            },
+            {
+              "hour": 12,
+              "light": 702,
+              "heavy": 22
+            },
+            {
+              "hour": 13,
+              "light": 677,
+              "heavy": 13
+            },
+            {
+              "hour": 14,
+              "light": 620,
+              "heavy": 23
+            },
+            {
+              "hour": 15,
+              "light": 596,
+              "heavy": 24
+            },
+            {
+              "hour": 16,
+              "light": 775,
+              "heavy": 19
+            },
+            {
+              "hour": 17,
+              "light": 831,
+              "heavy": 20
+            },
+            {
+              "hour": 18,
+              "light": 855,
+              "heavy": 25
+            },
+            {
+              "hour": 19,
+              "light": 854,
+              "heavy": 6
+            },
+            {
+              "hour": 20,
+              "light": 771,
+              "heavy": 2
+            },
+            {
+              "hour": 21,
+              "light": 648,
+              "heavy": 0
+            },
+            {
+              "hour": 22,
+              "light": 540,
+              "heavy": 1
+            },
+            {
+              "hour": 23,
+              "light": 397,
+              "heavy": 1
+            }
+          ],
+          "trains": {
+            "count": 0,
+            "min": 0,
+            "max": 0,
+            "avg": 0
+          },
+          "train_events": []
+        }
+      ]
+    },
+    {
+      "date": "2026-09-11",
+      "crossings": [
+        {
+          "crossing_id": 1,
+          "name": "Pereezd 8",
+          "location": "ssds",
+          "light": 9596,
+          "heavy": 518,
+          "total": 10114,
+          "hourly": [
+            {
+              "hour": 0,
+              "light": 781,
+              "heavy": 14
+            },
+            {
+              "hour": 1,
+              "light": 518,
+              "heavy": 8
+            },
+            {
+              "hour": 2,
+              "light": 367,
+              "heavy": 11
+            },
+            {
+              "hour": 3,
+              "light": 263,
+              "heavy": 10
+            },
+            {
+              "hour": 4,
+              "light": 204,
+              "heavy": 12
+            },
+            {
+              "hour": 5,
+              "light": 350,
+              "heavy": 26
+            },
+            {
+              "hour": 6,
+              "light": 545,
+              "heavy": 68
+            },
+            {
+              "hour": 7,
+              "light": 2027,
+              "heavy": 85
+            },
+            {
+              "hour": 8,
+              "light": 2169,
+              "heavy": 82
+            },
+            {
+              "hour": 9,
+              "light": 1911,
+              "heavy": 147
+            },
+            {
+              "hour": 10,
+              "light": 461,
+              "heavy": 55
+            },
+            {
+              "hour": 11,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 12,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 13,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 14,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 15,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 16,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 17,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 18,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 19,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 20,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 21,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 22,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 23,
+              "light": 0,
+              "heavy": 0
+            }
+          ],
+          "trains": {
+            "count": 11,
+            "min": 206.499203,
+            "max": 415.494922,
+            "avg": 315.2683115454546
+          },
+          "train_events": [
+            {
+              "start": "09:30",
+              "end": "09:35",
+              "duration_seconds": 297.534612
+            },
+            {
+              "start": "09:15",
+              "end": "09:21",
+              "duration_seconds": 332.474148
+            },
+            {
+              "start": "07:08",
+              "end": "07:11",
+              "duration_seconds": 219.994992
+            },
+            {
+              "start": "06:54",
+              "end": "07:00",
+              "duration_seconds": 318.497405
+            },
+            {
+              "start": "06:34",
+              "end": "06:40",
+              "duration_seconds": 366.993781
+            },
+            {
+              "start": "06:10",
+              "end": "06:16",
+              "duration_seconds": 347.497929
+            },
+            {
+              "start": "05:51",
+              "end": "05:57",
+              "duration_seconds": 359.48694
+            },
+            {
+              "start": "04:48",
+              "end": "04:55",
+              "duration_seconds": 415.494922
+            },
+            {
+              "start": "03:40",
+              "end": "03:43",
+              "duration_seconds": 211.992108
+            },
+            {
+              "start": "02:23",
+              "end": "02:29",
+              "duration_seconds": 391.485387
+            },
+            {
+              "start": "00:05",
+              "end": "00:09",
+              "duration_seconds": 206.499203
+            }
+          ]
+        },
+        {
+          "crossing_id": 2,
+          "name": "Pereezd 9",
+          "location": "asd",
+          "light": 3616,
+          "heavy": 54,
+          "total": 3670,
+          "hourly": [
+            {
+              "hour": 0,
+              "light": 270,
+              "heavy": 1
+            },
+            {
+              "hour": 1,
+              "light": 143,
+              "heavy": 0
+            },
+            {
+              "hour": 2,
+              "light": 293,
+              "heavy": 0
+            },
+            {
+              "hour": 3,
+              "light": 74,
+              "heavy": 0
+            },
+            {
+              "hour": 4,
+              "light": 179,
+              "heavy": 0
+            },
+            {
+              "hour": 5,
+              "light": 84,
+              "heavy": 0
+            },
+            {
+              "hour": 6,
+              "light": 240,
+              "heavy": 5
+            },
+            {
+              "hour": 7,
+              "light": 858,
+              "heavy": 4
+            },
+            {
+              "hour": 8,
+              "light": 731,
+              "heavy": 11
+            },
+            {
+              "hour": 9,
+              "light": 617,
+              "heavy": 27
+            },
+            {
+              "hour": 10,
+              "light": 127,
+              "heavy": 6
+            },
+            {
+              "hour": 11,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 12,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 13,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 14,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 15,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 16,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 17,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 18,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 19,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 20,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 21,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 22,
+              "light": 0,
+              "heavy": 0
+            },
+            {
+              "hour": 23,
+              "light": 0,
+              "heavy": 0
+            }
+          ],
+          "trains": {
+            "count": 0,
+            "min": 0,
+            "max": 0,
+            "avg": 0
+          },
+          "train_events": []
+        }
+      ]
+    }
+  ]
+}

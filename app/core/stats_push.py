@@ -38,6 +38,7 @@ Faqat Python stdlib (urllib) — qo'shimcha dependency yo'q.
 
 import json
 import logging
+import os
 import ssl
 import threading
 import urllib.error
@@ -54,6 +55,9 @@ DEFAULT_SETTINGS = {
     "password": "",
     "interval_minutes": 5,
     "days_back": 1,
+    # Taxlil sahifasidagi qo'shimcha bloklar (kamera kesimi, band bo'lish,
+    # turish vaqti, sig'im, toifa, 30 kun / 12 oy). Payload kattalashadi.
+    "include_analytics": True,
     "verify_tls": True,
     # Parol tarmoqda ochiq ketmasligi uchun default HTTPS majburiy.
     # Ichki (ishonchli) tarmoqda http kerak bo'lsa ATAYIN true qilinadi.
@@ -103,6 +107,13 @@ class StatsPushClient:
         return merged
 
     def start(self) -> bool:
+        # XAVFSIZLIK: namoyish bazasi ulangan bo'lsa (RAILSAFE_DB) tashqi
+        # tizimga HECH NARSA yuborilmaydi — aks holda namuna raqamlar
+        # hamkor serveriga tushib, ularning bazasini buzardi.
+        if os.environ.get("RAILSAFE_DB"):
+            logger.warning("Stats Push o'chirildi: namoyish bazasi ulangan "
+                           "(RAILSAFE_DB) — tashqi tizimga yuborilmaydi")
+            return False
         s = self._read_settings()
         if not s["enabled"] or not s["base_url"].strip():
             return False
@@ -221,19 +232,76 @@ class StatsPushClient:
 
     # ─── payload ─────────────────────────────────────────────
 
-    def build_payload(self, days_back: int = 1) -> dict:
-        """Bugungi + oxirgi days_back kunlik to'liq snapshot."""
+    @staticmethod
+    def _hours_by_date(rows: list) -> dict:
+        """[{"date": "...", "hours": [...]}, ...] -> {"date": hours} lug'ati."""
+        out = {}
+        for r in rows or []:
+            d = r.get("date")
+            if d:
+                out[d] = r.get("hours", [])
+        return out
+
+    def _crossing_analytics(self, cid: int, date_to: date) -> dict:
+        """Taxlil sahifasidagi kesishma bloklari (kunlik emas — joriy holat).
+
+        Sahifadagi grafiklar bilan bir xil manbadan olinadi, shuning uchun
+        qabul qiluvchi tomonda aynan o'sha ko'rinish qayta tiklanadi.
+        """
+        try:
+            heavy_coef = float(self._cfg.get_settings().get("toifa_heavy_coef", 2.5))
+        except (TypeError, ValueError):
+            heavy_coef = 2.5
+        try:
+            # Sahifadagi kabi: toifa butun tarix bo'yicha hisoblanadi.
+            # Import ham try ichida — hisobot moduli buzilsa push to'xtamasin.
+            from app.reports.category import compute_category
+            category = compute_category(self._db, cid, "2000-01-01",
+                                        date_to.isoformat(), heavy_coef=heavy_coef)
+        except Exception as e:
+            logger.warning("toifa hisoblanmadi (crossing %s): %s", cid, e)
+            category = None
+        return {
+            "capacity": self._db.get_practical_capacity(cid, date_to),
+            "category": category,
+            "daily_30": self._db.get_monthly_data(cid),
+            "train_daily_30": self._db.get_train_monthly(cid),
+            "monthly_12": self._db.get_yearly_data(cid),
+        }
+
+    def build_payload(self, days_back: int = 1,
+                      include_analytics: bool = True) -> dict:
+        """Bugungi + oxirgi days_back kunlik to'liq snapshot.
+
+        include_analytics=True bo'lsa Taxlil sahifasidagi qo'shimcha
+        bloklar ham qo'shiladi (kamera kesimi, band bo'lish, turish vaqti,
+        sig'im, toifa, 30 kun / 12 oy dinamikasi).
+        """
         days = []
         today = date.today()
+        crossings_cfg = self._cfg.get_crossings()
+
+        # Heatmap manbalari oxirgi 7 kunni qaytaradi — kesishma uchun bir
+        # marta o'qib, sana bo'yicha lug'atga aylantiramiz (N marta emas).
+        occupancy_map, dwell_map, analytics_map = {}, {}, {}
+        if include_analytics:
+            for c in crossings_cfg:
+                cid = c.get("id")
+                occupancy_map[cid] = self._hours_by_date(
+                    self._db.get_occupancy_heatmap(cid, today))
+                dwell_map[cid] = self._hours_by_date(
+                    self._db.get_dwell_heatmap(cid, today))
+                analytics_map[cid] = self._crossing_analytics(cid, today)
+
         for i in range(max(0, int(days_back)), -1, -1):
             d = (today - timedelta(days=i)).isoformat()
             crossings = []
-            for c in self._cfg.get_crossings():
+            for c in crossings_cfg:
                 cid = c.get("id")
                 light, heavy = self._db.get_today_total(cid, target_date=d)
                 trains = self._db.get_train_today_stats(cid, target_date=d)
                 events = self._db.get_train_events_today(cid, target_date=d)
-                crossings.append({
+                item = {
                     "crossing_id": cid,
                     "name": c.get("name", ""),
                     "location": c.get("location", ""),
@@ -250,14 +318,58 @@ class StatsPushClient:
                         }
                         for ev in events if not ev.get("in_progress")
                     ],
-                })
+                }
+                if include_analytics:
+                    cams = []
+                    for cam in c.get("cameras", []):
+                        cam_name = cam.get("name", "")
+                        cl, ch = self._db.get_camera_today(cid, cam_name,
+                                                           target_date=d)
+                        cams.append({"name": cam_name, "light": cl, "heavy": ch})
+                    item["cameras"] = cams
+                    item["train_hourly"] = self._db.get_train_hourly_data(
+                        cid, target_date=d)
+                    # Heatmap oynasidan tashqaridagi kun uchun null —
+                    # "nol" emas, "ma'lumot yo'q" degani.
+                    item["occupancy_minutes"] = occupancy_map.get(cid, {}).get(d)
+                    item["dwell_seconds"] = dwell_map.get(cid, {}).get(d)
+                crossings.append(item)
             days.append({"date": d, "crossings": crossings})
-        return {
+
+        payload = {
             "source": "railsafe-ai",
+            "schema": 2,
             "version": APP_VERSION,
             "sent_at": datetime.now().isoformat(timespec="seconds"),
             "days": days,
         }
+
+        if include_analytics:
+            # Taxlil sahifasining yuqoridagi kartochkalari (oxirgi kun bo'yicha)
+            last = days[-1] if days else {"date": today.isoformat(),
+                                          "crossings": []}
+            payload["summary"] = {
+                "date": last["date"],
+                "light": sum(c["light"] for c in last["crossings"]),
+                "heavy": sum(c["heavy"] for c in last["crossings"]),
+                "total": sum(c["total"] for c in last["crossings"]),
+                "trains": sum(c["trains"]["count"] for c in last["crossings"]),
+                "crossings": len(crossings_cfg),
+                "cameras": sum(len(c.get("cameras", [])) for c in crossings_cfg),
+            }
+            try:
+                warning_threshold = float(self._cfg.get_settings().get(
+                    "warning_threshold", 10.0)) or 10.0
+            except (TypeError, ValueError):
+                warning_threshold = 10.0
+            payload["analytics"] = {
+                "warning_threshold_seconds": warning_threshold,
+                "crossings": [
+                    dict(crossing_id=c.get("id"), **analytics_map[c.get("id")])
+                    for c in crossings_cfg if c.get("id") in analytics_map
+                ],
+            }
+        return payload
 
     # ─── yuborish (login + retry) ────────────────────────────
 
@@ -282,7 +394,8 @@ class StatsPushClient:
                 return False, err
             self._token = token
 
-        payload = self.build_payload(s.get("days_back", 1))
+        payload = self.build_payload(s.get("days_back", 1),
+                                     s.get("include_analytics", True))
         url = base + STATS_PATH
         status, body = self._post_json(url, payload, s, token=self._token)
 
