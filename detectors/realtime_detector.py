@@ -804,8 +804,13 @@ class RealtimeMultiCameraDetector:
         shuning uchun boxlarni chizishda `last_capture_time()` bilan
         ekstrapolyatsiya qilish kerak (izoh: app/core/tracker.py).
         """
+        detections, det_frame, _ = self.detect_async_result(frame, camera_id)
+        return detections, det_frame
+
+    def detect_async_result(self, frame: np.ndarray, camera_id: str) -> tuple:
+        """Submit a frame and return the cached detections, frame and timestamp together."""
         if not self._is_loaded:
-            return ([], None)
+            return [], None, None
 
         event = threading.Event()
         with self._frames_lock:
@@ -814,9 +819,7 @@ class RealtimeMultiCameraDetector:
         # Cached natijalarni DARHOL qaytarish - BLOKLAMASDAN
         with self._results_lock:
             result = self._results.get(camera_id)
-            if result is None:
-                return ([], None)
-            return (result[0], result[1])  # (detections, original_frame)
+            return result if result is not None else ([], None, None)
 
     def last_capture_time(self, camera_id: str) -> Optional[float]:
         """Oxirgi natija QAYSI kadrga tegishli — o'sha kadr olingan vaqt (monotonic).

@@ -90,6 +90,8 @@ def _safe_name(name: str) -> str:
 
 
 def get_record_dir() -> Path:
+    if os.environ.get("RAILSAFE_PILOT") == "1":
+        return Path(__file__).resolve().parents[2] / "app" / "data" / "recordings"
     return Path.home() / "Desktop" / "RailSafe_Yozuvlar"
 
 
@@ -196,7 +198,7 @@ class VideoRecorder:
         except queue.Full:
             self._dropped_frames += 1
 
-    def stop(self) -> None:
+    def stop(self, wait: bool = True) -> None:
         """Yozishni to'xtatish va background thread ni kutish."""
         if not self.is_recording:
             return
@@ -204,11 +206,9 @@ class VideoRecorder:
         try:
             self._queue.put_nowait(self._SENTINEL)
         except queue.Full:
-            try:
-                self._queue.put(self._SENTINEL, timeout=2.0)
-            except queue.Full:
-                pass
-        if self._thread is not None:
+            # The worker drains the queue and exits once recording is off.
+            pass
+        if wait and self._thread is not None:
             self._thread.join(timeout=8.0)
             self._thread = None
         if self._dropped_frames > 0:
@@ -292,6 +292,7 @@ class VideoRecorder:
 
     def _worker(self) -> None:
         writer: cv2.VideoWriter | None = None
+        writer_size = None
         actual_path = ""
         segment_start = time.monotonic()
         last_disk_check = time.monotonic()
@@ -309,10 +310,12 @@ class VideoRecorder:
                     break
 
                 frame = self._resize_frame(frame)
+                h, w = frame.shape[:2]
                 now_t = time.monotonic()
 
                 # Rotation: max duration tugadi → segmentni yopish
-                if writer is not None and (now_t - segment_start) >= self.max_duration_sec:
+                if writer is not None and (
+                        (w, h) != writer_size or now_t - segment_start >= self.max_duration_sec):
                     writer.release()
                     logger.info("[VideoRecorder] Segment yakunlandi: %s", actual_path)
                     writer = None
@@ -320,7 +323,6 @@ class VideoRecorder:
 
                 # Lazy init (birinchi frame da yoki rotation dan keyin)
                 if writer is None:
-                    h, w = frame.shape[:2]
                     self._folder.mkdir(parents=True, exist_ok=True)
                     writer, actual_path, fourcc, fell_back = self._open_writer(w, h)
                     if writer is None:
@@ -331,6 +333,7 @@ class VideoRecorder:
                         break
                     self.last_codec_fell_back = fell_back
                     self.last_path = actual_path
+                    writer_size = (w, h)
                     msg = (f"[VideoRecorder] Boshlandi "
                            f"({w}x{h} @ {self._fps:.1f}fps, codec={fourcc}): "
                            f"{actual_path}")

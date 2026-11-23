@@ -97,11 +97,7 @@ class StatsPushClient:
     # ─── lifecycle ───────────────────────────────────────────
 
     def _read_settings(self) -> dict:
-        integ = self._cfg.get_settings().get("integration_push")
-        if integ is None:
-            # Configda ko'rinib turishi uchun o'chirilgan holda yozib qo'yamiz
-            self._cfg.update_settings({"integration_push": dict(DEFAULT_SETTINGS)})
-            return dict(DEFAULT_SETTINGS)
+        integ = self._cfg.get_settings().get("integration_push") or {}
         merged = dict(DEFAULT_SETTINGS)
         merged.update(integ)
         return merged
@@ -110,9 +106,8 @@ class StatsPushClient:
         # XAVFSIZLIK: namoyish bazasi ulangan bo'lsa (RAILSAFE_DB) tashqi
         # tizimga HECH NARSA yuborilmaydi — aks holda namuna raqamlar
         # hamkor serveriga tushib, ularning bazasini buzardi.
-        if os.environ.get("RAILSAFE_DB"):
-            logger.warning("Stats Push o'chirildi: namoyish bazasi ulangan "
-                           "(RAILSAFE_DB) — tashqi tizimga yuborilmaydi")
+        if os.environ.get("RAILSAFE_DB") or os.environ.get("RAILSAFE_PILOT") == "1":
+            logger.warning("Stats Push o'chirildi: namoyish yoki pilot rejimi")
             return False
         s = self._read_settings()
         if not s["enabled"] or not s["base_url"].strip():
@@ -376,6 +371,8 @@ class StatsPushClient:
     def send_snapshot(self, s: dict = None):
         """Bir marta yuborish. Returns (ok: bool, message: str).
         Test tugmasi ham shu metodni chaqiradi (sinxron)."""
+        if os.environ.get("RAILSAFE_DB") or os.environ.get("RAILSAFE_PILOT") == "1":
+            return False, "Push is disabled in demo and pilot mode."
         if s is None:
             s = self._read_settings()
         base = s["base_url"].strip().rstrip("/")

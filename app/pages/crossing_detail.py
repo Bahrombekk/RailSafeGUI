@@ -2,7 +2,7 @@
 Crossing Detail View - Responsive cameras with grid layout, auto-reconnect
 """
 
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
+from PyQt6.QtWidgets import (QWidget, QBoxLayout, QVBoxLayout, QHBoxLayout, QPushButton,
                               QLabel, QScrollArea, QFrame,
                               QSizePolicy, QApplication,
                               QGridLayout)
@@ -18,7 +18,10 @@ import logging
 
 from app.utils.theme_colors import C
 from app.utils.language import t, LM
+from app.utils.ui_guards import report_config_save_error
 from app.core.tracker import PolygonTracker, boxes_for_drawing
+from app.core.train_direction import split_train, train_class_ids
+from app.widgets.camera_preview import CameraPreview
 from app.widgets.hourly_chart import HourlyChartPanel
 
 # RTSP ultra-low-latency: UDP transport (TCP dan tezroq), minimal buffer
@@ -204,7 +207,6 @@ def _retire_worker(worker):
 
 class DetailCameraWorker(QThread):
     """Worker thread - all heavy work here, GUI only does setPixmap, auto-reconnect"""
-    frame_ready = pyqtSignal()  # Lightweight - payload yo'q (queue backup bo'lmaydi)
     status_changed = pyqtSignal(str)
     stats_updated = pyqtSignal(int, int, int, float, float)  # light_count, heavy_count, in_poly_count, max_time, fps
 
@@ -224,7 +226,7 @@ class DetailCameraWorker(QThread):
         self._running = True
         self._mutex = QMutex()
         self._retry_delay = 3
-        self._latest_qimg = None  # Atomic latest frame (GIL-safe)
+        self.preview_targets = ()
 
         # Car detector - non-blocking real-time mode
         self.car_detector = car_detector
@@ -237,12 +239,6 @@ class DetailCameraWorker(QThread):
         self.warning_threshold = warning_threshold
         self.violation_threshold = violation_threshold
         self.is_custom_model = is_custom_model
-
-    def take_frame(self):
-        """Eng oxirgi kadrni olish - eski framelar avtomatik tashlanadi"""
-        qimg = self._latest_qimg
-        self._latest_qimg = None
-        return qimg
 
     def run(self):
         retry_count = 0
@@ -301,8 +297,8 @@ class DetailCameraWorker(QThread):
                     _has_poly = False  # polygon maskasi bormi (statistika uchun)
                     # Klass nomlari bir marta (property har chaqiruvda dict nusxalaydi)
                     _cls_names = getattr(self.car_detector, 'class_names', None) or {}
-                    # Detektor natija kadri vaqtini beradimi (eski CarDetector bermaydi)
-                    _detector_has_ts = hasattr(self.car_detector, 'last_capture_time')
+                    # Poyezd sinflari mashina tracker'iga berilmaydi.
+                    _train_ids = train_class_ids(_cls_names)
                     _last_stats_emit = 0.0      # Stats throttle: max 4/sec
                     _last_in_poly = -1          # Polygon holatini kuzatish (darhol emit)
 
@@ -372,16 +368,14 @@ class DetailCameraWorker(QThread):
                         if self.detection_enabled and self.car_detector is not None:
                             try:
                                 # _det_frame ATAYLAB ishlatilmaydi — pastdagi izohga qarang
-                                detections, _det_frame = self.car_detector.detect_async(
+                                detections, _det_frame, _obs_t = self.car_detector.detect_async_result(
                                     frame, camera_id=self.detector_key)
+                                # Poyezd — mashina emas (app/core/train_direction.py)
+                                detections, _ = split_train(detections, _train_ids)
                                 detection_count = len(detections)
                                 # Deteksiyalar tegishli bo'lgan kadrning vaqti —
                                 # tracker shu vaqtdan hozirgi vaqtga
                                 # ekstrapolyatsiya qiladi (box orqada qolmaydi).
-                                _obs_t = None
-                                if _detector_has_ts:
-                                    _obs_t = self.car_detector.last_capture_time(
-                                        self.detector_key)
                                 # Tracking + counting (har doim chaqiriladi — eski tracklar expire bo'lishi uchun)
                                 _tracker.process_detections(detections, obs_time=_obs_t)
                                 # Statistika faqat polygon bo'lganda (zona yo'q
@@ -418,27 +412,17 @@ class DetailCameraWorker(QThread):
                                 color = (0, 0, 255)    # QIZIL — buzilish!
                             cv2.polylines(frame, [self._poly_pts], True, color, 2)
 
-                        # BGR→RGB — Intel GPU (OpenCL) yoki CPU
-                        if _USE_OPENCL:
-                            umat = cv2.UMat(frame)
-                            umat = cv2.cvtColor(umat, cv2.COLOR_BGR2RGB)
-                            rgb = umat.get()
-                        else:
-                            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                        qimg = QImage(rgb.data, w, h, w * 3,
-                                      QImage.Format.Format_RGB888).copy()
-
-                        self._latest_qimg = qimg
-                        self.frame_ready.emit()
+                        preview_time = time.perf_counter()
+                        for preview in self.preview_targets:
+                            preview.submit(self, frame, preview_time)
 
                         # FPS hisoblash
                         _fc += 1
-                        _now = time.time()
-                        _el = _now - _fps_t
+                        _el = preview_time - _fps_t
                         if _el >= 1.0:
                             _cam_fps = _fc / _el
                             _fc = 0
-                            _fps_t = _now
+                            _fps_t = preview_time
                         # Stats throttle: polygon holat o'zgarse darhol, aks holda 4/sec
                         _now_stats = time.time()
                         _poly_changed = in_poly_count != _last_in_poly
@@ -568,6 +552,8 @@ class CrossingDetail(QWidget):
         self.camera_polytime_labels = {}  # Polygon time labels
         self.camera_types = {}  # cam_id -> "main"/"additional"
         self._active_main_cam_id = None  # Hozirgi aktiv asosiy kamera (pause bo'lganda o'zgaradi)
+        self._latest_tracker_counts = {}
+        self._reset_tracker_counts = {}
         self.stats_db = stats_db
         self.is_custom_model = is_custom_model
         self._destroyed = False
@@ -650,77 +636,95 @@ class CrossingDetail(QWidget):
 
         # ===== Header =====
         header = QFrame()
-        header.setFixedHeight(50)
+        header.setObjectName("crossingHeader")
+        header.setMinimumHeight(58)
         header.setStyleSheet(f"""
-            QFrame {{
-                background: {C('bg_secondary')};
-                border: 1px solid {C('bg_input')};
-                border-radius: 10px;
+            QFrame#crossingHeader {{
+                background: {C('bg_card')};
+                border: 1px solid {C('border_light')};
+                border-radius: 12px;
             }}
+            QLabel {{ background: transparent; border: none; }}
         """)
-        header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(12, 0, 12, 0)
-        header_layout.setSpacing(10)
+        self._header_layout = QBoxLayout(QBoxLayout.Direction.LeftToRight, header)
+        self._header_layout.setContentsMargins(12, 8, 12, 8)
+        self._header_layout.setSpacing(12)
+        lead = QHBoxLayout()
+        lead.setSpacing(12)
+        self._header_layout.addLayout(lead, 1)
+        actions = QHBoxLayout()
+        actions.setSpacing(8)
+        actions.addStretch()
+        self._header_layout.addLayout(actions)
 
-        # Back
-        self._back_btn = QPushButton(t("crossing.back"))
-        self._back_btn.clicked.connect(self.back_clicked.emit)
-        self._back_btn.setStyleSheet(f"""
+        button_style = """
             QPushButton {{
-                background: {C('bg_input')}; color: {C('text_primary')}; border: none;
-                border-radius: 6px; padding: 6px 14px; font-size: 12px;
+                background: {bg}; color: {fg};
+                border: 1px solid {border}; border-radius: 7px;
+                padding: 0 11px; min-width: 0;
+                font-size: 12px; font-weight: 600;
             }}
-            QPushButton:hover {{ background: {C('bg_hover')}; }}
-        """)
-        header_layout.addWidget(self._back_btn)
+            QPushButton:hover {{ background: {hover}; }}
+            QPushButton:pressed {{ background: {pressed}; }}
+            QPushButton:focus {{ border-color: {focus}; }}
+        """
+        neutral = {
+            "bg": "transparent", "fg": C('text_primary'), "border": C('border_light'),
+            "hover": C('bg_hover'), "pressed": C('bg_input'), "focus": C('accent_brand'),
+        }
+        self._back_btn = QPushButton(t("crossing.back"))
+        self._back_btn.setFixedHeight(32)
+        self._back_btn.clicked.connect(self.back_clicked.emit)
+        self._back_btn.setStyleSheet(button_style.format(**neutral))
+        lead.addWidget(self._back_btn)
 
-        # Separator
         sep = QFrame()
-        sep.setFixedWidth(1)
-        sep.setFixedHeight(24)
-        sep.setStyleSheet(f"background: {C('bg_input')};")
-        header_layout.addWidget(sep)
+        sep.setFixedSize(1, 24)
+        sep.setStyleSheet(f"background: {C('border_light')}; border: none;")
+        lead.addWidget(sep)
 
-        # Title
-        title = QLabel(self.crossing_data.get("name", "Pereezd"))
-        title.setStyleSheet(f"color: {C('text_primary')}; font-size: 16px; font-weight: bold; background: transparent;")
-        header_layout.addWidget(title)
+        identity = QVBoxLayout()
+        identity.setSpacing(1)
+        identity.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+        name = self.crossing_data.get("name") or "Pereezd"
+        title = QLabel(name)
+        title.setTextFormat(Qt.TextFormat.PlainText)
+        title.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        title.setToolTip(name)
+        title.setStyleSheet(f"color: {C('text_primary')}; font-size: 17px; font-weight: 700;")
+        identity.addWidget(title)
 
-        # Location badge
         loc = self.crossing_data.get('location', '')
         if loc:
             loc_lbl = QLabel(loc)
-            loc_lbl.setStyleSheet(f"""
-                color: {C('text_secondary')}; font-size: 11px; background: {C('bg_primary')};
-                border: 1px solid {C('bg_input')}; border-radius: 4px; padding: 2px 8px;
-            """)
-            header_layout.addWidget(loc_lbl)
-
-        header_layout.addStretch()
-
-        # Action buttons
-        btn_css = """
-            QPushButton {{
-                background: {bg}; color: {fg}; border: none;
-                border-radius: 6px; padding: 6px 16px; font-size: 11px; font-weight: bold;
-            }}
-            QPushButton:hover {{ background: {hover}; }}
-        """
+            loc_lbl.setTextFormat(Qt.TextFormat.PlainText)
+            loc_lbl.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+            loc_lbl.setToolTip(loc)
+            loc_lbl.setStyleSheet(f"color: {C('text_secondary')}; font-size: 11px;")
+            identity.addWidget(loc_lbl)
+        lead.addLayout(identity, 1)
 
         self._add_cam_btn = QPushButton(t("crossing.add_camera"))
-        self._add_cam_btn.setStyleSheet(btn_css.format(bg=C('bg_input'), fg=C('accent_brand'), hover=C('bg_hover')))
+        self._add_cam_btn.setFixedHeight(32)
+        self._add_cam_btn.setStyleSheet(button_style.format(**{
+            **neutral, "bg": C('bg_input'), "fg": C('accent_brand'),
+        }))
         self._add_cam_btn.clicked.connect(lambda: self.add_camera_clicked.emit(self.crossing_id))
-        header_layout.addWidget(self._add_cam_btn)
+        actions.addWidget(self._add_cam_btn)
 
         self._settings_btn = QPushButton(t("crossing.settings_btn"))
-        self._settings_btn.setStyleSheet(btn_css.format(bg=C('bg_input'), fg=C('accent_green'), hover=C('bg_hover')))
+        self._settings_btn.setFixedHeight(32)
+        self._settings_btn.setStyleSheet(button_style.format(**neutral))
         self._settings_btn.clicked.connect(lambda: self.edit_crossing_clicked.emit(self.crossing_id))
-        header_layout.addWidget(self._settings_btn)
+        actions.addWidget(self._settings_btn)
 
         self._delete_btn = QPushButton(t("crossing.delete"))
-        self._delete_btn.setStyleSheet(btn_css.format(bg=C('bg_input'), fg=C('accent_red'), hover=C('accent_red')))
+        self._delete_btn.setFixedHeight(32)
+        self._delete_btn.setStyleSheet(button_style.format(**{
+            **neutral, "fg": C('accent_red'), "focus": C('accent_red'),
+        }))
         self._delete_btn.clicked.connect(lambda: self.delete_crossing_clicked.emit(self.crossing_id))
-        header_layout.addWidget(self._delete_btn)
+        actions.addWidget(self._delete_btn)
 
         layout.addWidget(header)
         layout.addSpacing(8)
@@ -795,7 +799,7 @@ class CrossingDetail(QWidget):
         cameras_grid = QGridLayout()
         cameras_grid.setSpacing(10)
 
-        # Faqat yoqilgan kameralarni ko'rsatish
+        # Video panellar faqat yoqilgan kameralarga kerak.
         active_cameras = [c for c in cameras if c.get("enabled", True)]
         cam_count = len(active_cameras)
         for i, cam in enumerate(active_cameras):
@@ -807,7 +811,35 @@ class CrossingDetail(QWidget):
             cameras_grid.addWidget(panel, row, col)
 
         layout.addLayout(cameras_grid)
+        for index, camera in enumerate(cameras):
+            if not camera.get("enabled", True):
+                layout.addSpacing(8)
+                layout.addWidget(self._create_disabled_camera_row(camera, index))
         return container
+
+    def _create_disabled_camera_row(self, camera, index):
+        row = QFrame()
+        row.setObjectName("disabledCameraRow")
+        row.setStyleSheet(f"""
+            QFrame#disabledCameraRow {{
+                background: {C('bg_card')};
+                border: 1px solid {C('border_light')};
+                border-radius: 8px;
+            }}
+        """)
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(10, 6, 10, 6)
+        name = QLabel(camera.get("name") or f"Kamera {index + 1}")
+        name.setTextFormat(Qt.TextFormat.PlainText)
+        status = QLabel(t("cam_dlg.disabled"))
+        status.setStyleSheet(f"color: {C('text_secondary')}; background: transparent;")
+        settings = QPushButton(t("crossing.settings_btn"))
+        settings.clicked.connect(lambda _, cid=camera.get("id", index): self._open_camera_settings(cid))
+        layout.addWidget(name)
+        layout.addWidget(status)
+        layout.addStretch()
+        layout.addWidget(settings)
+        return row
 
     def _create_camera_panel(self, cam_data: dict, index: int):
         cam_id = cam_data.get("id", index)
@@ -891,9 +923,8 @@ class CrossingDetail(QWidget):
         p_layout.addLayout(hdr)
 
         # Video label - responsive, no fixed size
-        video = QLabel()
-        video.setMinimumSize(200, 120)
-        video.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        video = CameraPreview(responsive_height=True)
+        video.setMinimumSize(200, 150)
         video.setAlignment(Qt.AlignmentFlag.AlignCenter)
         video.setScaledContents(False)
         video.setStyleSheet(f"""
@@ -901,8 +932,6 @@ class CrossingDetail(QWidget):
             border: 1px solid {C('bg_input')};
             border-radius: 8px;
         """)
-        # Set aspect ratio hint
-        video.setMinimumHeight(150)
         self._set_placeholder(video, t("cam.status.connecting"), 480, 270)
         self.camera_labels[cam_id] = video
         p_layout.addWidget(video)
@@ -941,26 +970,8 @@ class CrossingDetail(QWidget):
         sz = cv2.getTextSize(text, font, scale, 1)[0]
         x, y = (w - sz[0]) // 2, (h + sz[1]) // 2
         cv2.putText(img, text, (x, y), font, scale, (100, 100, 140), 1)
-        rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        self._show_frame(label, rgb)
-
-    def _show_frame(self, label, qimg, worker=None):
-        """Display ready QImage - minimal GUI thread work"""
-        if self._destroyed or label is None:
-            return
-        try:
-            if isinstance(qimg, QImage):
-                pixmap = QPixmap.fromImage(qimg)
-                scaled = pixmap.scaled(label.size(), Qt.AspectRatioMode.KeepAspectRatio,
-                                       Qt.TransformationMode.FastTransformation)
-                label.setPixmap(scaled)
-            else:
-                # Fallback for numpy array (placeholder)
-                h, w = qimg.shape[:2]
-                img = QImage(qimg.data, w, h, w * 3, QImage.Format.Format_RGB888)
-                label.setPixmap(QPixmap.fromImage(img))
-        except Exception:
-            pass
+        image = QImage(img.data, w, h, w * 3, QImage.Format.Format_BGR888)
+        label.setPixmap(QPixmap.fromImage(image))
 
     def _start_all_cameras(self):
         if self._destroyed:
@@ -1006,18 +1017,11 @@ class CrossingDetail(QWidget):
             # --- Shared worker: card dan kelgan worker bo'lsa qayta ulanish ochmaymiz ---
             if cam_id in self._shared_workers:
                 worker = self._shared_workers[cam_id]
-                # frame_with_data QImage ni to'g'ridan-to'g'ri yuboradi — take_frame() konflikti yo'q
-                fn_frame = lambda qimg, lbl=label: self._on_shared_frame(lbl, qimg)
-                # Card worker 4 arg yuboradi (fps yo'q) → fps=0.0 bilan chaqiramiz
-                fn_stats = lambda light, heavy, in_poly, max_t, cid=cam_id, cname=cam_name: \
-                    self._on_stats_update(cid, cname, light, heavy, in_poly, max_t, 0.0)
-                worker.frame_with_data.connect(fn_frame)
+                fn_stats = lambda light, heavy, in_poly, max_t, cid=cam_id, cname=cam_name, w=worker: \
+                    self._on_stats_update(cid, cname, light, heavy, in_poly, max_t, w.current_fps)
+                label.set_source(worker)
                 worker.stats_updated.connect(fn_stats)
-                # Card worker'ga "menga kadr kerak" deb bildiramiz — shundagina
-                # u og'ir frame_with_data(QImage) signalini emit qiladi.
-                if hasattr(worker, "add_frame_consumer"):
-                    worker.add_frame_consumer()
-                self._shared_signal_ids[cam_id] = (worker, fn_frame, fn_stats)
+                self._shared_signal_ids[cam_id] = (worker, fn_stats)
                 self.camera_workers_dict[cam_id] = worker
                 self._on_camera_status(cam_id, "online")
                 print(f"[Detail] Shared worker: {cam_name} (yangi ulanish yo'q)")
@@ -1045,9 +1049,7 @@ class CrossingDetail(QWidget):
                 is_custom_model=self.is_custom_model,
                 detector_key=f"detail_c{self.crossing_id}_cam{cam_id}",
             )
-            worker.frame_ready.connect(
-                lambda lbl=label, w=worker: self._on_frame(lbl, w)
-            )
+            label.set_source(worker)
             worker.status_changed.connect(
                 lambda s, cid=cam_id: self._on_camera_status(cid, s)
             )
@@ -1058,24 +1060,6 @@ class CrossingDetail(QWidget):
             worker.start()
             self.camera_workers.append(worker)
             self.camera_workers_dict[cam_id] = worker
-
-    def _on_frame(self, label, worker):
-        if not self._destroyed:
-            qimg = worker.take_frame()
-            if qimg is None:
-                return
-            try:
-                self._show_frame(label, qimg)
-            except RuntimeError:
-                self._destroyed = True
-
-    def _on_shared_frame(self, label, qimg):
-        """Shared worker (card) frame_with_data signali — QImage to'g'ridan keladi."""
-        if not self._destroyed:
-            try:
-                self._show_frame(label, qimg)
-            except RuntimeError:
-                self._destroyed = True
 
     def _on_camera_status(self, cam_id, status):
         if self._destroyed:
@@ -1103,6 +1087,14 @@ class CrossingDetail(QWidget):
         if self._destroyed:
             return
         try:
+            base = self._reset_tracker_counts.get(cam_id, (0, 0))
+            previous = self._latest_tracker_counts.get(cam_id, (0, 0))
+            if light_count < previous[0] or heavy_count < previous[1]:
+                base = (0, 0)
+                self._reset_tracker_counts.pop(cam_id, None)
+            self._latest_tracker_counts[cam_id] = (light_count, heavy_count)
+            light_count -= base[0]
+            heavy_count -= base[1]
             det_label = self.camera_detection_labels.get(cam_id)
             if det_label:
                 total = light_count + heavy_count
@@ -1139,6 +1131,14 @@ class CrossingDetail(QWidget):
         except RuntimeError:
             self._destroyed = True
 
+    def reset_statistics_display(self):
+        if self._destroyed:
+            return
+        self._light_offset = self._heavy_offset = 0
+        self._reset_tracker_counts = self._latest_tracker_counts.copy()
+        self._update_statistics_panel(0, 0)
+        self._refresh_chart()
+
     def _update_statistics_panel(self, light: int, heavy: int):
         """Statistika panel qiymatlarini yangilash"""
         try:
@@ -1165,17 +1165,18 @@ class CrossingDetail(QWidget):
         except RuntimeError:
             self._destroyed = True
 
+    @report_config_save_error
     def _pause_resume_camera(self, camera_id):
         """Kamerani vaqtinchalik to'xtatish/davom ettirish. JSON ga tegmaydi."""
         if not camera_id:
             return
         btn = self.camera_toggle_btns.get(camera_id)
         is_paused = camera_id in self.camera_paused
+        self.config_manager.set_camera_paused(self.crossing_id, camera_id, not is_paused)
 
         if is_paused:
             # --- RESUME ---
             self.camera_paused.discard(camera_id)
-            self.config_manager.set_camera_paused(self.crossing_id, camera_id, False)
             clr = C('accent_blue')
             if btn:
                 btn.setText(f"⏸ {t('cam.pause')}")
@@ -1198,7 +1199,6 @@ class CrossingDetail(QWidget):
         else:
             # --- PAUSE ---
             self.camera_paused.add(camera_id)
-            self.config_manager.set_camera_paused(self.crossing_id, camera_id, True)
             clr = C('accent_orange')
             if btn:
                 btn.setText(f"▶ {t('cam.resume')}")
@@ -1210,6 +1210,16 @@ class CrossingDetail(QWidget):
                     }}
                     QPushButton:hover {{ background: {clr}20; }}
                 """)
+            label = self.camera_labels.get(camera_id)
+            if label:
+                label.set_source(None)
+            shared = self._shared_signal_ids.pop(camera_id, None)
+            if shared:
+                worker, stats_slot = shared
+                try:
+                    worker.stats_updated.disconnect(stats_slot)
+                except (TypeError, RuntimeError):
+                    pass
             worker = self.camera_workers_dict.pop(camera_id, None)
             if worker:
                 try:
@@ -1217,7 +1227,6 @@ class CrossingDetail(QWidget):
                 except ValueError:
                     pass
                 worker.stop()
-            label = self.camera_labels.get(camera_id)
             if label:
                 self._set_placeholder(label, t("cam.paused"), 480, 270)
 
@@ -1270,7 +1279,7 @@ class CrossingDetail(QWidget):
             is_custom_model=self.is_custom_model,
             detector_key=f"detail_c{self.crossing_id}_cam{cam_id}",
         )
-        worker.frame_ready.connect(lambda lbl=label, w=worker: self._on_frame(lbl, w))
+        label.set_source(worker)
         worker.status_changed.connect(lambda s, cid=cam_id: self._on_camera_status(cid, s))
         worker.stats_updated.connect(
             lambda light, heavy, in_poly, max_t, fps, cid=cam_id, cname=cam_name:
@@ -1468,29 +1477,17 @@ class CrossingDetail(QWidget):
         except RuntimeError:
             pass
         # Shared workerlardan signallarni uzish (worker to'xtatilmaydi — card ishlatmoqda)
-        for cam_id, (worker, fn_frame, fn_stats) in self._shared_signal_ids.items():
-            try:
-                worker.frame_with_data.disconnect(fn_frame)
-            except (TypeError, RuntimeError):
-                pass
+        for label in self.camera_labels.values():
+            label.set_source(None)
+        for worker, fn_stats in self._shared_signal_ids.values():
             try:
                 worker.stats_updated.disconnect(fn_stats)
             except (TypeError, RuntimeError):
                 pass
-            # Tinglovchi ketdi — card endi og'ir frame_with_data emit qilmasin
-            if hasattr(worker, "remove_frame_consumer"):
-                try:
-                    worker.remove_frame_consumer()
-                except (RuntimeError, Exception):
-                    pass
         self._shared_signal_ids.clear()
 
         # O'z workerlarini to'xtatish (shared emaslar)
         for w in self.camera_workers:
-            try:
-                w.frame_ready.disconnect()
-            except (TypeError, RuntimeError):
-                pass
             try:
                 w.status_changed.disconnect()
             except (TypeError, RuntimeError):
@@ -1521,6 +1518,20 @@ class CrossingDetail(QWidget):
         self.camera_polytime_labels.clear()
         self.camera_types.clear()
 
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, "_header_layout"):
+            self._update_header_layout()
+
+    def _update_header_layout(self):
+        buttons = (self._back_btn, self._add_cam_btn, self._settings_btn, self._delete_btn)
+        # Leave room for the crossing name and the space between controls.
+        minimum_width = sum(button.sizeHint().width() for button in buttons) + 240
+        direction = (QBoxLayout.Direction.LeftToRight if self.width() >= minimum_width
+                     else QBoxLayout.Direction.TopToBottom)
+        if self._header_layout.direction() != direction:
+            self._header_layout.setDirection(direction)
+
     def _retranslate(self):
         """Til o'zgarganida UI textlarini yangilash."""
         try:
@@ -1532,6 +1543,7 @@ class CrossingDetail(QWidget):
                 self._settings_btn.setText(t("crossing.settings_btn"))
             if hasattr(self, '_delete_btn'):
                 self._delete_btn.setText(t("crossing.delete"))
+            self._update_header_layout()
             if hasattr(self, '_stats_title'):
                 self._stats_title.setText(t("stats.panel"))
             if hasattr(self, '_stat_cameras_lbl'):

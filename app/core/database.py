@@ -103,6 +103,21 @@ class StatsDB:
         except Exception as e:
             logger.error("occupancy_stats migratsiya xatosi: %s", e)
 
+        # Migratsiya: poyezd yo'nalishi (kamera orqali aniqlanadi).
+        # direction — "ab" | "ba" (rels chizig'i A→B / B→A) yoki NULL (aniqlanmadi),
+        # direction_label — operatorga ko'rsatilgan matn (masalan "Toshkent → Chuqursoy"),
+        # source — poyezd signali manbai: "plc" yoki "ai" (PLC ishlamaganda kamera)
+        try:
+            cols = {r[1] for r in self._conn.execute(
+                "PRAGMA table_info(train_events)")}
+            for col in ("direction", "direction_label", "source"):
+                if col not in cols:
+                    self._conn.execute(
+                        f"ALTER TABLE train_events ADD COLUMN {col} TEXT")
+                    logger.info("train_events: '%s' ustuni qo'shildi", col)
+        except Exception as e:
+            logger.error("train_events migratsiya xatosi: %s", e)
+
         self._conn.commit()
 
     def _current_hour(self) -> str:
@@ -667,11 +682,10 @@ class StatsDB:
     # ─── TRAIN EVENTS ────────────────────────────────────────
 
     @staticmethod
-    def _merge_intervals(rows: list, gap_secs: float = 180.0) -> list:
-        """Yaqin joylashgan eventlarni birlashtirish.
+    def _merge_intervals(rows: list) -> list:
+        """Vaqti ustma-ust tushgan eventlarni birlashtirish.
 
         rows: [(start_str, end_str, duration), ...]  — start_time bo'yicha ASC tartibda.
-        gap_secs: ikki event orasidagi maksimal bo'shliq (sek). Bu dan kichik bo'lsa — birlashadi.
         Returns: [(start_dt, end_dt, duration_secs), ...]
         """
         parsed = []
@@ -690,7 +704,7 @@ class StatsDB:
             prev_e = merged[-1][1]
             if prev_e is not None and cur_s is not None:
                 gap = (cur_s - prev_e).total_seconds()
-                if gap < gap_secs:
+                if gap < 0:
                     # Birlashtirish: yangi end ni kattaroq qilib olish
                     if cur_e is None:
                         merged[-1][1] = None
@@ -706,22 +720,30 @@ class StatsDB:
         return result
 
     def record_train_event(self, crossing_id: int,
-                           start_dt: datetime, end_dt: datetime):
+                           start_dt: datetime, end_dt: datetime,
+                           direction: Optional[str] = None,
+                           direction_label: Optional[str] = None,
+                           source: Optional[str] = None) -> bool:
         """Tugallangan poyezd o'tishini bir vaqtda yozish (start + end birgalikda).
         Yolg'on qisqa signallardan himoya: faqat davomiylik >= MIN_DURATION bo'lganda chaqiriladi.
+        direction: "ab" | "ba" | None — kamera aniqlagan yo'nalish.
+        source: "plc" | "ai" — poyezd signali qayerdan kelgan.
         """
         duration = (end_dt - start_dt).total_seconds()
         try:
-            with self._lock:
+            with self._lock, self._conn:
                 self._conn.execute("""
                     INSERT INTO train_events
-                        (crossing_id, start_time, end_time, duration_seconds, event_date)
-                    VALUES (?, ?, ?, ?, ?)
+                        (crossing_id, start_time, end_time, duration_seconds, event_date,
+                         direction, direction_label, source)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """, (crossing_id, start_dt.isoformat(), end_dt.isoformat(),
-                      duration, start_dt.date().isoformat()))
-                self._conn.commit()
+                      duration, start_dt.date().isoformat(),
+                      direction, direction_label, source))
+            return True
         except Exception as e:
             logger.error("record_train_event error: %s", e)
+            return False
 
     def record_train_start(self, crossing_id: int):
         """Eski usul (to'g'ridan-to'g'ri foydalanilmaydi, moslik uchun saqlanadi)."""
@@ -1107,6 +1129,16 @@ class StatsDB:
             # Delta tracking cache ni ham yangilash (lock ichida)
             if old_key in self._last_counts:
                 self._last_counts[(crossing_id, new_name)] = self._last_counts.pop(old_key)
+
+    def reset_statistics(self):
+        """Delete stored statistics and discard unflushed occupancy."""
+        with self._lock:
+            with self._conn:
+                self._conn.execute("DELETE FROM hourly_stats")
+                self._conn.execute("DELETE FROM occupancy_stats")
+                self._conn.execute("DELETE FROM train_events")
+            self._occ_state.clear()
+            # Keep cumulative tracker baselines so subsequent frames add only new counts.
 
     def close(self):
         with self._lock:

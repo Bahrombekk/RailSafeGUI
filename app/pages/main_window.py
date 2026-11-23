@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import (QMainWindow, QStackedWidget, QStatusBar,
                               QMessageBox, QToolBar, QWidget, QHBoxLayout,
                               QLabel, QPushButton, QSizePolicy, QApplication)
 from PyQt6.QtCore import Qt, QTimer, QEvent
-from PyQt6.QtGui import QAction, QPixmap
+from PyQt6.QtGui import QAction, QPixmap, QPainter, QColor
 from pathlib import Path
 
 from app.pages.dashboard import Dashboard
@@ -16,6 +16,7 @@ from app.pages.dialogs import (AddCrossingDialog, AddCameraDialog, SettingsDialo
 from app.pages.about_page import AboutPage
 from app.pages.analytics_page import AnalyticsPage
 from app.core.config import ConfigManager
+from app.utils.ui_guards import report_config_save_error
 from app.core.stats_api import StatsApiServer
 from app.core.stats_push import StatsPushClient
 from app.utils.theme_colors import set_theme, C
@@ -101,13 +102,42 @@ class MainWindow(QMainWindow):
 
         # Logo — "RailSafe" yozuvidan OLDIN
         self.logo_label = QLabel()
-        _logo = Path(__file__).parent.parent / "assets" / "images" / "icon_desktop.png"
+        # icon_toolbar.png — icon_desktop.png ning shaffof chetlari kesilgan nusxasi
+        # (asl faylda rasm faqat yarim maydonni egallaydi, 30px da juda mayda chiqadi)
+        _img_dir = Path(__file__).parent.parent / "assets" / "images"
+        _logo = _img_dir / "icon_toolbar.png"
+        if not _logo.exists():
+            _logo = _img_dir / "icon_desktop.png"
         if _logo.exists():
             _pm = QPixmap(str(_logo))
             if not _pm.isNull():
-                _pm = _pm.scaledToHeight(30, Qt.TransformationMode.SmoothTransformation)
-                self.logo_label.setPixmap(_pm)
-        self.logo_label.setContentsMargins(8, 0, 2, 0)
+                # HiDPI (125%/150%) ekranlarda xira bo'lmasligi uchun fizik pikselda masshtab
+                _dpr = QApplication.primaryScreen().devicePixelRatio() if QApplication.primaryScreen() else 1.0
+                # Logo to'q ko'k — qora toolbar'da yo'qolib ketadi. Shuning uchun
+                # ilova-ikona uslubidagi och yumaloq plastinka ustiga chiziladi.
+                _side = round(28 * _dpr)
+                _pad = round(2 * _dpr)
+                _plate = QPixmap(_side, _side)
+                _plate.fill(Qt.GlobalColor.transparent)
+                _p = QPainter(_plate)
+                _p.setRenderHint(QPainter.RenderHint.Antialiasing)
+                _p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+                _p.setPen(Qt.PenStyle.NoPen)
+                _p.setBrush(QColor("#eef2f7"))
+                _p.drawRoundedRect(0, 0, _side, _side, 6 * _dpr, 6 * _dpr)
+                _inner = _pm.scaled(_side - 2 * _pad, _side - 2 * _pad,
+                                    Qt.AspectRatioMode.KeepAspectRatio,
+                                    Qt.TransformationMode.SmoothTransformation)
+                _p.drawPixmap((_side - _inner.width()) // 2,
+                              (_side - _inner.height()) // 2, _inner)
+                _p.end()
+                _plate.setDevicePixelRatio(_dpr)
+                self.logo_label.setPixmap(_plate)
+                # Pastki margin logoni toolbar matnlari (RailSafe, menyu) bilan
+                # bir chiziqqa ko'taradi — aks holda ~3px pastda ko'rinadi.
+                self.logo_label.setFixedSize(28 + 10, 34)
+                self.logo_label.setContentsMargins(0, 0, 0, 6)
+        self.logo_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self.toolbar.addWidget(self.logo_label)
 
         # App icon/name
@@ -156,6 +186,23 @@ class MainWindow(QMainWindow):
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.toolbar.addWidget(spacer)
+
+        # Hamkor logosi (DAS UTY) — o'ng tomonda. Rangi mavzuga qarab
+        # _apply_toolbar_style() da bo'yaladi (asl fayl oq, och mavzuda ko'rinmaydi).
+        self.partner_logo = QLabel()
+        self.partner_logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._partner_logo_src = QPixmap()
+        _plogo = Path(__file__).parent.parent / "assets" / "images" / "das_uty_logo.png"
+        if _plogo.exists():
+            _pm = QPixmap(str(_plogo))
+            if not _pm.isNull():
+                self._partner_logo_src = _pm.scaledToHeight(
+                    24, Qt.TransformationMode.SmoothTransformation)
+                # Toolbar label'ga kam joy bersa ham kesilmasin: o'lcham qat'iy
+                self.partner_logo.setFixedSize(
+                    self._partner_logo_src.width() + 14,
+                    self._partner_logo_src.height() + 4)
+        self.toolbar.addWidget(self.partner_logo)
 
         # Stats label (right side)
         self.toolbar_stats = QLabel("")
@@ -293,6 +340,22 @@ class MainWindow(QMainWindow):
             }}
         """)
         self.app_label.setStyleSheet(f"color: {C('accent_brand')}; font-size: 14px; font-weight: bold;")
+        self._tint_partner_logo()
+
+    def _tint_partner_logo(self):
+        """Hamkor logosini joriy mavzu matn rangiga bo'yash (alfa saqlanadi)."""
+        src = getattr(self, "_partner_logo_src", None)
+        if src is None or src.isNull():
+            return
+        pm = QPixmap(src.size())
+        pm.setDevicePixelRatio(src.devicePixelRatio())
+        pm.fill(Qt.GlobalColor.transparent)
+        p = QPainter(pm)
+        p.drawPixmap(0, 0, src)
+        p.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
+        p.fillRect(pm.rect(), QColor(C('text_primary')))
+        p.end()
+        self.partner_logo.setPixmap(pm)
         self.toolbar_stats.setStyleSheet(f"color: {C('text_muted')}; font-size: 11px; padding-right: 10px;")
 
         self._win_btns.setStyleSheet(f"""
@@ -363,7 +426,7 @@ class MainWindow(QMainWindow):
             import time as _time
             crossings = self.config_manager.get_crossings()
             total = len(crossings)
-            total_cams = sum(len(c.get("cameras", [])) for c in crossings)
+            total_cams = sum(len(crossing.get("cameras", [])) for crossing in crossings)
             now = _time.strftime("%H:%M:%S")
             self.toolbar_stats.setText(t("statusbar", total=total, cams=total_cams))
             self.clock_label.setText(now)
@@ -455,9 +518,11 @@ class MainWindow(QMainWindow):
 
     def _edit_crossing(self, crossing_id: int):
         dialog = AddCrossingDialog(self.config_manager, crossing_id)
-        if dialog.exec():
+        if dialog.exec() or dialog.cameras_changed:
             self._refresh_current_view()
+            self._update_stats()
 
+    @report_config_save_error
     def _delete_crossing(self, crossing_id: int):
         reply = QMessageBox.question(self, t("confirm.title"),
             t("confirm.delete_crossing"),
@@ -480,6 +545,7 @@ class MainWindow(QMainWindow):
             self.config_manager,
             stats_db=getattr(self.dashboard, 'stats_db', None) if hasattr(self, 'dashboard') else None,
             push_client=getattr(self, 'stats_push', None))
+        dialog.statistics_reset.connect(self._refresh_statistics_after_reset)
         if dialog.exec():
             self._load_stylesheet()
             self._apply_toolbar_style()
@@ -512,6 +578,16 @@ class MainWindow(QMainWindow):
                 self.dashboard.start_detection()
             else:
                 self._refresh_current_view()
+
+    def _refresh_statistics_after_reset(self):
+        for card in self.dashboard.crossing_cards:
+            card.reset_statistics_display()
+        for index in range(self.stacked_widget.count()):
+            page = self.stacked_widget.widget(index)
+            if isinstance(page, CrossingDetail):
+                page.reset_statistics_display()
+            elif isinstance(page, AnalyticsPage):
+                page.refresh()
 
     def _show_analytics(self):
         """Show analytics page"""
@@ -591,10 +667,6 @@ class MainWindow(QMainWindow):
                         db.close()
             except (RuntimeError, Exception) as e:
                 print(f"[CloseEvent] StatsDB close error: {e}")
-            try:
-                self.config_manager.save_config()
-            except (RuntimeError, Exception) as e:
-                print(f"[CloseEvent] Config save error: {e}")
             event.accept()
         else:
             event.ignore()

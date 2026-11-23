@@ -24,6 +24,10 @@ _APP_CONFIG    = _CONFIG_DIR / "config.yaml"
 _CAMERA_STATE  = _CONFIG_DIR / "camera_state.json"
 
 
+class ConfigSaveError(OSError):
+    """A configuration change could not be saved."""
+
+
 class ConfigManager:
     """Manages system configuration for crossings, cameras, and PLCs"""
 
@@ -33,6 +37,7 @@ class ConfigManager:
         self._lock = threading.RLock()
         self.config_file = Path(config_file) if config_file else _GUI_CONFIG
         self.config = self._load_config()
+        self._saved_config = copy.deepcopy(self.config)
         self._camera_state_cache = None  # Disk o'qishni kamaytirish uchun xotira keshi
 
     def _load_config(self) -> Dict:
@@ -54,25 +59,34 @@ class ConfigManager:
             "last_updated": datetime.now().isoformat()
         }
 
+    @staticmethod
+    def _write_json(path: Path, data: Dict):
+        tmp_path = None
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            fd, tmp_path = tempfile.mkstemp(dir=path.parent, suffix=".tmp", prefix=".cfg_")
+            with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            os.replace(tmp_path, path)
+        except (OSError, TypeError, ValueError) as e:
+            logger.error("Config %s saqlanmadi: %s", path.name, e)
+            if tmp_path:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+            raise ConfigSaveError(path.name) from e
+
     def save_config(self):
-        """Atomic write: avval temp faylga yoziladi, keyin rename — buzilish xavfsiz."""
+        """Save configuration atomically and roll back failed changes in memory."""
         with self._lock:
             self.config["last_updated"] = datetime.now().isoformat()
-            tmp_path = None
             try:
-                self.config_file.parent.mkdir(parents=True, exist_ok=True)
-                fd, tmp_path = tempfile.mkstemp(
-                    dir=self.config_file.parent, suffix=".tmp", prefix=".cfg_")
-                with os.fdopen(fd, 'w', encoding='utf-8') as f:
-                    json.dump(self.config, f, indent=2, ensure_ascii=False)
-                os.replace(tmp_path, self.config_file)
-            except Exception as e:
-                logger.error("Saqlashda xato: %s", e)
-                if tmp_path:
-                    try:
-                        os.unlink(tmp_path)
-                    except Exception:
-                        pass
+                self._write_json(self.config_file, self.config)
+            except ConfigSaveError:
+                self.config = copy.deepcopy(self._saved_config)
+                raise
+            self._saved_config = copy.deepcopy(self.config)
 
     def _next_id(self, counter_key: str, existing_ids: List[int]) -> int:
         """Monotonik ID beruvchi. config ichida `counter_key` (masalan
@@ -109,6 +123,7 @@ class ConfigManager:
     def add_crossing(self, crossing_data: Dict) -> int:
         """Add a new crossing"""
         with self._lock:
+            crossing_data = copy.deepcopy(crossing_data)
             # Monotonik ID — o'chirilgan ID lar qayta ishlatilmaydi
             existing_ids = [c.get("id") for c in self.config.get("crossings", [])
                             if c.get("id") is not None]
@@ -137,9 +152,10 @@ class ConfigManager:
         with self._lock:
             for i, crossing in enumerate(self.config.get("crossings", [])):
                 if crossing.get("id") == crossing_id:
-                    crossing_data["id"] = crossing_id
-                    crossing_data["updated_at"] = datetime.now().isoformat()
-                    self.config["crossings"][i] = crossing_data
+                    updated = {**crossing, **copy.deepcopy(crossing_data)}
+                    updated["id"] = crossing_id
+                    updated["updated_at"] = datetime.now().isoformat()
+                    self.config["crossings"][i] = updated
                     self.save_config()
                     return True
         return False
@@ -155,28 +171,34 @@ class ConfigManager:
                     return True
         return False
 
-    def add_camera(self, crossing_id: int, camera_data: Dict) -> Optional[int]:
+    def add_camera(self, crossing_id: int, camera_data: Dict,
+                   additional_cameras=()) -> Optional[int]:
         """Add a camera to a crossing"""
         with self._lock:
             crossing = self.get_crossing(crossing_id)
             if not crossing:
                 return None
 
-            # Monotonik kamera ID — pereezd ichida saqlanadi (next_camera_id)
-            existing_ids = [c.get("id") for c in crossing.get("cameras", [])
-                            if c.get("id") is not None]
-            cur_max = max(existing_ids) if existing_ids else 0
+            cameras = crossing.setdefault("cameras", [])
+            existing_ids = [cam["id"] for cam in cameras if cam.get("id") is not None]
+            cur_max = max(existing_ids, default=0)
             stored = crossing.get("next_camera_id", 0)
             new_id = max(stored, cur_max + 1)
-            crossing["next_camera_id"] = new_id + 1
-
-            camera_data["id"] = new_id
-            camera_data["created_at"] = datetime.now().isoformat()
-            camera_data["status"] = "offline"
-
-            crossing.setdefault("cameras", []).append(camera_data)
+            if camera_data.get("type") == "main":
+                self._demote_other_main_cameras(cameras, new_id)
+            for camera_id, data in enumerate((camera_data, *additional_cameras), start=new_id):
+                cameras.append({**data, "id": camera_id, "status": "offline",
+                                "created_at": datetime.now().isoformat()})
+            crossing["next_camera_id"] = camera_id + 1
             self.update_crossing(crossing_id, crossing)
             return new_id
+
+    @staticmethod
+    def _demote_other_main_cameras(cameras, main_id):
+        for camera in cameras:
+            if camera.get("id") != main_id and camera.get("type") == "main":
+                camera["type"] = "additional"
+                camera["updated_at"] = datetime.now().isoformat()
 
     def update_camera(self, crossing_id: int, camera_id: int, camera_data: Dict) -> bool:
         """Update a camera in a crossing"""
@@ -187,6 +209,8 @@ class ConfigManager:
 
             for i, camera in enumerate(crossing.get("cameras", [])):
                 if camera.get("id") == camera_id:
+                    if camera_data.get("type") == "main":
+                        self._demote_other_main_cameras(crossing["cameras"], camera_id)
                     crossing["cameras"][i].update(camera_data)
                     crossing["cameras"][i]["id"] = camera_id
                     crossing["cameras"][i]["updated_at"] = datetime.now().isoformat()
@@ -228,7 +252,7 @@ class ConfigManager:
     def update_settings(self, settings: Dict):
         """Update application settings"""
         with self._lock:
-            self.config.setdefault("settings", {}).update(settings)
+            self.config.setdefault("settings", {}).update(copy.deepcopy(settings))
             self.save_config()
 
     # --- Kamera holati (paused/resumed) — config/camera_state.json ---
@@ -249,21 +273,8 @@ class ConfigManager:
 
     def _save_camera_state(self, state: Dict):
         with self._lock:
+            self._write_json(_CAMERA_STATE, state)
             self._camera_state_cache = state
-            _CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-            tmp_path = None
-            try:
-                fd, tmp_path = tempfile.mkstemp(dir=_CONFIG_DIR, suffix=".tmp")
-                with os.fdopen(fd, 'w', encoding='utf-8') as f:
-                    json.dump(state, f, indent=2)
-                os.replace(tmp_path, _CAMERA_STATE)
-            except Exception as e:
-                logger.error("Camera state saqlashda xato: %s", e)
-                if tmp_path:
-                    try:
-                        os.unlink(tmp_path)
-                    except Exception:
-                        pass
 
     def get_paused_cameras(self, crossing_id: int) -> set:
         """Berilgan pereezd uchun to'xtatilgan kamera ID larini qaytaradi."""
@@ -275,7 +286,7 @@ class ConfigManager:
     def set_camera_paused(self, crossing_id: int, camera_id: int, paused: bool):
         """Kamerani paused/resumed holatini saqlaydi."""
         with self._lock:
-            state = self._load_camera_state()
+            state = copy.deepcopy(self._load_camera_state())
             key = str(crossing_id)
             paused_list = state.setdefault("paused", {}).get(key, [])
             if paused:

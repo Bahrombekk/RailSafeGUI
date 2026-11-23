@@ -8,9 +8,12 @@ Extracted from CrossingCard to keep GUI code thin. Handles:
   - Clean stop (releases all writers, joins threads)
 """
 
-from typing import List, Optional
+import logging
+from typing import Optional
 
 from app.utils.video_recorder import VideoRecorder
+
+logger = logging.getLogger("RailSafe.recording")
 
 
 class RecordingController:
@@ -19,7 +22,7 @@ class RecordingController:
     def __init__(self, config_manager, crossing_data: dict):
         self.config_manager = config_manager
         self.crossing_data = crossing_data
-        self._active: List[VideoRecorder] = []
+        self._active: dict[int, VideoRecorder] = {}
 
     # ── State ────────────────────────────────────────────────────────
 
@@ -33,27 +36,14 @@ class RecordingController:
 
     # ── Public control ───────────────────────────────────────────────
 
-    def start(self, workers: list, crossing_name: Optional[str] = None) -> bool:
-        """Yozishni boshlash. Settings dan format/sifat ni fresh o'qiydi.
-
-        IDEMPOTENT: agar allaqachon yozilayotgan bo'lsa — qaytadan ochmaydi.
-        Pereezd ochilgandan yopilgunicha BIR video bo'lib qoladi.
-
-        Returns True if at least one recorder is now active.
-        """
+    def start(self, workers: dict, crossing_name: Optional[str] = None) -> bool:
+        """Start missing recorders and reattach existing ones by camera ID."""
         if not workers:
             return False
-
-        # Allaqachon yozayotgan bo'lsa hech narsa qilmaymiz
-        if self.is_recording:
-            return True
 
         # Hot-reload settings
         settings = (self.config_manager.get_settings()
                     if self.config_manager else {})
-        if not settings.get("record_enabled", False):
-            return False
-
         fmt = settings.get("record_format", "mp4")
         quality = settings.get("record_quality", "1080p")
 
@@ -61,31 +51,38 @@ class RecordingController:
             crossing_name = self.crossing_data.get("name", "crossing")
 
         any_started = False
-        for worker in workers:
+        for camera_id, worker in workers.items():
+            existing = self._active.get(camera_id)
+            if existing is not None and existing.is_recording:
+                worker.video_recorder = existing
+                any_started = True
+                continue
+            if not settings.get("record_enabled", False):
+                continue
             fps = float(getattr(worker, 'current_fps', 0) or 0)
             if fps < 5.0 or fps > 60.0:
                 fps = 25.0
             rec = VideoRecorder(fmt=fmt, quality=quality)
             if rec.start(crossing_name, worker.camera_name, fps=fps):
                 worker.video_recorder = rec
-                self._active.append(rec)
+                self._active[camera_id] = rec
                 any_started = True
             else:
-                print(f"[RecordingController] {worker.camera_name}: "
-                      f"{rec.last_error or 'unknown error'}")
+                logger.warning("%s: %s", worker.camera_name, rec.last_error or "unknown error")
         return any_started
 
-    def stop(self) -> list:
+    def stop(self, wait: bool = True) -> list:
         """Barcha aktiv recorder-larni to'xtatish. Saqlangan fayl yo'llarini qaytaradi."""
         paths = []
-        for rec in self._active:
+        recorders = list(self._active.values())
+        self._active.clear()
+        for rec in recorders:
             try:
-                rec.stop()
+                rec.stop(wait=wait)
                 if rec.last_path:
                     paths.append(rec.last_path)
             except Exception as e:
-                print(f"[RecordingController] stop error: {e}")
-        self._active.clear()
+                logger.exception("Video yozuvni to'xtatishda xato")
         return paths
 
     def detach_workers(self, workers: list):

@@ -34,6 +34,7 @@ Eslatma: kamera manbalari (RTSP URL — parol bor) hech qachon qaytarilmaydi.
 import hmac
 import json
 import logging
+import os
 import threading
 from datetime import date, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -80,13 +81,10 @@ class StatsApiServer:
 
     def start(self) -> bool:
         """Configga qarab serverni ishga tushirish. True = ishga tushdi."""
-        settings = self._cfg.get_settings()
-        integ = settings.get("integration")
-        if integ is None:
-            # Birinchi ishga tushishda configda ko'rinib turishi uchun
-            # o'chirilgan holatda yozib qo'yamiz — keyin faqat enabled=true qilinadi.
-            self._cfg.update_settings({"integration": dict(DEFAULT_SETTINGS)})
+        if os.environ.get("RAILSAFE_PILOT") == "1":
             return False
+        settings = self._cfg.get_settings()
+        integ = settings.get("integration") or {}
         if not integ.get("enabled", False):
             return False
 

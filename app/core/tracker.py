@@ -127,6 +127,8 @@ class PolygonTracker:
 
         self._tracks: Dict[int, Track] = {}
         self._next_id: int = 1
+        self._last_observation = None
+        self._visible_tracks = set()
 
         # Zonadan CHIQQAN mashinalarning turish vaqtlari (sekund). Statistikaga
         # yozish uchun `pop_completed_dwells()` bilan olinadi.
@@ -206,11 +208,18 @@ class PolygonTracker:
         Returns: active tracks dict (visualization uchun).
         """
         now = time.monotonic()
-        # Kuzatish vaqti: kelajakda yoki juda eski bo'lsa ishonmaymiz.
-        if obs_time is None or not (now - 2.0 <= obs_time <= now):
+        if obs_time is not None:
+            if (not now - 2.0 <= obs_time <= now
+                    or (self._last_observation is not None
+                        and obs_time <= self._last_observation)):
+                self._expire_tracks(now)
+                return self._tracks
+            self._last_observation = obs_time
+        else:
             obs_time = now
 
         matches = self._match_detections(detections)
+        self._visible_tracks.clear()
 
         for track_id, det in matches:
             cx = int((det.bbox[0] + det.bbox[2]) / 2)
@@ -224,7 +233,7 @@ class PolygonTracker:
                     track_id=track_id,
                     class_id=det.class_id,
                     bbox=det.bbox,
-                    last_seen=now,
+                    last_seen=obs_time,
                     prev_cx=cx,
                     prev_cy=cy,
                     moved_t=obs_time,
@@ -232,12 +241,7 @@ class PolygonTracker:
 
             tr = self._tracks[track_id]
 
-            # --- Tezlikni yangilash ---
-            # MUHIM: process_detections() har ekran kadrida (30 FPS) chaqiriladi,
-            # lekin detect_async() yangi batch kelmaguncha AYNAN bir xil
-            # deteksiyalarni qaytaradi. Shu takroriy chaqiruvlarda box o'zgarmaydi —
-            # ularda tezlikni hisoblasak "harakat yo'q" deb tezlik nolga tushib
-            # ketardi. Shuning uchun faqat bbox HAQIQATDA o'zgarganda hisoblaymiz.
+            # Bbox o'zgarganda navbatdagi siljish tezligini hisoblaymiz.
             if det.bbox != tr.bbox:
                 # dt — IKKI KUZATISH orasidagi haqiqiy vaqt (kadr vaqtlari
                 # bo'yicha, natija kelgan vaqt bo'yicha emas).
@@ -262,8 +266,9 @@ class PolygonTracker:
                 tr.moved_t = obs_time
 
             tr.bbox = det.bbox
-            tr.last_seen = now
+            tr.last_seen = obs_time
             tr.class_id = det.class_id
+            self._visible_tracks.add(track_id)
 
             if inside:
                 if not tr.in_polygon:
@@ -289,7 +294,10 @@ class PolygonTracker:
                     # Zonadan chiqdi — turgan vaqtini statistikaga qo'shamiz
                     self._collect_dwell(tr)
 
-        # Eski track-larni o'chirish
+        self._expire_tracks(now)
+        return self._tracks
+
+    def _expire_tracks(self, now: float):
         expired = [tid for tid, tr in self._tracks.items()
                    if now - tr.last_seen > self._max_age]
         for tid in expired:
@@ -300,8 +308,7 @@ class PolygonTracker:
             if tr.in_polygon:
                 self._collect_dwell(tr)
             del self._tracks[tid]
-
-        return self._tracks
+            self._visible_tracks.discard(tid)
 
     def _collect_dwell(self, tr: Track) -> None:
         """Track zonadan chiqqanda/yo'qolganda turish vaqtini yig'ish.
@@ -337,9 +344,7 @@ class PolygonTracker:
         """CHIZISH uchun: har trackning boxi HOZIRGI vaqtga ekstrapolyatsiya qilinadi.
 
         Deteksiya ekrandan sekin ishlaganda oxirgi ma'lum box mashinadan orqada
-        qoladi. Track tezligi (vx, vy) bilan boxni oxirgi o'zgarishdan beri
-        o'tgan vaqtga surib chizamiz — box mashinaga tushadi, video esa to'liq
-        30 FPS silliq qoladi.
+        qoladi. Track tezligi (vx, vy) bo'yicha ramkani joriy kadrga suramiz.
 
         SANOQ va polygon vaqti asl (surilmagan) bbox bilan ishlaydi —
         ekstrapolyatsiya xatosi statistikaga tegmaydi. ANPR esa jonli kadrdan
@@ -359,18 +364,24 @@ class PolygonTracker:
         now = time.monotonic()
         out = []
         for tr in self._tracks.values():
-            if now - tr.last_seen > fresh_within:
+            if tr.track_id not in self._visible_tracks or now - tr.last_seen > fresh_within:
+                continue
+            x1, y1, x2, y2 = self._extrapolate(tr, now, horizon, keep_inside=False)
+            bbox = (max(0, x1), max(0, y1), min(self._frame_w - 1, x2),
+                    min(self._frame_h - 1, y2))
+            if bbox[0] >= bbox[2] or bbox[1] >= bbox[3]:
                 continue
             out.append({
-                'bbox': self._extrapolate(tr, now, horizon),
+                'bbox': bbox,
                 'class_id': tr.class_id,
                 'track_id': tr.track_id,
                 'in_polygon': tr.in_polygon,
             })
         return out
 
-    def _extrapolate(self, tr: Track, now: float, horizon: float) -> Tuple[int, int, int, int]:
-        """Track boxini `now` vaqtiga surish (o'lcham o'zgarmaydi, kadr ichida qoladi).
+    def _extrapolate(self, tr: Track, now: float, horizon: float,
+                     keep_inside: bool = True) -> Tuple[int, int, int, int]:
+        """Track boxini `now` vaqtiga surish.
 
         dt = now - tr.moved_t, bunda moved_t — kadr OLINGAN vaqt. Shu sabab dt
         butun kechikishni o'z ichiga oladi: inference + natijani kutish +
@@ -380,8 +391,9 @@ class PolygonTracker:
         dx = int(tr.vx * dt)
         dy = int(tr.vy * dt)
         x1, y1, x2, y2 = tr.bbox
-        dx = max(-x1, min(dx, self._frame_w - 1 - x2))
-        dy = max(-y1, min(dy, self._frame_h - 1 - y2))
+        if keep_inside:
+            dx = max(-x1, min(dx, self._frame_w - 1 - x2))
+            dy = max(-y1, min(dy, self._frame_h - 1 - y2))
         return (x1 + dx, y1 + dy, x2 + dx, y2 + dy)
 
     def get_in_polygon_tracks(self, predict: bool = True,

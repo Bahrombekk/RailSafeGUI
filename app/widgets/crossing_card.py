@@ -23,7 +23,13 @@ import logging
 from datetime import date
 from app.utils.theme_colors import C, TM
 from app.core.tracker import PolygonTracker, boxes_for_drawing
+from app.core.train_direction import (TrainDirectionEstimator, split_train,
+                                      train_class_ids, valid_rail,
+                                      direction_text, AB, BA)
 from app.utils.language import t, LM
+from app.widgets.alert_dialog import AlertDialog
+from app.widgets.camera_preview import CameraPreview
+from app.utils.ui_guards import report_config_save_error
 from app.core.plc import PLCManager as _PLCManager, SNAP7_AVAILABLE as _SNAP7_OK
 
 # Car detector import (optional)
@@ -186,18 +192,24 @@ def _retire_worker(worker):
 
 class CameraWorker(QThread):
     """Worker thread - all heavy work here, GUI thread only does setPixmap"""
-    frame_ready = pyqtSignal()  # Lightweight - payload yo'q (queue backup bo'lmaydi)
-    frame_with_data = pyqtSignal(QImage)  # Shared consumers uchun (detail view)
     status_changed = pyqtSignal(str)
     stats_updated = pyqtSignal(int, int, int, float)  # light_count, heavy_count, in_poly_count, max_poly_time
+    # Poyezd yo'nalishi: "ab" | "ba" (rels chizig'i A→B / B→A; chiziq yo'q
+    # bo'lsa A=chap, B=o'ng). final=False — bosqichlar bo'yicha tasdiqlangan
+    # jonli baho, final=True — poyezd kadrdan chiqdi (yakuniy).
+    train_direction = pyqtSignal(str, bool)
+    # Poyezd kadrda (rels ustida) ishonchli ko'rinyaptimi — PLC ishlamaganda
+    # AI rejimi shu signalni PLC "poyezd bor" signali o'rnida ishlatadi.
+    train_presence = pyqtSignal(bool)
 
     def __init__(self, source: str, camera_name: str = "Camera", display_width: int = 1280,
                  car_detector=None, detection_enabled: bool = True,
                  polygon_file: str = None, warning_threshold: float = 10.0,
                  violation_threshold: float = 15.0, is_custom_model: bool = False,
-                 detector_key: str = None):
+                 detector_key: str = None, rail_line: dict = None):
         super().__init__()
         self.source = source
+        self.rail_line = rail_line if valid_rail(rail_line) else None
         self.camera_name = camera_name
         # Detektor lug'atlarining kaliti (_pending_frames / _results). Kamera NOMI
         # bo'lishi MUMKIN EMAS: turli kesishmalarda bir xil nomli kamera bo'lsa
@@ -207,10 +219,7 @@ class CameraWorker(QThread):
         self.display_width = display_width
         self._running = True
         self._mutex = QMutex()
-        self._latest_qimg = None  # Atomic latest frame (GIL-safe)
-        # frame_with_data tinglovchilari soni (detail view ulanganda > 0).
-        # 0 bo'lsa og'ir QImage signali emit qilinmaydi → queue backup yo'q.
-        self._share_count = 0
+        self.preview_targets = ()
         # Car detector - non-blocking real-time mode
         self.car_detector = car_detector
         self.detection_enabled = detection_enabled and car_detector is not None
@@ -236,12 +245,6 @@ class CameraWorker(QThread):
         self._prev_frame_t: float = 0.0
         self.current_fps: float = 0.0
 
-    def take_frame(self):
-        """Eng oxirgi kadrni olish - eski framelar avtomatik tashlanadi"""
-        qimg = self._latest_qimg
-        self._latest_qimg = None
-        return qimg
-
     def pop_dwells(self) -> list:
         """Zonadan chiqqan mashinalarning turish vaqtlari (sekund) — DB ga
         yozish uchun. Navbat bo'shatiladi."""
@@ -253,16 +256,8 @@ class CameraWorker(QThread):
             pass
         return out
 
-    def add_frame_consumer(self):
-        """Detail view ulanganda chaqiriladi — frame_with_data emit qilina boshlaydi."""
-        self._share_count += 1
-
-    def remove_frame_consumer(self):
-        """Detail view uzilganda chaqiriladi — tinglovchi qolmasa emit to'xtaydi."""
-        if self._share_count > 0:
-            self._share_count -= 1
-
     def run(self):
+        started_at = time.monotonic()
         cap = None
         gt = None
         _pyav_container = None
@@ -331,12 +326,24 @@ class CameraWorker(QThread):
             _has_poly = False   # polygon fayli yuklanib, maska tayyor bo'ldimi
             # Klass nomlari bir marta olinadi (property har chaqiruvda dict nusxalaydi)
             _cls_names = getattr(self.car_detector, 'class_names', None) or {}
-            # Detektor natija kadrining vaqtini beradimi (eski CarDetector bermaydi)
-            _detector_has_ts = hasattr(self.car_detector, 'last_capture_time')
+            # Poyezd sinflari — mashina tracker'iga berilmaydi, yo'nalish uchun
+            # alohida baholovchiga boradi (app/core/train_direction.py)
+            _train_ids = train_class_ids(_cls_names)
+            _train_est = None
+            _train_live_dir = None
+            _train_present = False
             _target_interval = 1.0 / 30.0
             _last_frame_t = 0.0
             while self._is_running() and not _grab_error[0]:
                 _now_t = time.perf_counter()
+                if _train_est is not None:
+                    finished = _train_est.expire(time.monotonic())
+                    if finished is not None:
+                        self.train_direction.emit(finished, True)
+                        _train_live_dir = None
+                    if _train_present and not _train_est.present:
+                        _train_present = False
+                        self.train_presence.emit(False)
                 if _now_t - _last_frame_t >= _target_interval:
                     _want_frame[0] = True  # OpenCV uchun; PyAV e'tibor bermaydi
 
@@ -395,18 +402,31 @@ class CameraWorker(QThread):
                 max_time = 0.0
                 if self.detection_enabled and self.car_detector is not None:
                     try:
-                        # _det_frame ATAYLAB ishlatilmaydi — pastdagi izohga qarang
-                        detections, _det_frame = self.car_detector.detect_async(
+                        detections, det_frame, _obs_t = self.car_detector.detect_async_result(
                             frame, camera_id=self.detector_key)
+                        # Poyezd — mashina emas: tracker/statistika/ANPR ga bormaydi
+                        detections, _trains = split_train(detections, _train_ids)
                         detection_count = len(detections)
+                        if (_train_ids and _obs_t is not None and _obs_t >= started_at
+                                and det_frame.shape[:2] == (proc_h, proc_w)
+                                and time.monotonic() - _obs_t < TrainDirectionEstimator.CONFIRM_GAP_SEC):
+                            if _train_est is None or _train_est.frame_size != (proc_w, proc_h):
+                                _train_est = TrainDirectionEstimator(
+                                    proc_w, proc_h, rail=self.rail_line)
+                                _train_live_dir = None
+                            _train_est.update(_trains, now=_obs_t, road_detections=detections)
+                            _p = _train_est.present
+                            if _p != _train_present:
+                                _train_present = _p
+                                self.train_presence.emit(_p)
+                            _d = _train_est.direction
+                            if _d is not None and _d != _train_live_dir:
+                                _train_live_dir = _d
+                                self.train_direction.emit(_d, False)
                         # Bu deteksiyalar QAYSI kadrga tegishli — o'sha kadr
                         # olingan vaqt. Tracker shu vaqtdan hozirgi vaqtga
                         # ekstrapolyatsiya qiladi, ya'ni box object'dan
                         # orqada qolmaydi (butun pipeline kechikishi qoplanadi).
-                        _obs_t = None
-                        if _detector_has_ts:
-                            _obs_t = self.car_detector.last_capture_time(
-                                self.detector_key)
                         # Tracking (har doim — eski tracklar expire bo'lishi uchun)
                         _tracker.process_detections(detections, obs_time=_obs_t)
                         # Zonadan chiqqan mashinalarning turish vaqtlari —
@@ -474,27 +494,19 @@ class CameraWorker(QThread):
                 self._prev_frame_t = _now_fps
 
                 # REC indikator — yozayotgan bo'lsa qizil belgi va matn
-                if self.video_recorder is not None and self.video_recorder.is_recording:
+                recorder = self.video_recorder
+                if recorder is not None and recorder.is_recording:
                     cv2.circle(frame, (w - 32, 22), 6, (0, 0, 220), -1)
                     cv2.putText(frame, "REC", (w - 75, 28),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.55,
                                 (255, 255, 255), 2, cv2.LINE_AA)
 
-                rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                qimg = QImage(rgb.data, w, h, w * 3,
-                              QImage.Format.Format_RGB888).copy()
-
-                self._latest_qimg = qimg
-                self.frame_ready.emit()
-                # Og'ir QImage signalini FAQAT tinglovchi bo'lsa emit qilamiz.
-                # Detail view ochilmagan bo'lsa har kadrda QImage nusxasi
-                # queue'da to'planib qolishining oldini oladi.
-                if self._share_count > 0:
-                    self.frame_with_data.emit(qimg)
+                for preview in self.preview_targets:
+                    preview.submit(self, frame, _now_fps)
 
                 # Video yozish (agar yoqilgan bo'lsa)
-                if self.video_recorder is not None:
-                    self.video_recorder.write(frame)
+                if recorder is not None and recorder is self.video_recorder:
+                    recorder.write(frame)
 
                 # ANPR (raqam aniqlash) — ALOHIDA thread'ga topshiriladi.
                 # Real-time oqim (video + hisoblash) bloklanmaydi; asl FULL-RES,
@@ -534,6 +546,7 @@ class CameraWorker(QThread):
             print(f"[{self.camera_name}] Error: {e}")
             self.status_changed.emit("error")
         finally:
+            self.train_presence.emit(False)
             _grab_running[0] = False
             # PyAV: interrupt_callback orqali blocking demux to'xtatiladi,
             # container grab threadda yopiladi (heap corruption oldini olish)
@@ -707,7 +720,7 @@ class CameraSettingsDialog(QDialog):
         self.crossing_data = crossing_data
         self.crossing_id = crossing_data.get("id", 0)
         self.config_manager = config_manager
-        self._changed = False
+        self.changed = False
         self.setWindowTitle(t("cam_dlg.title", name=crossing_data.get('name', 'Pereezd')))
         self.setMinimumWidth(520)
         self._setup_ui()
@@ -845,15 +858,19 @@ class CameraSettingsDialog(QDialog):
         btn_layout.addWidget(close_btn)
         layout.addLayout(btn_layout)
 
+    @report_config_save_error
     def _toggle_camera(self, camera_id, currently_enabled):
         if not self.config_manager or not camera_id:
             return
-        self.config_manager.update_camera(
-            self.crossing_id, camera_id, {"enabled": not currently_enabled})
-        self._changed = True
+        if not self.config_manager.update_camera(
+                self.crossing_id, camera_id, {"enabled": not currently_enabled}):
+            return
+        self.changed = True
         msg = t("cam_dlg.toggle_msg_off") if currently_enabled else t("cam_dlg.toggle_msg_on")
         QMessageBox.information(self, t("cam_dlg.toggle_title"), msg)
+        self.accept()
 
+    @report_config_save_error
     def _delete_camera(self, camera_id, camera_name):
         if not self.config_manager or not camera_id:
             return
@@ -863,8 +880,9 @@ class CameraSettingsDialog(QDialog):
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No)
         if reply == QMessageBox.StandardButton.Yes:
-            self.config_manager.delete_camera(self.crossing_id, camera_id)
-            self._changed = True
+            if not self.config_manager.delete_camera(self.crossing_id, camera_id):
+                return
+            self.changed = True
             self.camera_deleted.emit()
             self.accept()
 
@@ -929,6 +947,15 @@ class AnprWorker(threading.Thread):
             pass
 
 
+# ── PLC ishlamay qolganda AI (kamera) zaxira rejimi ─────────────────────
+# Operator qarori pereezd bo'yicha MODUL darajasida saqlanadi: dashboard
+# kartalarni qayta yaratganda qaror yo'qolmasin va dialog qayta chiqmasin.
+# PLC aloqasi tiklanganda tozalanadi (keyingi uzilishda yana so'raladi).
+_AI_FALLBACK: dict = {}          # crossing_id -> True (AI bilan) | False (rad etildi)
+_AI_DIALOGS: dict = {}           # crossing_id -> ochiq QMessageBox
+_PLC_DOWN_ASK_SECS = 15.0        # PLC shuncha sek. javob bermasa — so'raladi
+
+
 class CrossingCard(QWidget):
     """
     Crossing card with two layout modes:
@@ -965,6 +992,8 @@ class CrossingCard(QWidget):
         self._dwell_workers = []
         self.main_camera_label = None
         self.additional_camera_label = None
+        self._main_preview_worker = None
+        self._additional_preview_worker = None
         self._is_destroyed = False
         self._main_camera_down = False  # Asosiy kamera uzilsa True
         self._last_paused_ids: set = set()  # Oldingi paused holat (o'zgarishni kuzatish)
@@ -987,6 +1016,17 @@ class CrossingCard(QWidget):
         # Grace period: PLC "yo'q" desa shu qancha sek kutiladi (yolg'on yo'q signal uchun)
         self._plc_in_grace = False        # Grace period ichidamizmi?
         self._plc_grace_secs = 10         # 10 soniya kutish
+        # Poyezd yo'nalishi (kamera orqali, app/core/train_direction.py).
+        # _train_dir: joriy poyezd uchun (cam_id, "ab"|"ba", final) | None
+        self._train_dir = None
+        self._last_train_dir_text = ""    # tugagan poyezd yo'nalishi (ko'rsatish uchun)
+        # AI zaxira rejimi (PLC ishlamaganda): kameralardan "poyezd bor" holati
+        self._ai_presence = {}            # cam_id -> bool
+        self._plc_down_since = None       # monotonic: PLC qachondan beri javob bermayapti
+        self._train_event_ai = False      # joriy poyezd hodisasi AI rejimida boshlanganmi
+        # AI rejimida kamera poyezdni faqat kadrda ko'radi (PLC kabi yaqinlashishdan
+        # emas) — shuning uchun minimal davomiylik ancha qisqa
+        self._min_train_duration_ai = 10.0
 
         # Video recorder — alohida controller fayl-da.
         # Yozish FAQAT PLC poyezd signali kelganda boshlanadi.
@@ -1092,6 +1132,9 @@ class CrossingCard(QWidget):
                 return
             active = self._plc_manager.get_plc_active()
             connected = self._plc_manager.is_connected()
+            # PLC javob bermasa va operator rozi bo'lsa — kamera (AI) PLC
+            # vazifasini bajaradi: "poyezd bor" signali kameradan olinadi.
+            active, connected = self._apply_ai_fallback(active, connected)
 
             # Birinchi poll — faqat holatni boshlash, hisob yo'q
             if self._plc_first_poll:
@@ -1102,6 +1145,7 @@ class CrossingCard(QWidget):
                 if active:
                     self._train_start_time = time.monotonic()
                     self._train_start_dt = None
+                    self._train_event_ai = self._ai_mode
                     self._train_timer.start()
                 self._update_train_count_display()
                 return
@@ -1116,6 +1160,7 @@ class CrossingCard(QWidget):
                     self._plc_in_grace = False
                     self._grace_timer.stop()
                     self._plc_active = False
+                    self._train_dir = None
                     self._update_plc_ui(False, connected=False)
                     # MUHIM: poyezd davom etayotganda aloqa uzilsa, yozib olish
                     # va ViolationDetector "armed" holatda abadiy qolib ketardi —
@@ -1151,6 +1196,9 @@ class CrossingCard(QWidget):
                 elif not self._plc_active:
                     # Yangi poyezd — timer boshlash
                     self._plc_active = True
+                    if not self._ai_mode:
+                        self._train_dir = None
+                    self._train_event_ai = self._ai_mode
                     self._update_plc_ui(True)
                     self._train_start_time = time.monotonic()
                     from datetime import datetime as _dt
@@ -1158,7 +1206,12 @@ class CrossingCard(QWidget):
                     self._train_timer.start()
             else:
                 # PLC "yo'q" signali
-                if self._plc_active and not self._plc_in_grace:
+                if self._plc_active and self._ai_mode and self._train_event_ai:
+                    # AI already waits for missed detections before clearing presence.
+                    self._plc_active = False
+                    self._update_plc_ui(False, connected=True)
+                    self._on_plc_grace_expired()
+                elif self._plc_active and not self._plc_in_grace:
                     # Birinchi "yo'q" — grace period boshlash
                     self._plc_in_grace = True
                     self._plc_active = False
@@ -1180,18 +1233,17 @@ class CrossingCard(QWidget):
         """Recording controller orqali yozishni boshlash.
         Settings dan format/sifat ni hot-reload qiladi."""
         crossing_name = self.crossing_data.get("name", f"Pereezd_{self.crossing_id}")
-        self._rec_ctrl.start(self.camera_workers, crossing_name=crossing_name)
+        self._rec_ctrl.start(self.camera_workers_by_id, crossing_name=crossing_name)
 
     def _stop_recording(self) -> list:
         """Barcha yozuvlarni to'xtatish. Saqlangan fayl yo'llarini qaytaradi."""
-        paths = self._rec_ctrl.stop()
         self._rec_ctrl.detach_workers(self.camera_workers)
-        return paths
+        return self._rec_ctrl.stop()
 
     # ── Backward compat: ba'zi joylar hali ham _active_recorders tekshirishi mumkin
     @property
     def _active_recorders(self):
-        return self._rec_ctrl._active
+        return list(self._rec_ctrl._active.values())
 
     # ── Violation (radar) detector ────────────────────────────────────
 
@@ -1308,10 +1360,13 @@ class CrossingCard(QWidget):
                 self._train_start_time = 0.0
             self._update_train_duration_display(False)
 
-            if duration >= self._min_train_duration:
-                self._train_count_today += 1
-                self._update_train_count_display()
-                # Count va DB har doim birga o'zgarishi shart (divergensiya bo'lmasin).
+            dir_code, dir_text = self._train_dir_code_text()
+            self._train_dir = None
+            min_dur = (self._min_train_duration_ai if self._train_event_ai
+                       else self._min_train_duration)
+            if duration >= min_dur:
+                self._last_train_dir_text = dir_text
+                self._update_train_duration_display(False)
                 # Birinchi pollda poyezd allaqachon aktiv bo'lsa _train_start_dt=None
                 # bo'ladi — bunday holatda boshlanish vaqtini davomiylikdan
                 # (end - duration) hisoblab, baribir DB ga yozamiz.
@@ -1320,14 +1375,22 @@ class CrossingCard(QWidget):
                     end_dt = self._last_train_end_dt or _dt.now()
                     start_dt = self._train_start_dt or (end_dt - _td(seconds=duration))
                     try:
-                        self.stats_db.record_train_event(
-                            self.crossing_id, start_dt, end_dt)
+                        saved = self.stats_db.record_train_event(
+                            self.crossing_id, start_dt, end_dt,
+                            direction=dir_code, direction_label=dir_text or None,
+                            source="ai" if self._train_event_ai else "plc")
+                        if saved:
+                            self._train_count_today = self.stats_db.get_train_today_count(
+                                self.crossing_id)
                     except Exception as e:
                         _log.exception("[CrossingCard] Train event yozish xato: %s", e)
+                else:
+                    self._train_count_today += 1
+                self._update_train_count_display()
             else:
                 if duration > 0:
                     print(f"[CrossingCard] Qisqa signal ({duration:.1f}s < "
-                          f"{self._min_train_duration}s) — e'tiborsiz")
+                          f"{min_dur}s) — e'tiborsiz")
                 # Yolg'on signal — saqlangan videolarni o'chirish
                 from pathlib import Path as _Path
                 for _vp in _saved_video_paths:
@@ -1359,7 +1422,12 @@ class CrossingCard(QWidget):
         try:
             if active:
                 self._plc_current_color = C('status_error')
-                self.plc_status_label.setText(t("plc.active"))
+                self.plc_status_label.setText(
+                    t("plc.active") + (" (AI)" if self._ai_mode else ""))
+            elif connected and self._ai_mode:
+                # PLC yo'q, kamera uning o'rnida ishlayapti
+                self._plc_current_color = C('accent_yellow')
+                self.plc_status_label.setText(t("plc.ai_mode"))
             elif connected:
                 self._plc_current_color = C('status_online')
                 self.plc_status_label.setText(t("plc.connected"))
@@ -1385,6 +1453,186 @@ class CrossingCard(QWidget):
         m = s // 60
         s = s % 60
         return f"{m}:{s:02d}"
+
+    # ── Poyezd yo'nalishi (kamera) ──────────────────────────────────
+
+    def _camera_cfg(self, cam_id) -> dict:
+        for cam in self.crossing_data.get("cameras", []):
+            if cam.get("id") == cam_id:
+                return cam
+        return {}
+
+    # ── AI zaxira rejimi (PLC ishlamaganda) ─────────────────────────
+
+    @property
+    def _ai_mode(self) -> bool:
+        return _AI_FALLBACK.get(self.crossing_id) is True
+
+    def _ai_capable(self) -> bool:
+        """Check for a running, calibrated camera with train inference enabled."""
+        det = self.car_detector
+        if det is None or getattr(det, "failed", False):
+            return False
+        train_ids = train_class_ids(det.class_names)
+        filter_classes = getattr(det, "filter_classes", None)
+        return bool(train_ids and (not filter_classes or train_ids.intersection(filter_classes))
+                    and any(worker.isRunning() and worker.detection_enabled
+                            and worker.rail_line is not None
+                            for worker in self.camera_workers_by_id.values()))
+
+    def _on_train_presence(self, cam_id, worker, present: bool):
+        if self.camera_workers_by_id.get(cam_id) is worker:
+            self._ai_presence[cam_id] = present
+            if (not present and self._ai_mode and not self._plc_active
+                    and self._train_dir is not None and self._train_dir[0] == cam_id):
+                self._train_dir = None
+
+    def _ai_train_present(self) -> bool:
+        return any(present for cam_id, present in self._ai_presence.items()
+                   if (worker := self.camera_workers_by_id.get(cam_id)) and worker.isRunning())
+
+    def _apply_ai_fallback(self, active: bool, connected: bool):
+        """PLC holatini AI zaxira rejimi bilan almashtirish.
+
+        PLC ulangan — o'zgarishsiz (va avvalgi AI qarori tozalanadi).
+        PLC _PLC_DOWN_ASK_SECS dan ortiq javob bermasa — operatordan so'raladi;
+        rozi bo'lsa kamera "poyezd bor" holati PLC signali o'rnida qaytariladi
+        (connected=True — virtual), qolgan butun oqim (taymer, video yozish,
+        ANPR armlash, poyezd soni, DB) o'zgarishsiz ishlaydi.
+        """
+        cid = self.crossing_id
+        if connected:
+            self._plc_down_since = None
+            box = _AI_DIALOGS.pop(cid, None)
+            if box is not None:
+                try:
+                    box.close()
+                except RuntimeError:
+                    pass
+            if _AI_FALLBACK.pop(cid, None) is True:
+                _log.warning("[%s] PLC aloqasi tiklandi — AI zaxira rejimi o'chirildi",
+                             self.crossing_data.get('name', '?'))
+                self._notify(t("plc.ai_restored_title"),
+                             t("plc.ai_restored_text"),
+                             chip=self.crossing_data.get('name', '?'))
+            return active, connected
+
+        now = time.monotonic()
+        if self._plc_down_since is None:
+            self._plc_down_since = now
+        choice = _AI_FALLBACK.get(cid)
+        if (choice is None and cid not in _AI_DIALOGS
+                and now - self._plc_down_since >= _PLC_DOWN_ASK_SECS
+                and self._ai_capable()):
+            self._ask_ai_fallback()
+        if choice is True and self._ai_capable():
+            return self._ai_train_present(), True
+        return active, connected
+
+    def _ask_ai_fallback(self):
+        """PLC ishlamayapti — AI bilan davom etishni so'rash (bloklamaydigan oyna).
+
+        Oyna kartaga emas, asosiy oynaga bog'lanadi va natija modul
+        lug'atiga yoziladi — dashboard kartani qayta yaratsa ham qaror saqlanadi."""
+        cid = self.crossing_id
+        name = self.crossing_data.get('name', f'Pereezd {cid}')
+        box = AlertDialog(
+            self.window(), kind="warning",
+            title=t("plc.ai_ask_title"), chip=name,
+            text=t("plc.ai_ask_text"), note=t("plc.ai_ask_note"),
+            primary=t("plc.ai_ask_yes"), secondary=t("plc.ai_ask_no"))
+        box.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+
+        def _done(res, cid=cid, box=box, name=name):
+            # PLC tiklanib oyna yopilgan bo'lsa — qaror yozilmaydi
+            if _AI_DIALOGS.get(cid) is not box:
+                return
+            _AI_DIALOGS.pop(cid, None)
+            use_ai = res == QDialog.DialogCode.Accepted
+            _AI_FALLBACK[cid] = use_ai
+            _log.warning("[%s] PLC ishlamayapti — operator: %s", name,
+                         "AI rejimi YOQILDI" if use_ai else "AI rejimi rad etildi")
+
+        box.finished.connect(_done)
+        _AI_DIALOGS[cid] = box
+        _log.warning("[%s] PLC %ds dan beri javob bermayapti — AI rejimi so'ralmoqda",
+                     name, int(_PLC_DOWN_ASK_SECS))
+        box.open()
+
+    def _notify(self, title: str, text: str, chip: str = ""):
+        """Bloklamaydigan axborot oynasi (ilova uslubida)."""
+        try:
+            box = AlertDialog(self.window(), kind="success", title=title,
+                              chip=chip, text=text, primary=t("plc.ai_ok"))
+            box.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+            box.open()
+        except RuntimeError:
+            pass
+
+    def _cam_priority(self, cam_id) -> tuple:
+        """Yo'nalish manbai ustunligi: rels chizig'i bor kamera > yo'q;
+        asosiy kamera > qo'shimcha."""
+        cfg = self._camera_cfg(cam_id)
+        return (valid_rail(cfg.get("rail_line")), cfg.get("type", "main") == "main")
+
+    def _on_train_direction(self, cam_id, worker, direction: str, final: bool):
+        """Kamera worker'idan poyezd yo'nalishi keldi (GUI thread).
+
+        PLC (yoki AI rejimi) ishlayotgan bo'lsa — faqat poyezd hodisasi
+        davomida qabul qilinadi (kamera boshqa narsani "train" deb adashsa,
+        hisobga kirmasin). PLC yo'q pereezdda — natija to'g'ridan-to'g'ri
+        ko'rsatiladi.
+        """
+        try:
+            if (self._is_destroyed or self.camera_workers_by_id.get(cam_id) is not worker
+                    or direction not in (AB, BA)):
+                return
+            plc_live = (self._plc_manager is not None
+                        and getattr(self, '_plc_was_connected', False))
+            in_event = self._plc_active or self._plc_in_grace
+            if self._ai_mode:
+                if not self._ai_presence.get(cam_id):
+                    return
+            elif plc_live and not in_event:
+                return
+            cur = self._train_dir
+            if cur is not None:
+                new_p, cur_p = self._cam_priority(cam_id), self._cam_priority(cur[0])
+                if cur_p > new_p:
+                    return
+                # Bir xil ustunlikda yakuniy natija jonli bahodan ustun
+                if cur_p == new_p and cur[2] and not final:
+                    return
+            self._train_dir = (cam_id, direction, final)
+            if plc_live:
+                self._update_train_duration_display(
+                    True, time.monotonic() - self._train_start_time
+                    if self._train_start_time > 0 else 0.0)
+            elif final and not self._ai_mode:
+                # PLC'siz: yakuniy natija — oxirgi poyezd sifatida ko'rsatiladi
+                self._last_train_dir_text = self._train_dir_code_text()[1]
+                self._train_dir = None
+                _log.info("[%s] Poyezd yo'nalishi (PLC'siz): %s",
+                          self.crossing_data.get('name', '?'),
+                          self._last_train_dir_text)
+        except Exception:
+            _log.exception("[CrossingCard] train direction xato")
+
+    def _train_dir_code_text(self):
+        """Joriy poyezd yo'nalishi: (kod, ko'rsatiladigan matn) | (None, "").
+
+        Kamerada rels chizig'i va uchlar nomi bo'lsa "Toshkent → Chuqursoy",
+        chiziq bor-u nom yo'q bo'lsa "A → B", chiziq yo'q bo'lsa
+        "Chapdan o'ngga" / "O'ngdan chapga" (kameraga nisbatan).
+        """
+        if not self._train_dir:
+            return None, ""
+        cam_id, code = self._train_dir[0], self._train_dir[1]
+        rail = self._camera_cfg(cam_id).get("rail_line")
+        txt = direction_text(code, rail, t("train.dir_ltr"), t("train.dir_rtl"))
+        if not valid_rail(rail):
+            txt = ("→ " if code == AB else "← ") + txt
+        return code, txt
 
     def _update_train_count_display(self):
         """Poyezd sonini yangilash."""
@@ -1417,12 +1665,17 @@ class CrossingCard(QWidget):
                 return
             if in_progress and elapsed > 0:
                 text = f"⏱  {self._fmt_duration(elapsed)}"
+                _dir = self._train_dir_code_text()[1]
+                if _dir:
+                    text += f"  •  {_dir}"
                 self._plc_duration_color = C('accent_red')
             elif not in_progress and self._last_train_duration > 0:
                 time_str = ""
                 if self._last_train_end_dt is not None:
                     time_str = self._last_train_end_dt.strftime("%H:%M") + "  •  "
                 text = f"🕐  {time_str}{self._fmt_duration(self._last_train_duration)}"
+                if self._last_train_dir_text:
+                    text += f"  •  {self._last_train_dir_text}"
                 self._plc_duration_color = C('text_muted')
             else:
                 text = ""
@@ -1451,6 +1704,23 @@ class CrossingCard(QWidget):
                 self.update_stats(0, 0)
         except Exception:
             pass
+
+    def reset_statistics_display(self):
+        if self._is_destroyed:
+            return
+        self._light_offset = self._heavy_offset = 0
+        self._tracker_base_light = self._last_tracker_light
+        self._tracker_base_heavy = self._last_tracker_heavy
+        for worker in self._dwell_workers:
+            worker.pop_dwells()
+        self._train_count_today = 0
+        self._last_train_duration = 0.0
+        self._last_train_end_dt = None
+        self._last_train_dir_text = ""
+        self._update_train_count_display()
+        self.update_stats(0, 0)
+        if not self._plc_active and not self._plc_in_grace:
+            self._update_train_duration_display(False)
 
     def _load_startup_counts(self):
         """DB dan bugungi sanashni yuklash (dastur qayta ishga tushganda davom etadi)"""
@@ -1562,9 +1832,8 @@ class CrossingCard(QWidget):
         # ── Create shared components ──
 
         # Main camera label
-        self.main_camera_label = QLabel()
+        self.main_camera_label = CameraPreview()
         self.main_camera_label.setMinimumSize(200, 150)
-        self.main_camera_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.main_camera_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.main_camera_label.setStyleSheet(f"""
             background-color: {C('bg_camera')}; border: 1px solid {C('border_light')};
@@ -1619,9 +1888,8 @@ class CrossingCard(QWidget):
         main_bottom_layout.addWidget(self.poly_time_label)
 
         # Additional camera label
-        self.additional_camera_label = QLabel()
+        self.additional_camera_label = CameraPreview()
         self.additional_camera_label.setMinimumSize(160, 60)
-        self.additional_camera_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.additional_camera_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.additional_camera_label.setStyleSheet(f"""
             background-color: {C('bg_camera')}; border: 1px solid {C('border_light')};
@@ -2082,7 +2350,12 @@ class CrossingCard(QWidget):
             QMessageBox.warning(self, t("error.title"), t("export.json_error", e=e))
 
     def _open_camera_settings(self):
-        dialog = CameraSettingsDialog(self.crossing_data, self.config_manager, self)
+        crossing = self.crossing_data
+        if self.config_manager is not None:
+            crossing = self.config_manager.get_crossing(self.crossing_id)
+        if crossing is None:
+            return
+        dialog = CameraSettingsDialog(crossing, self.config_manager, self)
         dialog.exec()
 
     def _set_placeholder(self, label: QLabel, text: str):
@@ -2106,20 +2379,13 @@ class CrossingCard(QWidget):
         except (RuntimeError, Exception) as e:
             print(f"[Placeholder] Error: {e}")
 
-    def _display_frame(self, label: QLabel, qimg: QImage, worker=None):
-        """Display ready QImage - minimal GUI thread work"""
-        if qimg is None or self._is_destroyed or label is None:
-            return
-        try:
-            pixmap = QPixmap.fromImage(qimg)
-            scaled = pixmap.scaled(
-                label.size(),
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.FastTransformation
-            )
-            label.setPixmap(scaled)
-        except (RuntimeError, Exception):
-            pass
+    def _sync_camera_previews(self):
+        if self.main_camera_label is not None:
+            source = (self._additional_preview_worker if self._main_camera_down
+                      else self._main_preview_worker)
+            self.main_camera_label.set_source(source)
+        if self.additional_camera_label is not None:
+            self.additional_camera_label.set_source(self._additional_preview_worker)
 
     def _start_cameras(self):
         if self._is_destroyed:
@@ -2181,59 +2447,44 @@ class CrossingCard(QWidget):
                     violation_threshold=viol_t,
                     is_custom_model=self.is_custom_model,
                     detector_key=f"c{self.crossing_id}_cam{camera.get('id', i)}",
+                    rail_line=camera.get("rail_line"),
                 )
+
+                # Poyezd yo'nalishi — barcha kameralardan (asosiysi ustun)
+                worker.train_direction.connect(
+                    lambda d, f, cid=camera.get("id"), w=worker:
+                    self._on_train_direction(cid, w, d, f))
+                worker.train_presence.connect(
+                    lambda p, cid=camera.get("id"), w=worker:
+                    self._on_train_presence(cid, w, p))
 
                 # cam_type bo'yicha aniqlash, fallback: birinchi=main
                 is_main = cam_type == "main" if cam_type in ("main", "additional") else (i == 0)
                 if is_main:
-                    worker.frame_ready.connect(lambda w=worker: self._on_main_frame(w))
+                    self._main_preview_worker = worker
                     worker.status_changed.connect(self._on_main_status)
                     worker.stats_updated.connect(self._on_stats_update)
                     self._dwell_workers.append(worker)
                 else:
-                    worker.frame_ready.connect(lambda w=worker: self._on_additional_frame(w))
+                    self._additional_preview_worker = worker
                     worker.status_changed.connect(self._on_additional_status)
                     # Asosiy to'xtatilgan bo'lsa — qo'shimcha sanashni davom ettiradi
                     if self._main_camera_down:
                         worker.stats_updated.connect(self._on_stats_update)
                         self._dwell_workers.append(worker)
 
+                self._sync_camera_previews()
                 worker.start()
                 self.camera_workers.append(worker)
                 self.camera_workers_by_id[camera.get("id")] = worker
+
+            if self._plc_active or self._plc_in_grace:
+                self._start_recording()
 
             # ANPR test rejimi (PLC'siz doimiy) — workerlar tayyor bo'lgach
             self._maybe_start_anpr_test()
         except (RuntimeError, Exception) as e:
             print(f"[StartCameras] Error: {e}")
-
-    def _on_main_frame(self, worker):
-        try:
-            if self._is_destroyed or self.main_camera_label is None:
-                return
-            qimg = worker.take_frame()
-            if qimg is None:
-                return
-            self._display_frame(self.main_camera_label, qimg)
-        except Exception as e:
-            # O'tkinchi (transient) xato — faqat shu kadrni tashlaymiz,
-            # butun widgetni o'lik deb belgilamaymiz (_is_destroyed).
-            _log.debug("[CrossingCard] main frame slot xato: %s", e)
-
-    def _on_additional_frame(self, worker):
-        try:
-            if self._is_destroyed or self.additional_camera_label is None:
-                return
-            qimg = worker.take_frame()
-            if qimg is None:
-                return
-            self._display_frame(self.additional_camera_label, qimg)
-            # Asosiy kamera uzilgan bo'lsa — qo'shimchani asosiy joyda ham ko'rsatish
-            if self._main_camera_down and self.main_camera_label is not None:
-                self._display_frame(self.main_camera_label, qimg)
-        except Exception as e:
-            # O'tkinchi xato — kadrni tashlaymiz, widgetni o'chirmaymiz
-            _log.debug("[CrossingCard] additional frame slot xato: %s", e)
 
     def _schedule_reconnect(self):
         """Kamera uzilganda 5 sekunddan keyin qayta ulanish (debounced)."""
@@ -2257,10 +2508,12 @@ class CrossingCard(QWidget):
                 return
             if status == "online":
                 self._main_camera_down = False
+                self._sync_camera_previews()
                 self.status_indicator.setStyleSheet(
                     f"color: {C('status_online')}; font-size: 10px; background: transparent; border: none;")
             elif status == "error":
                 self._main_camera_down = True
+                self._sync_camera_previews()
                 self.status_indicator.setStyleSheet(
                     f"color: {C('status_error')}; font-size: 10px; background: transparent; border: none;")
                 if self.main_camera_label:
@@ -2575,16 +2828,13 @@ class CrossingCard(QWidget):
             pass
 
     def stop_cameras(self, wait_ms: int = 1500):
+        self._rec_ctrl.detach_workers(self.camera_workers)
+        self._main_preview_worker = self._additional_preview_worker = None
+        self._sync_camera_previews()
+        self._ai_presence.clear()
+        self.camera_workers_by_id.clear()
         # Avval signallarni uzib, keyin to'xtatish (crash prevention)
         for worker in self.camera_workers:
-            try:
-                worker.frame_ready.disconnect()
-            except (TypeError, RuntimeError):
-                pass
-            try:
-                worker.frame_with_data.disconnect()
-            except (TypeError, RuntimeError):
-                pass
             try:
                 worker.status_changed.disconnect()
             except (TypeError, RuntimeError):
@@ -2593,6 +2843,11 @@ class CrossingCard(QWidget):
                 worker.stats_updated.disconnect()
             except (TypeError, RuntimeError):
                 pass
+            for signal in (worker.train_direction, worker.train_presence):
+                try:
+                    signal.disconnect()
+                except (TypeError, RuntimeError):
+                    pass
         # Har bir worker'ni bounded wait bilan to'xtatamiz
         for worker in self.camera_workers:
             try:
@@ -2621,7 +2876,6 @@ class CrossingCard(QWidget):
             _log.debug("[StatsDB] Dwell flush (stop) xato: %s", e)
 
         self.camera_workers.clear()
-        self.camera_workers_by_id.clear()
         self._dwell_workers.clear()
 
     def cleanup(self, wait_ms: int = 1500):
@@ -2655,6 +2909,7 @@ class CrossingCard(QWidget):
                 pass
             self._plc_manager = None
         self.stop_cameras(wait_ms=wait_ms)
+        self._rec_ctrl.stop(wait=wait_ms > 0)
         # ANPR fon thread'ini to'xtatish
         if self._anpr_worker is not None:
             try:

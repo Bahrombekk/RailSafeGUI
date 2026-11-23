@@ -5,6 +5,8 @@ Dialogs for adding/editing crossings, cameras, and PLCs
 import os
 import re
 import json
+import logging
+import sqlite3
 import hmac
 import shutil
 import hashlib
@@ -19,13 +21,13 @@ from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                               QButtonGroup, QProgressBar, QFrame, QScrollArea,
                               QApplication, QStackedWidget, QListWidget,
                               QListWidgetItem)
-from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QThread, QPoint
+from PyQt6.QtCore import Qt, pyqtSignal, pyqtSlot, QTimer, QThread, QPoint
 from PyQt6.QtGui import (QFont, QPainter, QPen, QColor, QPixmap, QImage,
                          QPolygon)
 
 from app.utils.theme_colors import C, contrast_on
 from app.utils.language import t, LM
-from app.utils.ui_guards import no_wheel as _no_wheel
+from app.utils.ui_guards import no_wheel as _no_wheel, report_config_save_error
 from app.core.plc import SNAP7_AVAILABLE as _SNAP7_OK
 
 
@@ -308,15 +310,24 @@ def _dialog_style():
     QLineEdit::placeholder {{
         color: {C('text_dim')};
     }}
+    QComboBox {{
+        selection-background-color: {C('bg_hover')};
+        selection-color: {C('text_primary')};
+    }}
     QComboBox::drop-down {{
         border: none;
         padding-right: 8px;
+    }}
+    QComboBox QFrame {{
+        background-color: {C('bg_input')};
+        border: 1px solid {C('border_light')};
     }}
     QComboBox QAbstractItemView {{
         background-color: {C('bg_input')};
         color: {C('text_primary')};
         border: 1px solid {C('border_light')};
         selection-background-color: {C('bg_hover')};
+        selection-color: {C('text_primary')};
     }}
     QCheckBox {{
         color: {C('text_primary')};
@@ -457,6 +468,7 @@ class AddCrossingDialog(QDialog):
         self.config_manager = config_manager
         self.crossing_id = crossing_id
         self.is_edit = crossing_id is not None
+        self.cameras_changed = False
 
         if self.is_edit:
             self.crossing_data = config_manager.get_crossing(crossing_id)
@@ -490,6 +502,9 @@ class AddCrossingDialog(QDialog):
         plc_tab = self._create_plc_tab()
         tabs.addTab(plc_tab, f"🔌 {t('dlg.add_crossing.tab_plc')}")
 
+        if self.is_edit:
+            tabs.addTab(self._create_cameras_tab(), t("stats.cameras"))
+
         layout.addWidget(tabs)
 
         # Buttons
@@ -516,6 +531,56 @@ class AddCrossingDialog(QDialog):
         buttons_layout.addWidget(save_btn)
 
         layout.addLayout(buttons_layout)
+
+    def _create_cameras_tab(self):
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setContentsMargins(20, 20, 20, 20)
+        self.camera_list = QListWidget()
+        self.camera_list.setStyleSheet(f"""
+            QListWidget {{
+                background: {C('bg_input')};
+                color: {C('text_primary')};
+                border: 1px solid {C('border_light')};
+                border-radius: 6px;
+            }}
+            QListWidget::item {{ padding: 8px 10px; }}
+            QListWidget::item:selected {{
+                background: {C('bg_hover')};
+                color: {C('text_primary')};
+            }}
+        """)
+        layout.addWidget(self.camera_list)
+        self.manage_cameras_btn = QPushButton(t("cam_dlg.manage"))
+        self.manage_cameras_btn.clicked.connect(self._manage_cameras)
+        layout.addWidget(self.manage_cameras_btn, alignment=Qt.AlignmentFlag.AlignRight)
+        self._populate_cameras()
+        return tab
+
+    def _populate_cameras(self):
+        cameras = self.crossing_data.get("cameras", [])
+        self.camera_list.clear()
+        self.manage_cameras_btn.setEnabled(bool(cameras))
+        if not cameras:
+            self.camera_list.addItem(t("cam_dlg.no_cameras"))
+            return
+
+        for index, camera in enumerate(cameras, start=1):
+            name = camera.get("name") or f"{t('stats.cameras')} {index}"
+            status = t("cam_dlg.enabled") if camera.get("enabled", True) else t("cam_dlg.disabled")
+            self.camera_list.addItem(f"{name}  ·  {status}")
+
+    def _manage_cameras(self):
+        from app.widgets.crossing_card import CameraSettingsDialog
+
+        crossing = self.config_manager.get_crossing(self.crossing_id)
+        if crossing is None:
+            return
+        dialog = CameraSettingsDialog(crossing, self.config_manager, self)
+        dialog.exec()
+        self.crossing_data = self.config_manager.get_crossing(self.crossing_id) or {}
+        self.cameras_changed |= dialog.changed
+        self._populate_cameras()
 
     def _create_basic_info_tab(self):
         """Create basic information tab"""
@@ -676,6 +741,8 @@ class AddCrossingDialog(QDialog):
         except Exception as e:
             QMessageBox.warning(self, t("error.title"), t("dlg.add_crossing.import_err", e=e))
 
+    @pyqtSlot()
+    @report_config_save_error
     def _save(self):
         """Save the crossing data"""
         # Validate required fields
@@ -714,10 +781,9 @@ class AddCrossingDialog(QDialog):
             }
         }
 
-        # Keep existing cameras if editing
         if self.is_edit:
-            crossing_data["cameras"] = self.crossing_data.get("cameras", [])
-            self.config_manager.update_crossing(self.crossing_id, crossing_data)
+            if not self.config_manager.update_crossing(self.crossing_id, crossing_data):
+                return
         else:
             # Import dan kameralar bo'lsa ularni qo'shish
             crossing_data["cameras"] = getattr(self, '_imported_cameras', [])
@@ -914,6 +980,132 @@ class PolygonDrawDialog(QDialog):
             seg.append(round(pt.x() / self._scale, 1))
             seg.append(round(pt.y() / self._scale, 1))
         return seg
+
+
+class RailCanvas(PolygonCanvas):
+    """Rels chizig'i — ochiq siniq chiziq (polygon emas). Birinchi nuqta A,
+    oxirgisi B; oxirgi bo'lakda A→B strelkasi."""
+
+    def paintEvent(self, event):
+        import math
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.drawPixmap(0, 0, self._pix)
+        pts = self.points
+        orange = QColor(255, 150, 0)
+        if len(pts) >= 2:
+            p.setPen(QPen(QColor(0, 0, 0), 6))
+            for i in range(len(pts) - 1):
+                p.drawLine(pts[i], pts[i + 1])
+            p.setPen(QPen(orange, 3))
+            for i in range(len(pts) - 1):
+                p.drawLine(pts[i], pts[i + 1])
+            # A→B strelka uchi (oxirgi bo'lak)
+            a, b = pts[-2], pts[-1]
+            ang = math.atan2(b.y() - a.y(), b.x() - a.x())
+            for da in (2.6, -2.6):
+                q = QPoint(int(b.x() + 16 * math.cos(ang + da)),
+                           int(b.y() + 16 * math.sin(ang + da)))
+                p.drawLine(b, q)
+        p.setPen(QPen(QColor(0, 0, 0), 1))
+        p.setBrush(QColor(255, 200, 0))
+        for pt in pts:
+            p.drawEllipse(pt, 5, 5)
+        # A / B yorliqlari
+        f = QFont()
+        f.setBold(True)
+        f.setPointSize(13)
+        p.setFont(f)
+        for label, pt in (("A", pts[0] if pts else None),
+                          ("B", pts[-1] if len(pts) >= 2 else None)):
+            if pt is None:
+                continue
+            p.setPen(QPen(QColor(0, 0, 0)))
+            p.setBrush(orange)
+            p.drawEllipse(pt + QPoint(14, -14), 12, 12)
+            p.drawText(pt.x() + 2, pt.y() - 26, 24, 24,
+                       int(Qt.AlignmentFlag.AlignCenter), label)
+        p.end()
+
+
+class RailDrawDialog(QDialog):
+    """Kamera kadri ustiga rels chizig'ini chizish (poyezd yo'nalishi uchun).
+
+    Natija — kadr o'lchamiga bog'liq bo'lmagan normallashgan nuqtalar
+    (0..1) va uchlar nomi: {"points": [[x, y], ...], "a_name", "b_name"}.
+    Yo'nalish shu chiziq bo'ylab bosqichma-bosqich tasdiqlanadi
+    (app/core/train_direction.py)."""
+
+    def __init__(self, frame_bgr, existing=None, parent=None):
+        super().__init__(parent)
+        import cv2
+        import numpy as np
+        self.setWindowTitle(t("dlg.rail.title"))
+        oh, ow = frame_bgr.shape[:2]
+        scale = min(1100 / ow, 620 / oh, 1.0)
+        self._dw, self._dh = int(ow * scale), int(oh * scale)
+        rgb = np.ascontiguousarray(cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB))
+        qimg = QImage(rgb.data, ow, oh, ow * 3, QImage.Format.Format_RGB888)
+        pix = QPixmap.fromImage(qimg).scaled(
+            self._dw, self._dh, Qt.AspectRatioMode.IgnoreAspectRatio,
+            Qt.TransformationMode.SmoothTransformation)
+
+        self.canvas = RailCanvas(pix)
+        existing = existing or {}
+        for x, y in existing.get("points", []):
+            self.canvas.points.append(QPoint(int(x * self._dw), int(y * self._dh)))
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(10)
+        hint = QLabel(t("dlg.rail.hint"))
+        hint.setWordWrap(True)
+        hint.setStyleSheet(f"color: {C('text_muted')}; font-size: 12px;")
+        layout.addWidget(hint)
+        layout.addWidget(self.canvas, alignment=Qt.AlignmentFlag.AlignCenter)
+
+        names = QHBoxLayout()
+        self.a_input = QLineEdit(existing.get("a_name", ""))
+        self.a_input.setPlaceholderText(t("dlg.rail.a_ph"))
+        self.b_input = QLineEdit(existing.get("b_name", ""))
+        self.b_input.setPlaceholderText(t("dlg.rail.b_ph"))
+        names.addWidget(QLabel(t("dlg.rail.a_name")))
+        names.addWidget(self.a_input, 1)
+        names.addSpacing(16)
+        names.addWidget(QLabel(t("dlg.rail.b_name")))
+        names.addWidget(self.b_input, 1)
+        layout.addLayout(names)
+
+        btns = QHBoxLayout()
+        clear_btn = QPushButton(t("dlg.polygon.clear"))
+        clear_btn.clicked.connect(self.canvas.clear)
+        undo_btn = QPushButton(t("dlg.polygon.undo"))
+        undo_btn.clicked.connect(self.canvas.undo)
+        cancel_btn = QPushButton(t("common.cancel"))
+        cancel_btn.clicked.connect(self.reject)
+        save_btn = QPushButton(t("common.save"))
+        save_btn.setDefault(True)
+        save_btn.clicked.connect(self._on_save)
+        btns.addWidget(clear_btn)
+        btns.addWidget(undo_btn)
+        btns.addStretch()
+        btns.addWidget(cancel_btn)
+        btns.addWidget(save_btn)
+        layout.addLayout(btns)
+
+    def _on_save(self):
+        if len(self.canvas.points) < 2:
+            QMessageBox.warning(self, t("error.title"), t("dlg.rail.err_min"))
+            return
+        self.accept()
+
+    def get_rail(self) -> dict:
+        return {
+            "points": [[round(pt.x() / self._dw, 4), round(pt.y() / self._dh, 4)]
+                       for pt in self.canvas.points],
+            "a_name": self.a_input.text().strip(),
+            "b_name": self.b_input.text().strip(),
+        }
 
 
 # ─── RTSP yordamchi: brend + IP + login/parol → tayyor URL ───────────
@@ -1982,6 +2174,9 @@ class AddCameraDialog(QDialog):
         # Sehrgar topgan qo'shimcha oqimlar (NVR kanallari) — saqlashda
         # alohida kamera bo'lib qo'shiladi
         self._extra_sources = []
+        # Rels chizig'i (poyezd yo'nalishi) — saqlashda kamera config'iga yoziladi
+        _rl = self.camera_data.get("rail_line")
+        self._rail_line = dict(_rl) if isinstance(_rl, dict) else None
 
         # Check if main camera already exists
         self._has_main = any(
@@ -2088,6 +2283,20 @@ class AddCameraDialog(QDialog):
         polygon_layout.addWidget(draw_polygon_btn)
 
         form_layout.addRow(t("dlg.add_camera.polygon"), polygon_layout)
+
+        # Rels chizig'i — poyezd yo'nalishi (A → B) shu chiziq bo'ylab aniqlanadi
+        rail_layout = QHBoxLayout()
+        self.rail_status = QLabel()
+        self.rail_status.setStyleSheet(f"color: {C('text_muted')}; font-size: 11px;")
+        rail_layout.addWidget(self.rail_status, 1)
+        draw_rail_btn = QPushButton(t("dlg.add_camera.draw_rail"))
+        draw_rail_btn.clicked.connect(self._draw_rail)
+        rail_layout.addWidget(draw_rail_btn)
+        self.clear_rail_btn = QPushButton(t("dlg.add_camera.clear_rail"))
+        self.clear_rail_btn.clicked.connect(self._clear_rail)
+        rail_layout.addWidget(self.clear_rail_btn)
+        form_layout.addRow(t("dlg.add_camera.rail"), rail_layout)
+        self._update_rail_status()
 
         # Enabled
         self.enabled_checkbox = QCheckBox(t("dlg.add_camera.enable"))
@@ -2250,6 +2459,48 @@ class AddCameraDialog(QDialog):
         except Exception as e:
             QMessageBox.warning(self, t("error.title"), str(e))
 
+    def _update_rail_status(self):
+        rl = self._rail_line
+        if rl and len(rl.get("points", [])) >= 2:
+            self.rail_status.setText(t("dlg.add_camera.rail_set",
+                                       a=rl.get("a_name") or "A",
+                                       b=rl.get("b_name") or "B",
+                                       n=len(rl["points"])))
+            self.clear_rail_btn.setEnabled(True)
+        else:
+            self.rail_status.setText(t("dlg.add_camera.rail_none"))
+            self.clear_rail_btn.setEnabled(False)
+
+    def _clear_rail(self):
+        self._rail_line = None
+        self._update_rail_status()
+
+    def _draw_rail(self):
+        """Kadr olib (fon threadida), ustiga rels chizig'ini chizish."""
+        source = self.source_input.text().strip()
+        if not source:
+            QMessageBox.warning(self, t("error.title"),
+                                t("dlg.add_camera.err_source"))
+            return
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        self._snap_worker = _SnapshotWorker(source, self)
+        self._snap_worker.done.connect(self._on_rail_snapshot)
+        self._snap_worker.start()
+
+    def _on_rail_snapshot(self, frame):
+        QApplication.restoreOverrideCursor()
+        self._snap_worker = None
+        if frame is None:
+            QMessageBox.warning(self, t("error.title"),
+                                t("dlg.polygon.err_snapshot"))
+            return
+        dlg = RailDrawDialog(frame, self._rail_line, self)
+        if dlg.exec():
+            self._rail_line = dlg.get_rail()
+            self._update_rail_status()
+
+    @pyqtSlot()
+    @report_config_save_error
     def _save(self):
         if not self.name_input.text().strip():
             QMessageBox.warning(self, t("error.title"), t("dlg.add_camera.err_name"))
@@ -2285,27 +2536,20 @@ class AddCameraDialog(QDialog):
         # Determine type
         selected_type = "main" if self.type_combo.currentIndex() == 0 else "additional"
 
-        # If setting as main, demote existing main to additional
-        if selected_type == "main" and self._has_main:
-            cameras = self.crossing_data.get("cameras", [])
-            for cam in cameras:
-                if cam.get("type") == "main":
-                    cam["type"] = "additional"
-                    self.config_manager.update_camera(
-                        self.crossing_id, cam["id"],
-                        {k: v for k, v in cam.items() if k not in ("id", "created_at", "updated_at")}
-                    )
-
         camera_data = {
             "name": self.name_input.text().strip(),
             "type": selected_type,
             "source": self.source_input.text().strip(),
             "polygon_file": self.polygon_input.text().strip(),
-            "enabled": self.enabled_checkbox.isChecked()
+            "enabled": self.enabled_checkbox.isChecked(),
+            # None — chiziq o'chirilgan (update_camera merge qiladi, shuning
+            # uchun kalit doim yoziladi, aks holda eski chiziq qolib ketardi)
+            "rail_line": self._rail_line,
         }
 
         if self.is_edit:
-            self.config_manager.update_camera(self.crossing_id, self.camera_id, camera_data)
+            if not self.config_manager.update_camera(self.crossing_id, self.camera_id, camera_data):
+                return
             # Kamera nomi o'zgargan bo'lsa — bazadagi statslarni ham ko'chirish
             new_name = camera_data["name"]
             if (self.stats_db and self._old_camera_name
@@ -2313,13 +2557,14 @@ class AddCameraDialog(QDialog):
                 self.stats_db.rename_camera(
                     self.crossing_id, self._old_camera_name, new_name)
         else:
-            self.config_manager.add_camera(self.crossing_id, camera_data)
-            self._add_extra_cameras(camera_data["name"])
+            extras = self._extra_cameras(camera_data["name"])
+            if self.config_manager.add_camera(self.crossing_id, camera_data, extras) is None:
+                return
 
         self.accept()
 
-    def _add_extra_cameras(self, base_name: str):
-        """Sehrgar topgan qolgan oqimlarni qo'shimcha kamera qilib qo'shish.
+    def _extra_cameras(self, base_name: str):
+        """Sehrgar topgan oqimlarni kamera bilan birga saqlashga tayyorlash.
 
         NVR'da bir necha kanal bo'lsa, har birini alohida dialogdan o'tkazish
         o'rniga bir yo'la qo'shiladi. Nomlar "<nom> 2", "<nom> 3" ko'rinishida —
@@ -2329,29 +2574,34 @@ class AddCameraDialog(QDialog):
         existing = {c.get("name", "") for c in
                     (self.config_manager.get_crossing(self.crossing_id) or {})
                     .get("cameras", [])}
+        existing.add(base_name)
+        extras = []
         for i, src in enumerate(self._extra_sources, start=2):
             name = f"{base_name} {i}"
             while name in existing:
                 i += 1
                 name = f"{base_name} {i}"
             existing.add(name)
-            self.config_manager.add_camera(self.crossing_id, {
+            extras.append({
                 "name": name,
                 "type": "additional",
                 "source": src,
                 "polygon_file": "",
                 "enabled": self.enabled_checkbox.isChecked(),
             })
-        self._extra_sources = []
+        return extras
 
+    @pyqtSlot()
+    @report_config_save_error
     def _quick_toggle(self):
         """Kamerani yoqish/o'chirish — saqlash tugmasisiz"""
         if not self.config_manager or not self.camera_id:
             return
         current = self.camera_data.get("enabled", True)
         new_enabled = not current
-        self.config_manager.update_camera(
-            self.crossing_id, self.camera_id, {"enabled": new_enabled})
+        if not self.config_manager.update_camera(
+                self.crossing_id, self.camera_id, {"enabled": new_enabled}):
+            return
         self.camera_data["enabled"] = new_enabled
         # Update checkbox and button
         self.enabled_checkbox.setChecked(new_enabled)
@@ -2372,11 +2622,13 @@ class AddCameraDialog(QDialog):
 class SettingsDialog(QDialog):
     """Application settings dialog - improved tabbed design"""
 
+    statistics_reset = pyqtSignal()
+
     def __init__(self, config_manager, parent=None, stats_db=None, push_client=None):
         super().__init__(parent)
         self.config_manager = config_manager
         self.settings = config_manager.get_settings()
-        self._stats_db = stats_db          # push testi uchun (payload qurish)
+        self._stats_db = stats_db
         self._push_client = push_client    # ishlab turgan klient holati (status)
         self._integ_unlocked = False
         self.setWindowTitle(t("settings.title"))
@@ -2592,7 +2844,8 @@ class SettingsDialog(QDialog):
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
         content = QWidget()
-        content.setStyleSheet("background: transparent;")
+        content.setObjectName("stgMainContent")
+        content.setStyleSheet("QWidget#stgMainContent { background: transparent; }")
         layout = QVBoxLayout(content)
         layout.setSpacing(14)
         layout.setContentsMargins(20, 18, 20, 18)
@@ -2678,7 +2931,8 @@ class SettingsDialog(QDialog):
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
         tab = QWidget()
-        tab.setStyleSheet("background: transparent;")
+        tab.setObjectName("stgAdvancedContent")
+        tab.setStyleSheet("QWidget#stgAdvancedContent { background: transparent; }")
         layout = QVBoxLayout(tab)
         layout.setSpacing(12)
         layout.setContentsMargins(20, 16, 20, 16)
@@ -2822,6 +3076,29 @@ class SettingsDialog(QDialog):
 
         self._violation_pref_card = v_pref_card
         layout.addWidget(v_pref_card)
+
+        layout.addSpacing(6)
+        layout.addWidget(self._stg_section(t("settings.database")))
+        database_card, database_layout = self._stg_card()
+        database_layout.setContentsMargins(0, 4, 0, 4)
+        reset_btn = QPushButton(t("settings.database_reset"))
+        reset_btn.setAutoDefault(False)
+        reset_btn.setEnabled(self._stats_db is not None)
+        reset_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent;
+                color: {C('accent_red')};
+                border: 1px solid {C('accent_red')};
+                border-radius: 6px;
+                padding: 8px 14px;
+                font-weight: 600;
+            }}
+            QPushButton:hover {{ background: {C('bg_hover')}; }}
+            QPushButton:disabled {{ color: {C('text_muted')}; border-color: {C('border_light')}; }}
+        """)
+        reset_btn.clicked.connect(self._reset_statistics)
+        database_layout.addWidget(self._pref_row(t("settings.database_history"), reset_btn))
+        layout.addWidget(database_card)
         layout.addStretch()
 
         # Initial dim state
@@ -2829,6 +3106,26 @@ class SettingsDialog(QDialog):
         self._update_violation_card_state(v_on)
         scroll.setWidget(tab)
         return scroll
+
+    def _reset_statistics(self):
+        if self._stats_db is None:
+            return
+        title = t("settings.database_reset")
+        confirm = QMessageBox.warning(
+            self, title, t("settings.database_confirm"),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel,
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self._stats_db.reset_statistics()
+        except sqlite3.Error:
+            logging.getLogger(__name__).exception("Statistics reset failed")
+            QMessageBox.critical(self, t("error.title"), t("settings.database_error"))
+            return
+        self.statistics_reset.emit()
+        QMessageBox.information(self, title, t("settings.database_done"))
 
     def _update_violation_card_state(self, enabled: bool):
         """Violation pref kartani enabled/disabled qiladi"""
@@ -2856,7 +3153,8 @@ class SettingsDialog(QDialog):
         """Settings row: label left, control right, with proper padding.
         Returns a QWidget so we can dim it as a whole."""
         row_w = QWidget()
-        row_w.setStyleSheet("background: transparent;")
+        row_w.setObjectName("stgPreferenceRow")
+        row_w.setStyleSheet("QWidget#stgPreferenceRow { background: transparent; }")
         row = QHBoxLayout(row_w)
         row.setContentsMargins(20, 12, 20, 12)
         row.setSpacing(12)
@@ -3046,6 +3344,8 @@ class SettingsDialog(QDialog):
         v.addStretch()
         return page
 
+    @pyqtSlot()
+    @report_config_save_error
     def _integ_try_unlock(self):
         stored = self.settings.get("integration_admin_hash", "")
         pwd = self._integ_pass1.text()
@@ -3310,6 +3610,10 @@ class SettingsDialog(QDialog):
         """Joriy maydonlar bilan bir marta sinov yuborish (fon oqimida)."""
         from app.core.stats_push import StatsPushClient, DEFAULT_SETTINGS as _PUSH_DEF
 
+        if os.environ.get("RAILSAFE_DB") or os.environ.get("RAILSAFE_PILOT") == "1":
+            self._integ_status_lbl.setText(t("integ.test_demo"))
+            return
+
         s = dict(_PUSH_DEF)
         s.update(self.settings.get("integration_push") or {})
         s["base_url"] = self.integ_push_url.text().strip()
@@ -3381,6 +3685,8 @@ class SettingsDialog(QDialog):
         except Exception as e:
             QMessageBox.warning(self, "RailSafe", str(e))
 
+    @pyqtSlot()
+    @report_config_save_error
     def _change_integ_password(self):
         from PyQt6.QtWidgets import QInputDialog
         p1, ok = QInputDialog.getText(
@@ -3404,6 +3710,8 @@ class SettingsDialog(QDialog):
         self.settings["integration_admin_hash"] = new_hash
         QMessageBox.information(self, "RailSafe", t("integ.password_changed"))
 
+    @pyqtSlot()
+    @report_config_save_error
     def _save(self):
         """Save settings"""
         lang_map = {0: "uz", 1: "ru", 2: "en"}
