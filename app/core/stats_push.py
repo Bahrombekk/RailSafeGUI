@@ -33,16 +33,30 @@ Integratsiya tabidan boshqariladi):
         "verify_tls": true
     }
 
-Faqat Python stdlib (urllib) — qo'shimcha dependency yo'q.
+19.11.2026 dan AISUP API bitta SHIFRLANGAN manzil orqali ishlaydi:
+
+    POST {base_url}/api/
+
+Metod, yo'l, sarlavhalar (Authorization) va tana — hammasi shu paketning
+ICHIDA shifrlangan holda ketadi; javob ham shifrlangan keladi. Eski
+to'g'ridan-to'g'ri manzillar (/api/v1/auth/login, /api/v1/railsafe/stats)
+404 qaytaradi.
+
+Yo'llar, login/parol va ma'lumot formati O'ZGARMAGAN — faqat transport.
+Kalit sozlash shart emas: klient serverning kalitini o'zi oladi va
+sutkada bir marta / server qayta ishga tushganda o'zi yangilaydi.
+
+Klient: app/core/tunnel_client.py (AISUP bergan, o'zgartirilmagan).
+Talab: cryptography (pip install cryptography).
+
+DIQQAT: kanal faqat HTTPS bilan ishlaydi, shuning uchun verify_tls=false
+endi E'TIBORGA OLINMAYDI (sertifikat har doim tekshiriladi).
 """
 
 import json
 import logging
 import os
-import ssl
 import threading
-import urllib.error
-import urllib.request
 from datetime import date, datetime, timedelta
 
 logger = logging.getLogger("RailSafe.stats_push")
@@ -66,6 +80,8 @@ DEFAULT_SETTINGS = {
 LOGIN_PATH = "/api/v1/auth/login"
 STATS_PATH = "/api/v1/railsafe/stats"
 HTTP_TIMEOUT = 15  # sek
+# Shifrlangan kanalning yagona manzili: base_url + TUNNEL_SUFFIX + "/"
+TUNNEL_SUFFIX = "/api"
 
 
 class StatsPushClient:
@@ -85,6 +101,9 @@ class StatsPushClient:
         self._stop_event = threading.Event()
         self._thread = None
         self._token = None
+        self._tunnel = None        # TunnelClient, base_url o'zgarsa qayta quriladi
+        self._tunnel_base = None
+        self._tls_warned = False
         self._status_lock = threading.Lock()
         self._status = {
             "running": False,
@@ -187,42 +206,59 @@ class StatsPushClient:
 
     # ─── HTTP ────────────────────────────────────────────────
 
-    def _ssl_context(self, s: dict):
-        if s.get("verify_tls", True):
-            return None  # standart tekshiruv
-        ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-        return ctx
+    def _get_tunnel(self, s: dict):
+        """Shifrlangan kanal klienti. Bitta jarayonga bitta nusxa —
+        har so'rovdan oldin qayta rukopojatiye qilish SHART EMAS."""
+        base = s["base_url"].strip().rstrip("/") + TUNNEL_SUFFIX
+        if self._tunnel is None or self._tunnel_base != base:
+            from app.core.tunnel_client import TunnelClient
+            self._tunnel = TunnelClient(base, timeout=HTTP_TIMEOUT)
+            self._tunnel_base = base
+            logger.info("AISUP shifrlangan kanal: %s/", base)
+        if not s.get("verify_tls", True) and not self._tls_warned:
+            self._tls_warned = True
+            logger.warning(
+                "verify_tls=false e'tiborga olinmadi: shifrlangan kanal "
+                "faqat tekshirilgan HTTPS orqali ishlaydi")
+        return self._tunnel
 
-    def _post_json(self, url: str, body: dict, s: dict, token: str = None):
-        """POST JSON. Returns (status_code, parsed_body_or_None)."""
-        data = json.dumps(body, ensure_ascii=False).encode("utf-8")
-        req = urllib.request.Request(url, data=data, method="POST")
-        req.add_header("Content-Type", "application/json; charset=utf-8")
-        req.add_header("User-Agent", f"RailSafeAI/{APP_VERSION}")
+    def _post_json(self, path: str, body: dict, s: dict, token: str = None):
+        """Kanal orqali POST. Returns (status_code, parsed_body_or_None).
+
+        status — API ning HAQIQIY javob kodi (200, 401, 422...), kanalning
+        emas. Kanal darajasidagi uzilish (-1) xato sifatida qaytadi."""
+        headers = {
+            "content-type": "application/json; charset=utf-8",
+            "user-agent": f"RailSafeAI/{APP_VERSION}",
+        }
         if token:
-            req.add_header("Authorization", f"Bearer {token}")
-        ctx = self._ssl_context(s)
+            headers["authorization"] = f"Bearer {token}"
         try:
-            with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT, context=ctx) as r:
-                raw = r.read()
-                try:
-                    return r.status, json.loads(raw.decode("utf-8"))
-                except (ValueError, UnicodeDecodeError):
-                    return r.status, None
-        except urllib.error.HTTPError as e:
-            return e.code, None
+            api = self._get_tunnel(s)
+            res = api.request("POST", path, headers=headers, body=body)
+        except ImportError:
+            logger.error("cryptography kutubxonasi yo'q — AISUP kanali ishlamaydi")
+            return -1, {"_err": "cryptography kutubxonasi o'rnatilmagan"}
+        except Exception as e:
+            # Kanal buzilgan bo'lishi mumkin — keyingi urinishda qayta quriladi.
+            self._tunnel = None
+            logger.warning("AISUP kanal xatosi: %s", e)
+            return -1, {"_err": str(e)}
+        try:
+            return res.status, res.json()
+        except (ValueError, UnicodeDecodeError):
+            return res.status, None
 
     def _login(self, s: dict):
         """Token olish. Returns (token yoki None, xato_matni yoki None)."""
-        url = s["base_url"].rstrip("/") + LOGIN_PATH
         status, body = self._post_json(
-            url, {"username": s["username"], "password": s["password"]}, s)
+            LOGIN_PATH, {"username": s["username"], "password": s["password"]}, s)
         if status == 200 and isinstance(body, dict) and body.get("token"):
             return str(body["token"]), None
         if status == 401:
             return None, "login/parol noto'g'ri (401)"
+        if status == -1:
+            return None, f"AISUP kanaliga ulanib bo'lmadi: {(body or {}).get('_err', '')}"
         return None, f"login javobi kutilmagan: HTTP {status}"
 
     # ─── payload ─────────────────────────────────────────────
@@ -393,8 +429,7 @@ class StatsPushClient:
 
         payload = self.build_payload(s.get("days_back", 1),
                                      s.get("include_analytics", True))
-        url = base + STATS_PATH
-        status, body = self._post_json(url, payload, s, token=self._token)
+        status, body = self._post_json(STATS_PATH, payload, s, token=self._token)
 
         # Token eskirgan — bir marta qayta login qilib qaytadan urinamiz
         if status == 401:
@@ -403,8 +438,10 @@ class StatsPushClient:
             if token is None:
                 return False, err
             self._token = token
-            status, body = self._post_json(url, payload, s, token=self._token)
+            status, body = self._post_json(STATS_PATH, payload, s, token=self._token)
 
         if status == 200:
             return True, "ok"
+        if status == -1:
+            return False, f"AISUP kanaliga ulanib bo'lmadi: {(body or {}).get('_err', '')}"
         return False, f"stats javobi: HTTP {status}"

@@ -24,3 +24,6 @@ python-docx==1.2.0
 
 # --- Konfiguratsiya / yordamchi ---
 PyYAML==6.0.3
+
+# AISUP shifrlangan kanal (app/core/tunnel_client.py)
+cryptography>=42.0
