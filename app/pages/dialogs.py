@@ -3764,6 +3764,8 @@ class SettingsDialog(QDialog):
 
 
 # Modellar ro'yxati — engine yo'q bo'lsa eksport qilinadi
+_eng_log = logging.getLogger("RailSafe.engine")
+
 ENGINE_MODELS = [
     {
         "name": "pereezd_yolo26n.pt",
@@ -3870,10 +3872,30 @@ def _calculate_export_batch() -> int:
     return max(4, min(batch, 16))
 
 
+def _cuda_available() -> bool:
+    """TensorRT engine qurish uchun NVIDIA GPU kerak."""
+    try:
+        import torch
+        return bool(torch.cuda.is_available())
+    except Exception as e:
+        _eng_log.warning("CUDA tekshiruvi muvaffaqiyatsiz: %s", e)
+        return False
+
+
 def get_models_needing_export() -> list:
     """models/ papkadagi .pt fayllar uchun .engine mavjudligini tekshirish.
-    Agar engine fayl bor lekin TRT versiyasiga mos kelmasa — qayta eksport."""
+    Agar engine fayl bor lekin TRT versiyasiga mos kelmasa — qayta eksport.
+
+    NVIDIA GPU bo'lmasa bo'sh ro'yxat qaytadi: TensorRT faqat CUDA bilan
+    ishlaydi, shuning uchun eksport baribir xato beradi. Tekshiruvsiz
+    eksport HAR ishga tushishda qayta urinilardi (engine yaratilmagani
+    uchun ro'yxatdan tushmaydi) va har safar bir necha daqiqa yo'qolardi."""
     from pathlib import Path
+    if not _cuda_available():
+        _eng_log.warning(
+            "NVIDIA GPU topilmadi — TensorRT engine eksporti o'tkazib "
+            "yuborildi. AI .pt model bilan CPU rejimida ishlaydi (sekinroq).")
+        return []
     project_root = Path(__file__).parent.parent.parent
     batch = _calculate_export_batch()
     cameras = _total_camera_count()

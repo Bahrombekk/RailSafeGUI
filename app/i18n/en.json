@@ -247,7 +247,7 @@
   "settings.model.default": "Default model",
   "settings.model.default_sub": "Detects road vehicles and trains",
   "settings.model.custom": "Custom model",
-  "settings.model.custom_sub": "Counts light and heavy vehicles separately",
+  "settings.model.custom_sub": "Counts light and heavy vehicles separately. Does not detect trains from camera",
   "export.title": "TensorRT Engine Export",
   "export.waiting": "waiting...",
   "export.running": "exporting...",

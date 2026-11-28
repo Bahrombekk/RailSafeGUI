@@ -247,7 +247,7 @@
   "settings.model.default": "Стандартная модель",
   "settings.model.default_sub": "Обнаруживает автотранспорт и поезда",
   "settings.model.custom": "Специальная модель",
-  "settings.model.custom_sub": "Считает лёгкий и тяжёлый транспорт отдельно",
+  "settings.model.custom_sub": "Считает лёгкий и тяжёлый транспорт отдельно. Поезда по камере не определяет",
   "export.title": "Экспорт TensorRT Engine",
   "export.waiting": "ожидание...",
   "export.running": "экспортируется...",

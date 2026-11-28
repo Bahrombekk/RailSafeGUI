@@ -15,6 +15,8 @@ from app.utils.language import t, LM
 
 _log = logging.getLogger("RailSafe.dashboard")
 
+from app.core.train_direction import train_class_ids
+
 try:
     from detectors import RealtimeMultiCameraDetector
     CAR_DETECTOR_AVAILABLE = True
@@ -129,6 +131,18 @@ class Dashboard(QWidget):
                 model_label = "MAXSUS" if self.is_custom_model else stats['model_type'].upper()
                 _log.info("[Dashboard] Detector yuklandi! Mode: %s (type: %s)",
                           model_label, stats['model_type'].upper())
+                # Kameradan poyezd aniqlash model sinflariga bog'liq: maxsus
+                # model faqat yengil/og'ir biladi, poyezd sinfi yo'q. Bu holda
+                # funksiya JIMGINA o'chadi — operatorga belgi berilmaydi,
+                # shuning uchun hech bo'lmasa logga yozamiz.
+                names = getattr(self.car_detector, "class_names", None) or {}
+                if not train_class_ids(names):
+                    _log.warning(
+                        "[Dashboard] Modelda poyezd sinfi yo'q (sinflar: %s) — "
+                        "kameradan poyezd aniqlash ISHLAMAYDI, poyezd faqat "
+                        "PLC dan keladi. Kameradan aniqlash kerak bo'lsa "
+                        "Sozlamalardan Standart modelni tanlang.",
+                        ", ".join(str(v) for v in names.values())[:120] or "yo'q")
             else:
                 _log.error("[Dashboard] Detector load() muvaffaqiyatsiz — AI o'chiq")
                 self.car_detector = None

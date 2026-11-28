@@ -247,7 +247,7 @@
   "settings.model.default": "Standart model",
   "settings.model.default_sub": "Transport vositalari va poyezdlarni aniqlaydi",
   "settings.model.custom": "Maxsus model",
-  "settings.model.custom_sub": "Yengil va og‘ir transportni alohida sanaydi",
+  "settings.model.custom_sub": "Yengil va og‘ir transportni alohida sanaydi. Poyezdni kameradan aniqlamaydi",
   "export.title": "TensorRT Engine Eksport",
   "export.waiting": "kutilmoqda...",
   "export.running": "eksport qilinmoqda...",
